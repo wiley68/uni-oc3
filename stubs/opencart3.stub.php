@@ -232,6 +232,7 @@ namespace {
      * @property Document $document
      * @property \Cart\User $user
      * @property Proxy $model_setting_setting
+     * @property ModelExtensionModuleMtUniCredit $model_extension_module_mt_uni_credit
      * @property ModelExtensionPaymentMtUniCredit $model_extension_payment_mt_uni_credit
      */
     abstract class Controller
@@ -239,8 +240,8 @@ namespace {
         /** @var Registry */
         protected $registry;
 
-        /** @param Registry $registry */
-        public function __construct($registry) {}
+        /** @param Registry|null $registry */
+        public function __construct($registry = null) {}
 
         /** @return mixed */
         public function __get($key)
@@ -265,8 +266,8 @@ namespace {
         /** @var Registry */
         protected $registry;
 
-        /** @param Registry $registry */
-        public function __construct($registry) {}
+        /** @param Registry|null $registry */
+        public function __construct($registry = null) {}
 
         /** @return mixed */
         public function __get($key)

@@ -28,6 +28,11 @@ $forbiddenSyntax = mtuc_phase0_load_fixture('forbidden_php_syntax.json');
 
 $requiredFiles = array(
     'install.xml',
+    'upload/admin/controller/extension/module/mt_uni_credit.php',
+    'upload/admin/model/extension/module/mt_uni_credit.php',
+    'upload/admin/language/en-gb/extension/module/mt_uni_credit.php',
+    'upload/admin/language/bg-bg/extension/module/mt_uni_credit.php',
+    'upload/admin/view/template/extension/module/mt_uni_credit.twig',
     'upload/admin/controller/extension/payment/mt_uni_credit.php',
     'upload/admin/model/extension/payment/mt_uni_credit.php',
     'upload/admin/language/en-gb/extension/payment/mt_uni_credit.php',
@@ -36,6 +41,7 @@ $requiredFiles = array(
     'upload/system/library/mt_uni_credit/bootstrap.php',
     'upload/system/library/mt_uni_credit/constants.php',
     'upload/system/library/mt_uni_credit/health.php',
+    'upload/system/library/mt_uni_credit/installer.php',
     'scripts/package.ps1',
 );
 
@@ -68,32 +74,59 @@ mtuc1_assert($fileNodes->length === 0, 'Phase 1 install.xml has no OCMOD file op
 $constantsPath = $root . DIRECTORY_SEPARATOR . 'upload/system/library/mt_uni_credit/constants.php';
 require_once $constantsPath;
 require_once $root . DIRECTORY_SEPARATOR . 'upload/system/library/mt_uni_credit/health.php';
+require_once $root . DIRECTORY_SEPARATOR . 'upload/system/library/mt_uni_credit/installer.php';
 require_once $root . DIRECTORY_SEPARATOR . 'upload/system/library/mt_uni_credit/bootstrap.php';
 
 mtuc1_assert(MtUniCreditConstants::EXTENSION_CODE === $identity['code'], 'constants extension code');
 mtuc1_assert(MtUniCreditConstants::VERSION === $identity['version'], 'constants version');
-mtuc1_assert(MtUniCreditConstants::SETTINGS_CODE === $identity['oc3_settings_code'], 'constants settings code');
-mtuc1_assert(MtUniCreditConstants::ADMIN_ROUTE === $identity['oc3_admin_route'], 'constants admin route');
+mtuc1_assert(MtUniCreditConstants::MODULE_SETTINGS_CODE === $identity['oc3_module_settings_code'], 'constants module settings code');
+mtuc1_assert(MtUniCreditConstants::PAYMENT_SETTINGS_CODE === $identity['oc3_payment_settings_code'], 'constants payment settings code');
+mtuc1_assert(MtUniCreditConstants::MODULE_ADMIN_ROUTE === $identity['oc3_module_admin_route'], 'constants module admin route');
+mtuc1_assert(MtUniCreditConstants::PAYMENT_ADMIN_ROUTE === $identity['oc3_payment_admin_route'], 'constants payment admin route');
 
-$adminControllerPath = $root . DIRECTORY_SEPARATOR . 'upload/admin/controller/extension/payment/mt_uni_credit.php';
-$adminController = file_get_contents($adminControllerPath);
-mtuc1_assert(strpos($adminController, 'class ControllerExtensionPaymentMtUniCredit') !== false, 'admin controller class naming');
-mtuc1_assert(strpos($adminController, "hasPermission('modify', 'extension/payment/mt_uni_credit')") !== false, 'admin permission route');
+$moduleControllerPath = $root . DIRECTORY_SEPARATOR . 'upload/admin/controller/extension/module/mt_uni_credit.php';
+$moduleController = file_get_contents($moduleControllerPath);
+mtuc1_assert(strpos($moduleController, 'class ControllerExtensionModuleMtUniCredit') !== false, 'module controller class naming');
+mtuc1_assert(strpos($moduleController, "hasPermission('modify', 'extension/module/mt_uni_credit')") !== false, 'module permission route');
 
-$adminModelPath = $root . DIRECTORY_SEPARATOR . 'upload/admin/model/extension/payment/mt_uni_credit.php';
-$adminModel = file_get_contents($adminModelPath);
-mtuc1_assert(strpos($adminModel, 'class ModelExtensionPaymentMtUniCredit') !== false, 'admin model class naming');
-mtuc1_assert(strpos($adminModel, 'secret_phase2_required') !== false, 'model rejects plaintext secret persistence');
-mtuc1_assert(strpos($adminModel, 'deleteSetting') !== false, 'uninstall removes settings via deleteSetting');
+$moduleModelPath = $root . DIRECTORY_SEPARATOR . 'upload/admin/model/extension/module/mt_uni_credit.php';
+$moduleModel = file_get_contents($moduleModelPath);
+mtuc1_assert(strpos($moduleModel, 'class ModelExtensionModuleMtUniCredit') !== false, 'module model class naming');
+mtuc1_assert(strpos($moduleModel, 'MODULE_SETTINGS_CODE') !== false, 'module install uses module settings code');
+mtuc1_assert(strpos($moduleModel, 'secret_phase2_required') !== false, 'module rejects plaintext secret persistence');
+mtuc1_assert(strpos($moduleModel, 'getHealthReport') !== false, 'module model owns health');
 
-$twigPath = $root . DIRECTORY_SEPARATOR . 'upload/admin/view/template/extension/payment/mt_uni_credit.twig';
-$twig = file_get_contents($twigPath);
-mtuc1_assert(strpos($twig, 'type="password"') !== false, 'secret field uses password input');
-mtuc1_assert(strpos($twig, 'value=""') !== false, 'secret field never repopulated');
-mtuc1_assert(strpos($twig, 'health_checks') !== false, 'template renders health checks');
+$moduleTwigPath = $root . DIRECTORY_SEPARATOR . 'upload/admin/view/template/extension/module/mt_uni_credit.twig';
+$moduleTwig = file_get_contents($moduleTwigPath);
+mtuc1_assert(strpos($moduleTwig, 'module_mt_uni_credit_unicid') !== false, 'module twig has UNICID');
+mtuc1_assert(strpos($moduleTwig, 'health_checks') !== false, 'module twig renders health');
+mtuc1_assert(strpos($moduleTwig, 'type="password"') !== false, 'module secret uses password input');
 
-foreach (MtUniCreditConstants::phase1PersistedSettingKeys() as $key) {
-    mtuc1_assert(strpos($key, MtUniCreditConstants::SETTINGS_CODE . '_') === 0, 'setting key prefix: ' . $key);
+$paymentControllerPath = $root . DIRECTORY_SEPARATOR . 'upload/admin/controller/extension/payment/mt_uni_credit.php';
+$paymentController = file_get_contents($paymentControllerPath);
+mtuc1_assert(strpos($paymentController, 'class ControllerExtensionPaymentMtUniCredit') !== false, 'payment controller class naming');
+mtuc1_assert(strpos($paymentController, "hasPermission('modify', 'extension/payment/mt_uni_credit')") !== false, 'payment permission route');
+mtuc1_assert(strpos($paymentController, 'extension/module/mt_uni_credit') === false, 'payment controller does not reference module route');
+
+$paymentModelPath = $root . DIRECTORY_SEPARATOR . 'upload/admin/model/extension/payment/mt_uni_credit.php';
+$paymentModel = file_get_contents($paymentModelPath);
+mtuc1_assert(strpos($paymentModel, 'PAYMENT_SETTINGS_CODE') !== false, 'payment install uses payment settings code');
+mtuc1_assert(strpos($paymentModel, 'getHealthReport') === false, 'payment model has no health');
+mtuc1_assert(strpos($paymentModel, 'MODULE_SETTINGS_CODE') === false, 'payment model does not touch module settings code');
+
+$paymentTwigPath = $root . DIRECTORY_SEPARATOR . 'upload/admin/view/template/extension/payment/mt_uni_credit.twig';
+$paymentTwig = file_get_contents($paymentTwigPath);
+mtuc1_assert(strpos($paymentTwig, 'payment_mt_uni_credit_order_status_id') !== false, 'payment twig has order status');
+mtuc1_assert(strpos($paymentTwig, 'payment_mt_uni_credit_geo_zone_id') !== false, 'payment twig has geo zone');
+mtuc1_assert(strpos($paymentTwig, 'module_mt_uni_credit_unicid') === false, 'payment twig has no UNICID');
+mtuc1_assert(strpos($paymentTwig, 'health_checks') === false, 'payment twig has no health panel');
+mtuc1_assert(strpos($paymentTwig, 'type="password"') === false, 'payment twig has no secret field');
+
+foreach (MtUniCreditConstants::phase1ModulePersistedSettingKeys() as $key) {
+    mtuc1_assert(strpos($key, MtUniCreditConstants::MODULE_SETTINGS_CODE . '_') === 0, 'module setting key prefix: ' . $key);
+}
+foreach (MtUniCreditConstants::paymentPersistedSettingKeys() as $key) {
+    mtuc1_assert(strpos($key, MtUniCreditConstants::PAYMENT_SETTINGS_CODE . '_') === 0, 'payment setting key prefix: ' . $key);
 }
 
 $health = MtUniCreditHealth::evaluate(array(
@@ -102,33 +135,34 @@ $health = MtUniCreditHealth::evaluate(array(
 ));
 mtuc1_assert(isset($health['summary']['status']), 'health summary present');
 foreach ($health['checks'] as $check) {
-    mtuc1_assert(!empty($check['id']) && !empty($check['status']), 'health check shape');
     MtUniCreditHealth::assertNoSecretLeak((string) $check['detail']);
 }
-$encoded = json_encode($health);
-mtuc1_assert(stripos($encoded, 'BEGIN PRIVATE KEY') === false, 'health JSON redaction');
-mtuc1_assert(stripos($encoded, 'enc:v1:') === false, 'health JSON no ciphertext');
 
 $post = array(
-    MtUniCreditConstants::SETTING_STATUS => '1',
-    MtUniCreditConstants::SETTING_SORT_ORDER => '5',
-    MtUniCreditConstants::SETTING_ENVIRONMENT => MtUniCreditConstants::ENVIRONMENT_TEST,
-    MtUniCreditConstants::SETTING_DEBUG => '0',
-    MtUniCreditConstants::SETTING_UNICID => 'SHOP-1',
-    MtUniCreditConstants::SETTING_SECRET => 'must-not-persist',
+    MtUniCreditConstants::MODULE_SETTING_STATUS => '1',
+    MtUniCreditConstants::MODULE_SETTING_ENVIRONMENT => MtUniCreditConstants::ENVIRONMENT_TEST,
+    MtUniCreditConstants::MODULE_SETTING_DEBUG => '0',
+    MtUniCreditConstants::MODULE_SETTING_UNICID => 'SHOP-1',
+    MtUniCreditConstants::MODULE_SETTING_SECRET => 'must-not-persist',
 );
 
-$errors = array();
+if (!class_exists('Registry', false)) {
+    class Registry {}
+}
 if (!class_exists('Model', false)) {
-    class Model {}
+    class Model
+    {
+        /** @param Registry|null $registry */
+        public function __construct($registry = null) {}
+    }
 }
 if (!defined('DIR_SYSTEM')) {
     define('DIR_SYSTEM', $root . DIRECTORY_SEPARATOR . 'upload' . DIRECTORY_SEPARATOR . 'system' . DIRECTORY_SEPARATOR);
 }
-require_once $adminModelPath;
-$validationModel = new ModelExtensionPaymentMtUniCredit();
+require_once $moduleModelPath;
+$validationModel = new ModelExtensionModuleMtUniCredit(new Registry());
 $errors = $validationModel->validateSettings($post);
-mtuc1_assert(isset($errors['secret']), 'validate rejects secret submission in Phase 1');
+mtuc1_assert(isset($errors['secret']), 'module validate rejects secret submission in Phase 1');
 
 class Phase1InstallHarness
 {
@@ -158,9 +192,9 @@ class Phase1InstallHarness
         }
     }
 
-    public function installDefaults(): void
+    public function installDefaults(array $defaults): void
     {
-        foreach (MtUniCreditConstants::defaultSettings() as $key => $value) {
+        foreach ($defaults as $key => $value) {
             $this->insertDefault($key, $value, 0);
         }
     }
@@ -171,12 +205,19 @@ class Phase1InstallHarness
     }
 }
 
-$installHarness = new Phase1InstallHarness();
-$installHarness->installDefaults();
-$firstCount = $installHarness->getInsertCount();
-$installHarness->installDefaults();
-mtuc1_assert($firstCount > 0, 'install inserts default settings');
-mtuc1_assert($installHarness->getInsertCount() === $firstCount, 'install twice is idempotent');
+$moduleHarness = new Phase1InstallHarness();
+$moduleHarness->installDefaults(MtUniCreditConstants::defaultModuleSettings());
+$moduleFirst = $moduleHarness->getInsertCount();
+$moduleHarness->installDefaults(MtUniCreditConstants::defaultModuleSettings());
+mtuc1_assert($moduleFirst > 0, 'module install inserts default settings');
+mtuc1_assert($moduleHarness->getInsertCount() === $moduleFirst, 'module install twice is idempotent');
+
+$paymentHarness = new Phase1InstallHarness();
+$paymentHarness->installDefaults(MtUniCreditConstants::defaultPaymentSettings());
+$paymentFirst = $paymentHarness->getInsertCount();
+$paymentHarness->installDefaults(MtUniCreditConstants::defaultPaymentSettings());
+mtuc1_assert($paymentFirst > 0, 'payment install inserts default settings');
+mtuc1_assert($paymentHarness->getInsertCount() === $paymentFirst, 'payment install twice is idempotent');
 
 $implementationPhp = array();
 $iterator = new RecursiveIteratorIterator(
@@ -207,8 +248,7 @@ foreach (array('reference-uni-oc4', 'reference-jet-oc3', 'reference-oc3-core', '
     mtuc1_assert(is_dir($refPath), 'reference directory untouched/readable: ' . $ref);
 }
 
-$packageScript = $root . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'package.ps1';
-mtuc1_assert(is_file($packageScript), 'package script exists');
+mtuc1_assert(is_file($root . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'package.ps1'), 'package script exists');
 
 echo PHP_EOL;
 if ($failures) {

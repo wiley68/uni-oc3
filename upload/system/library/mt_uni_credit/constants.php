@@ -3,13 +3,15 @@
 /**
  * Frozen UniCredit OpenCart 3 module identity and Phase 1 constants.
  *
- * @see docs/CONTRACTS.md MODULE-001, MODULE-004, DEPLOY-001, PHP-001
+ * @see docs/CONTRACTS.md MODULE-001, MODULE-005, MODULE-004, DEPLOY-001, PHP-001
  */
 final class MtUniCreditConstants
 {
     const EXTENSION_CODE = 'mt_uni_credit';
 
-    const EXTENSION_TYPE = 'payment';
+    const EXTENSION_TYPE_PAYMENT = 'payment';
+
+    const EXTENSION_TYPE_MODULE = 'module';
 
     const VERSION = '2.0.2';
 
@@ -17,27 +19,41 @@ final class MtUniCreditConstants
 
     const DISPLAY_NAME = 'УниКредит покупки на Кредит';
 
+    const MODULE_DISPLAY_NAME = 'UniCredit';
+
     const PHP_FLOOR = '7.3.0';
 
     const PHP_FLOOR_ID = 70300;
 
-    const SETTINGS_CODE = 'payment_mt_uni_credit';
+    const MODULE_SETTINGS_CODE = 'module_mt_uni_credit';
 
-    const ADMIN_ROUTE = 'extension/payment/mt_uni_credit';
+    const PAYMENT_SETTINGS_CODE = 'payment_mt_uni_credit';
 
-    const ADMIN_PERMISSION = 'extension/payment/mt_uni_credit';
+    const MODULE_ADMIN_ROUTE = 'extension/module/mt_uni_credit';
 
-    const SETTING_STATUS = 'payment_mt_uni_credit_status';
+    const PAYMENT_ADMIN_ROUTE = 'extension/payment/mt_uni_credit';
 
-    const SETTING_SORT_ORDER = 'payment_mt_uni_credit_sort_order';
+    const MODULE_ADMIN_PERMISSION = 'extension/module/mt_uni_credit';
 
-    const SETTING_ENVIRONMENT = 'payment_mt_uni_credit_environment';
+    const PAYMENT_ADMIN_PERMISSION = 'extension/payment/mt_uni_credit';
 
-    const SETTING_DEBUG = 'payment_mt_uni_credit_debug';
+    const MODULE_SETTING_STATUS = 'module_mt_uni_credit_status';
 
-    const SETTING_UNICID = 'payment_mt_uni_credit_unicid';
+    const MODULE_SETTING_UNICID = 'module_mt_uni_credit_unicid';
 
-    const SETTING_SECRET = 'payment_mt_uni_credit_secret';
+    const MODULE_SETTING_ENVIRONMENT = 'module_mt_uni_credit_environment';
+
+    const MODULE_SETTING_DEBUG = 'module_mt_uni_credit_debug';
+
+    const MODULE_SETTING_SECRET = 'module_mt_uni_credit_secret';
+
+    const PAYMENT_SETTING_ORDER_STATUS_ID = 'payment_mt_uni_credit_order_status_id';
+
+    const PAYMENT_SETTING_GEO_ZONE_ID = 'payment_mt_uni_credit_geo_zone_id';
+
+    const PAYMENT_SETTING_STATUS = 'payment_mt_uni_credit_status';
+
+    const PAYMENT_SETTING_SORT_ORDER = 'payment_mt_uni_credit_sort_order';
 
     const ENVIRONMENT_TEST = '0';
 
@@ -62,45 +78,68 @@ final class MtUniCreditConstants
     const HEALTH_FUTURE_PHASE = 'future_phase';
 
     /**
-     * @return array<string, mixed>
+     * @return array<string, string>
      */
-    public static function defaultSettings()
+    public static function defaultModuleSettings()
     {
         return array(
-            self::SETTING_STATUS => '0',
-            self::SETTING_SORT_ORDER => '1',
-            self::SETTING_ENVIRONMENT => self::ENVIRONMENT_TEST,
-            self::SETTING_DEBUG => '0',
-            self::SETTING_UNICID => '',
+            self::MODULE_SETTING_STATUS => '0',
+            self::MODULE_SETTING_ENVIRONMENT => self::ENVIRONMENT_TEST,
+            self::MODULE_SETTING_DEBUG => '0',
+            self::MODULE_SETTING_UNICID => '',
+        );
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public static function defaultPaymentSettings()
+    {
+        return array(
+            self::PAYMENT_SETTING_ORDER_STATUS_ID => '0',
+            self::PAYMENT_SETTING_GEO_ZONE_ID => '0',
+            self::PAYMENT_SETTING_STATUS => '0',
+            self::PAYMENT_SETTING_SORT_ORDER => '1',
         );
     }
 
     /**
      * @return array<int, string>
      */
-    public static function persistedSettingKeys()
+    public static function modulePersistedSettingKeys()
     {
         return array(
-            self::SETTING_STATUS,
-            self::SETTING_SORT_ORDER,
-            self::SETTING_ENVIRONMENT,
-            self::SETTING_DEBUG,
-            self::SETTING_UNICID,
-            self::SETTING_SECRET,
+            self::MODULE_SETTING_STATUS,
+            self::MODULE_SETTING_ENVIRONMENT,
+            self::MODULE_SETTING_DEBUG,
+            self::MODULE_SETTING_UNICID,
+            self::MODULE_SETTING_SECRET,
         );
     }
 
     /**
      * @return array<int, string>
      */
-    public static function phase1PersistedSettingKeys()
+    public static function phase1ModulePersistedSettingKeys()
     {
         return array(
-            self::SETTING_STATUS,
-            self::SETTING_SORT_ORDER,
-            self::SETTING_ENVIRONMENT,
-            self::SETTING_DEBUG,
-            self::SETTING_UNICID,
+            self::MODULE_SETTING_STATUS,
+            self::MODULE_SETTING_ENVIRONMENT,
+            self::MODULE_SETTING_DEBUG,
+            self::MODULE_SETTING_UNICID,
+        );
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public static function paymentPersistedSettingKeys()
+    {
+        return array(
+            self::PAYMENT_SETTING_ORDER_STATUS_ID,
+            self::PAYMENT_SETTING_GEO_ZONE_ID,
+            self::PAYMENT_SETTING_STATUS,
+            self::PAYMENT_SETTING_SORT_ORDER,
         );
     }
 }

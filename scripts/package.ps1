@@ -1,5 +1,5 @@
 # Build deterministic UniCredit OpenCart 3 distributable package.
-# Output: dist/mt_uni_credit-2.0.2.ocmod.zip
+# Output: dist/CC_OpenCartv.3.x_UNI_v.2.0.2.ocmod.zip
 
 $ErrorActionPreference = 'Stop'
 
@@ -7,7 +7,7 @@ $Root = Split-Path -Parent $PSScriptRoot
 $DistDir = Join-Path $Root 'dist'
 $StagingDir = Join-Path $DistDir 'package-staging'
 $Version = '2.0.2'
-$PackageName = "mt_uni_credit-$Version.ocmod.zip"
+$PackageName = "CC_OpenCartv.3.x_UNI_v.$Version.ocmod.zip"
 $OutputPath = Join-Path $DistDir $PackageName
 
 $RequiredPaths = @(
@@ -74,6 +74,7 @@ Write-Output "SHA256: $($hash.Hash)"
 
 $expectedEntries = @(
     'install.xml',
+    'upload/admin/controller/extension/module/mt_uni_credit.php',
     'upload/admin/controller/extension/payment/mt_uni_credit.php',
     'upload/system/library/mt_uni_credit/constants.php'
 )

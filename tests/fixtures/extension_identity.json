@@ -1,18 +1,23 @@
 {
-  "contract_ids": ["MODULE-001", "MODULE-002", "MODULE-003", "MODULE-004"],
+  "contract_ids": ["MODULE-001", "MODULE-002", "MODULE-003", "MODULE-004", "MODULE-005"],
   "code": "mt_uni_credit",
   "version": "2.0.2",
   "display_name": "УниКредит покупки на Кредит",
+  "module_display_name": "UniCredit",
   "author": "Авалон ООД",
   "link": "https://avalonbg.com",
   "extension_type_primary": "payment",
+  "extension_type_module_admin": "module",
   "oc3_payment_code": "mt_uni_credit",
+  "oc3_module_class_admin": "ControllerExtensionModuleMtUniCredit",
   "oc3_payment_class_admin": "ControllerExtensionPaymentMtUniCredit",
   "oc3_payment_class_catalog": "ControllerExtensionPaymentMtUniCredit",
   "oc3_payment_model_catalog": "ModelExtensionPaymentMtUniCredit",
-  "oc3_admin_route": "extension/payment/mt_uni_credit",
+  "oc3_module_admin_route": "extension/module/mt_uni_credit",
+  "oc3_payment_admin_route": "extension/payment/mt_uni_credit",
   "oc3_catalog_payment_route": "extension/payment/mt_uni_credit",
-  "oc3_settings_code": "payment_mt_uni_credit",
+  "oc3_module_settings_code": "module_mt_uni_credit",
+  "oc3_payment_settings_code": "payment_mt_uni_credit",
   "oc3_language_locales": ["en-gb", "bg-bg"],
   "package_root": "module.ocmod.zip",
   "package_layout": ["install.xml", "upload/admin/", "upload/catalog/", "upload/system/"],
@@ -20,8 +25,9 @@
   "cp_payload_version": "2.0.2",
   "release_version_status": "closed_d2",
   "namespace_note": "OC3 uses classic non-namespaced class names; do not copy OC4 Opencart\\... namespaces.",
-  "separate_module_code": {
-    "status": "deferred",
-    "reason": "Homepage advertising / layout placement (D12) may require a catalog module code later. Payment discovery uses payment_mt_uni_credit only."
+  "admin_split": {
+    "status": "frozen_phase_1_correction",
+    "module_owns": ["status", "unicid", "environment", "debug", "secret_placeholder", "health"],
+    "payment_owns": ["order_status_id", "geo_zone_id", "status", "sort_order"]
   }
 }

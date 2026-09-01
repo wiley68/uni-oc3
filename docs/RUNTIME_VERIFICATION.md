@@ -280,27 +280,47 @@ Phase 0 does not install the module. D1–D4 Phase 0 blockers are closed; remain
 
 ## Phase 1 remote checklist (admin skeleton)
 
-Build locally with `powershell -File scripts/package.ps1`, then install `dist/mt_uni_credit-2.0.2.ocmod.zip` on the test shop. Record sanitized results only; do **not** mark PASS until each item is verified on the server.
+Build locally with `powershell -File scripts/package.ps1`, then install `dist/CC_OpenCartv.3.x_UNI_v.2.0.2.ocmod.zip` on the test shop. Record sanitized results only; do **not** mark PASS until each item is verified on the server.
+
+### Global
 
 1. [ ] Package installs through **Extensions → Installer** (or documented manual staging of `upload/` + `install.xml`) without fatal errors.
-2. [ ] **Extensions → Extensions → Payments** lists **УниКредит покупки на Кредит** / UniCredit (`mt_uni_credit`).
-3. [ ] Payment extension **Install** succeeds; **Modify** opens the admin page without PHP/Twig warnings.
-4. [ ] Settings save: status, sort order, environment, debug, UNICID persist per store scope; success message shown.
-5. [ ] Permission denial: user without `modify` on `extension/payment/mt_uni_credit` cannot save (warning shown).
-6. [ ] Health panel shows module version **2.0.2**, PHP floor **7.3.0+**, extension checks, and Phase 2/4/6/9 placeholders.
-7. [ ] No secret value, bearer token, private key, passphrase, or `enc:v1:` ciphertext appears in HTML source or health table.
-8. [ ] Enable/disable toggle works; disabled module produces **no storefront payment output** (catalog files absent by design).
-9. [ ] **Uninstall** removes `payment_mt_uni_credit` settings and extension registration only; no financing tables dropped (none installed yet).
-10. [ ] **Reinstall** after uninstall succeeds and defaults apply idempotently.
-11. [ ] **Modifications** lists OCMOD code `mt_uni_credit` v2.0.2; refresh completes cleanly (no file operations in Phase 1 XML).
-12. [ ] OpenCart / PHP error logs remain clean after install, save, disable, uninstall, reinstall.
+2. [ ] **Modifications** lists OCMOD code `mt_uni_credit` v2.0.2; refresh completes cleanly (no file operations in Phase 1 XML).
+3. [ ] No storefront output yet; no CP/SmartUCF network calls; no Phase 2 schema/tables.
+4. [ ] OpenCart / PHP error logs remain clean after install, configure, disable, uninstall, reinstall.
+
+### Module (`Extensions → Extensions → Modules`)
+
+1. [ ] **UniCredit** (`mt_uni_credit`) appears under Modules.
+2. [ ] Module **Install** succeeds.
+3. [ ] **Modify** opens the module admin page without PHP/Twig warnings (HTTP 500 resolved).
+4. [ ] Module settings save: status, environment, debug, UNICID persist per store scope.
+5. [ ] Health section renders module version **2.0.2**, PHP floor **7.3.0+**, extension checks, deployment paths, Phase 2/4/6/9 placeholders.
+6. [ ] No secret value, bearer token, private key, passphrase, or `enc:v1:` ciphertext in HTML source or health table.
+7. [ ] Permission denial: user without `modify` on `extension/module/mt_uni_credit` cannot save.
+8. [ ] Module enable/disable works.
+9. [ ] Module **Uninstall** removes only `module_mt_uni_credit` settings; payment settings remain if Payment still installed.
+10. [ ] Module **Reinstall** succeeds with idempotent defaults.
+
+### Payment (`Extensions → Extensions → Payments`)
+
+1. [ ] **УниКредит покупки на Кредит** / UniCredit Purchases on Credit (`mt_uni_credit`) appears under Payments.
+2. [ ] Payment **Install** succeeds independently of Module install order.
+3. [ ] **Modify** opens a payment-only page without PHP/Twig warnings (no health, UNICID, environment, debug, secret).
+4. [ ] Order status dropdown loads native OC order statuses.
+5. [ ] Geo zone dropdown loads; **All Zones** works.
+6. [ ] Payment status and sort order save correctly.
+7. [ ] Permission denial: user without `modify` on `extension/payment/mt_uni_credit` cannot save.
+8. [ ] Payment **Uninstall** removes only `payment_mt_uni_credit` settings; module settings remain if Module still installed.
+9. [ ] Payment **Reinstall** succeeds with idempotent defaults.
 
 Optional evidence to attach (sanitized):
 
 ```sql
-SELECT * FROM <DB_PREFIX>extension WHERE type = 'payment' AND code = 'mt_uni_credit';
-SELECT store_id, `key`, LEFT(`value`, 20) AS value_prefix FROM <DB_PREFIX>setting WHERE `code` = 'payment_mt_uni_credit' ORDER BY store_id, `key`;
+SELECT * FROM <DB_PREFIX>extension WHERE code = 'mt_uni_credit' AND type IN ('module','payment');
+SELECT store_id, `code`, `key`, LEFT(`value`, 20) AS value_prefix FROM <DB_PREFIX>setting
+  WHERE `code` IN ('module_mt_uni_credit','payment_mt_uni_credit') ORDER BY store_id, `code`, `key`;
 SELECT modification_id, name, code, version, status FROM <DB_PREFIX>modification WHERE code = 'mt_uni_credit';
 ```
 
-Never paste full `payment_mt_uni_credit_secret` values — Phase 1 must not persist plaintext secrets anyway.
+Never paste full `module_mt_uni_credit_secret` values — Phase 1 must not persist plaintext secrets anyway.

@@ -108,6 +108,8 @@ foreach (array('standard_preferred', 'promo_0_percent', 'cart_intersection', 'cu
 $identity = mtuc_phase0_load_fixture('extension_identity.json');
 mtuc_assert($identity['code'] === 'mt_uni_credit', 'module code mt_uni_credit');
 mtuc_assert($identity['extension_type_primary'] === 'payment', 'primary type payment');
+mtuc_assert(isset($identity['oc3_module_settings_code']), 'fixture module settings code');
+mtuc_assert(isset($identity['oc3_payment_settings_code']), 'fixture payment settings code');
 mtuc_assert($identity['version'] === '2.0.2', 'module version 2.0.2 frozen');
 mtuc_assert($identity['release_version_status'] === 'closed_d2', 'D2 version closed');
 
@@ -145,6 +147,7 @@ mtuc_assert(is_file($runtimePath), 'docs/RUNTIME_VERIFICATION.md exists');
 $contracts = file_get_contents($contractsPath);
 $requiredIds = array(
     'MODULE-001',
+    'MODULE-005',
     'CALC-001',
     'CP-AUTH-001',
     'CACHE-001',

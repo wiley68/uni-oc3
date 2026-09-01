@@ -53,13 +53,35 @@ Fixture: `tests/fixtures/compatibility_matrix.json`.
 ### MODULE-001 — Extension code and type
 
 - **Code:** `mt_uni_credit` (frozen; matches completed UniCredit modules).
-- **Primary OC3 extension type:** `payment`.
+- **Primary OC3 extension types:** `module` (module-wide admin) and `payment` (checkout payment admin/discovery).
 - **Catalog payment code:** `mt_uni_credit` (native OC3 `{code}`, not OC4 `{code}.{option}`).
-- **Settings group:** `payment_mt_uni_credit` (standard OC3 `editSetting('payment_mt_uni_credit', …)`).
+- **Settings groups:** `module_mt_uni_credit` (module-wide) and `payment_mt_uni_credit` (payment-method only).
 - **Author:** Авалон ООД.
 - **Display name (CP/install metadata):** УниКредит покупки на Кредит.
 
-A separate catalog **module** code is **not** required for payment discovery. Homepage advertising may later need a layout module (decision D12); that must not replace the payment code.
+UniCredit OC3 uses **two separate admin extension surfaces**, mirroring the established UniCredit family (`reference-uni-oc4`):
+
+- **Module** (`extension/module/mt_uni_credit`): module-wide configuration, health, credentials placeholders, operational settings.
+- **Payment** (`extension/payment/mt_uni_credit`): native OpenCart checkout/payment settings only.
+
+Homepage advertising may later use the catalog module/layout surface (decision D12); it does not replace the payment code or the admin Module extension.
+
+### MODULE-005 — Dual admin extension surfaces (Phase 1 correction)
+
+> UniCredit OC3 uses two separate admin extension surfaces. The **Module** extension owns module-wide configuration and operations. The **Payment** extension owns only native OpenCart checkout/payment settings.
+
+| Surface | Admin route                       | Permission             | Settings prefix           | Phase 1 owns                                                             |
+| ------- | --------------------------------- | ---------------------- | ------------------------- | ------------------------------------------------------------------------ |
+| Module  | `extension/module/mt_uni_credit`  | `modify` on same route | `module_mt_uni_credit_*`  | status, UNICID, environment, debug, secret placeholder, health/readiness |
+| Payment | `extension/payment/mt_uni_credit` | `modify` on same route | `payment_mt_uni_credit_*` | order status, geo zone, payment status, sort order                       |
+
+Install/uninstall ownership:
+
+- **Module** install/uninstall: `module_mt_uni_credit` settings only.
+- **Payment** install/uninstall: `payment_mt_uni_credit` settings only.
+- Neither uninstall removes financing/order evidence tables (none in Phase 1; preservation policy unchanged).
+
+Do not store module-wide settings under `payment_mt_uni_credit_*`. Do not store payment-method settings under `module_mt_uni_credit_*`.
 
 ### MODULE-002 — Classic OC3 class / route identity
 
@@ -67,13 +89,17 @@ Characterized from `reference-oc3-core` 3.0.3.9 + JET payment layout:
 
 | Surface                    | Value                                                                                              |
 | -------------------------- | -------------------------------------------------------------------------------------------------- |
-| Admin controller           | `admin/controller/extension/payment/mt_uni_credit.php` → `ControllerExtensionPaymentMtUniCredit`   |
+| Admin module controller    | `admin/controller/extension/module/mt_uni_credit.php` → `ControllerExtensionModuleMtUniCredit`     |
+| Admin payment controller   | `admin/controller/extension/payment/mt_uni_credit.php` → `ControllerExtensionPaymentMtUniCredit`   |
 | Catalog payment controller | `catalog/controller/extension/payment/mt_uni_credit.php` → `ControllerExtensionPaymentMtUniCredit` |
 | Catalog payment model      | `catalog/model/extension/payment/mt_uni_credit.php` → `ModelExtensionPaymentMtUniCredit`           |
-| Admin route                | `extension/payment/mt_uni_credit`                                                                  |
+| Admin module route         | `extension/module/mt_uni_credit`                                                                   |
+| Admin payment route        | `extension/payment/mt_uni_credit`                                                                  |
 | Catalog payment route      | `extension/payment/mt_uni_credit`                                                                  |
-| Language                   | `{admin\|catalog}/language/{en-gb\|bg-bg}/extension/payment/mt_uni_credit.php`                     |
-| Admin Twig                 | `admin/view/template/extension/payment/mt_uni_credit.twig`                                         |
+| Module language            | `{admin}/language/{en-gb\|bg-bg}/extension/module/mt_uni_credit.php`                               |
+| Payment language           | `{admin\|catalog}/language/{en-gb\|bg-bg}/extension/payment/mt_uni_credit.php`                     |
+| Admin module Twig          | `admin/view/template/extension/module/mt_uni_credit.twig`                                          |
+| Admin payment Twig         | `admin/view/template/extension/payment/mt_uni_credit.twig`                                         |
 | Catalog Twig               | `catalog/view/theme/default/template/extension/payment/mt_uni_credit.twig`                         |
 
 Do **not** copy OC4 namespaces (`Opencart\Admin\Controller\Extension\MtUniCredit\`). OC3 discovery is classic non-namespaced `Controller` / `Model` + `Registry` / `Loader`.
