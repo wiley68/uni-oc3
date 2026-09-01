@@ -1,0 +1,33 @@
+{
+  "api_base_path": "/api/v1",
+  "login": {
+    "method": "POST",
+    "path": "/auth/login",
+    "payload_fields": ["unicid", "name", "secret"],
+    "response_fields": ["success", "access_token", "token_type", "expires_in", "shop"]
+  },
+  "refresh": {
+    "method": "POST",
+    "path": "/auth/refresh",
+    "auth": "Bearer",
+    "response_fields": ["success", "access_token", "token_type", "expires_in"]
+  },
+  "logout": {
+    "method": "POST",
+    "path": "/auth/logout",
+    "auth": "Bearer",
+    "response_fields": ["success"]
+  },
+  "shop": {
+    "method": "GET",
+    "path": "/shop",
+    "auth": "Bearer",
+    "response_fields": ["success", "data", "coeff_list"]
+  },
+  "token": {
+    "length": 64,
+    "type": "Bearer",
+    "expires_in_seconds": 86400
+  },
+  "cache_ttl_seconds": 86400
+}

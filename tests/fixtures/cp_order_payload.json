@@ -1,0 +1,89 @@
+{
+  "source": {
+    "cp_request": "app/Http/Requests/StoreOrderRequest.php",
+    "cp_idempotency": "app/Support/IdempotentOrderCreator.php",
+    "cp_routes": "routes/api.php",
+    "ps9_builder": "src/Order/ControlPanelOrderPayloadBuilder.php",
+    "ps9_client": "src/Api/ControlPanelClient.php"
+  },
+  "endpoint": "POST /api/v1/orders",
+  "auth": "Authorization: Bearer <access_token>",
+  "throttle": "60 requests / shop / minute",
+  "limits": {
+    "order_id": {"required": true, "type": "string", "max": 13},
+    "name": {"required": true, "type": "string", "max": 65},
+    "phone": {"required": true, "type": "string", "max": 45, "regex": "/^[\\d\\s\\-\\+\\(\\)]+$/"},
+    "email": {"required": true, "type": "string", "format": "email", "max": 128},
+    "address": {"required": true, "type": "string", "max": 256},
+    "address2": {"required": false, "type": "string", "max": 256, "ps9_empty_fallback": "-"},
+    "price": {"required": true, "type": "numeric", "min": 0, "rounding": 2},
+    "vnoska": {"required": true, "type": "numeric", "min": 0, "rounding": 2, "meaning": "monthly installment"},
+    "gpr": {"required": true, "type": "numeric", "min": 0, "rounding": 2},
+    "vnoski": {"required": false, "type": "integer", "min": 1, "max": 255, "default": 12, "meaning": "months"},
+    "parva": {"required": false, "type": "numeric", "min": 0, "default": 0, "rounding": 2, "meaning": "first installment"},
+    "products_id": {"required": false, "type": "string", "cp_max": null, "ps9": "implode('_', ids)"},
+    "products_name": {"required": false, "type": "string", "cp_max": null, "ps9_max": 255, "ps9": "underscore in names replaced with hyphen, then implode('_', names)"},
+    "products_q": {"required": false, "type": "string", "cp_max": null, "ps9": "implode('_', qty) qty>=1"},
+    "type_client": {"required": false, "type": "integer", "min": 0, "max": 255, "default": 0, "ps9": "0 if shop _is_mobile else 1"},
+    "currency": {"required": false, "type": "string", "max": 3, "in": ["BGN", "EUR"], "api_default": "BGN", "db_default": "EUR"},
+    "version": {"required": false, "type": "string", "max": 11, "regex": "^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$", "current_module": "2.0.2"},
+    "status": {"required": false, "type": "string", "max": 255, "not_enum": true, "default": "Създаден в КП Банка"},
+    "status_id": {"required": false, "type": "string", "max": 255, "default": "cp_sent"}
+  },
+  "ps9_create_field_order": [
+    "order_id", "name", "phone", "email", "address", "address2",
+    "price", "vnoska", "gpr", "vnoski", "parva",
+    "products_id", "products_name", "products_q",
+    "type_client", "currency", "version"
+  ],
+  "process2_extra_fields": {
+    "when": "Phase 11 Process 2 bank handoff only — NOT on Phase 10B POST /orders",
+    "phase_10b_create": "omit status and status_id (CP defaults cp_sent)",
+    "phase_11_status": "Изпратен Банка - Процес 2",
+    "phase_11_status_id": "bank_sent_process2"
+  },
+  "idempotency": {
+    "key": ["shop_id", "order_id"],
+    "same_key_same_semantic_hash": {"http": 200, "message": "Поръчката вече е създадена"},
+    "same_key_different_semantic_hash": {"http": 409},
+    "created": {"http": 201},
+    "semantic_fields": [
+      "name", "phone", "email", "address", "address2",
+      "price", "vnoska", "gpr", "vnoski", "parva",
+      "status", "status_id", "products_id", "products_name", "products_q",
+      "type_client", "currency", "version"
+    ],
+    "float_fields": ["price", "vnoska", "gpr", "parva"],
+    "integer_fields": ["vnoski", "type_client"]
+  },
+  "valid_sample": {
+    "order_id": "TEST-ORDER-01",
+    "name": "Example Customer",
+    "phone": "+359 88 000 0000",
+    "email": "example.customer@example.test",
+    "address": "ul. Example 1, 1000 Sofia, Bulgaria",
+    "address2": "ul. Delivery 2, 1000 Sofia, Bulgaria",
+    "price": 1000.00,
+    "vnoska": 95.00,
+    "gpr": 27.96,
+    "vnoski": 12,
+    "parva": 0.00,
+    "products_id": "42",
+    "products_name": "Example-Product",
+    "products_q": "1",
+    "type_client": 1,
+    "currency": "BGN",
+    "version": "2.0.2"
+  },
+  "invalid_samples": [
+    {"reason": "order_id longer than 13", "override": {"order_id": "TEST-ORDER-0014"}},
+    {"reason": "currency USD is not accepted by in:BGN,EUR", "override": {"currency": "USD"}},
+    {"reason": "version not x.x.x", "override": {"version": "2.0"}},
+    {"reason": "phone contains letters", "override": {"phone": "abc"}},
+    {"reason": "name exceeds 65", "override": {"name": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}},
+    {"reason": "vnoski below 1", "override": {"vnoski": 0}},
+    {"reason": "parva negative", "override": {"parva": -1}},
+    {"reason": "missing required price", "remove": ["price"]}
+  ],
+  "currency_message_discrepancy": "StoreOrderRequest currency.in message mentions USD, but the rule is in:BGN,EUR only."
+}

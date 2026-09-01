@@ -1,0 +1,17 @@
+{
+  "contract_ids": ["JOURNAL-001", "OCMOD-001"],
+  "source": "reference-jet-oc3/install.xml product injection",
+  "proven_pattern": [
+    "Keep distributable CSS/JS in catalog/view/theme/default/template/extension/<module>/ so OC3 theme fallback uses one physical copy.",
+    "Build public URLs from that fixed default-theme path under DIR_APPLICATION.",
+    "Append filemtime for cache busting.",
+    "On the product injection, render fragment-local <link> and <script> beside the widget rather than relying solely on Document::addStyle/addScript, because Journal can rebuild/cache the header before an OCMOD-injected product widget is evaluated."
+  ],
+  "jet_weaknesses_not_copied": [
+    "Unguarded filemtime() that warns if the file is missing",
+    "Business logic inside the OCMOD XML",
+    "Bundled PHPMailer",
+    "error=abort on optional theme anchors"
+  ],
+  "oc3_requirement": "Guard filemtime so missing files do not emit warnings; keep injected OCMOD code minimal and delegate to module-owned logic."
+}

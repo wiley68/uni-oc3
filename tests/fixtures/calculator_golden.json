@@ -1,0 +1,270 @@
+{
+  "source": {
+    "oracle_date": "2026-08-17",
+    "shop_fixture": "tests/Calculator/fixtures.php",
+    "golden_test": "tests/Calculator/GoldenParityVectorsTest.php",
+    "domain_test": "tests/Calculator/CalculatorDomainTest.php",
+    "cart_test": "tests/Cart/CartSchemeResolverTest.php",
+    "presentation_test": "tests/Calculator/V202PresentationParityTest.php",
+    "calculator": "src/Calculator/Calculator.php",
+    "offer_factory": "src/Calculator/OfferFactory.php"
+  },
+  "formulas": {
+    "monthly_installment": "round(financed * coeff, 2)",
+    "total_payable": "round(monthly * months, 2)",
+    "glp": "round(abs(interestPercent), 2)",
+    "gpr_calculateScheme": "raw <= 0.1 ? 0.0 : round(raw, 2)",
+    "gpr_offerFactory": "round(raw, 2)  /* no 0.1 floor */",
+    "locked_first_installment": "round(price / months, 2) when filter.uni_parva === 1"
+  },
+  "shop": {
+    "uni_status": 1,
+    "uni_minstojnost": 100,
+    "uni_maxstojnost": 10000,
+    "uni_first_vnoska": 1,
+    "uni_shema_current": 12,
+    "uni_typekop": 0,
+    "uni_eur": 0,
+    "uni_meseci_6": 1,
+    "uni_meseci_12": 1,
+    "uni_meseci_24": 1,
+    "kop": {
+      "by_default": {
+        "uni_kop_default": "STD",
+        "uni_kop_default_desc": "",
+        "uni_kop_promo": "PROMO",
+        "uni_kop_promo_desc": "0% лихва за компютри",
+        "uni_promo_price": 500,
+        "uni_promo_meseci_znak": "eq",
+        "uni_promo_meseci": "12_24"
+      },
+      "by_schema": {"filters": []}
+    },
+    "coeff_list": [
+      {"onlineProductCode": "STD", "installmentCount": 6, "coeff": 0.18, "interestPercent": 20},
+      {"onlineProductCode": "STD", "installmentCount": 12, "coeff": 0.095, "interestPercent": 18},
+      {"onlineProductCode": "STD", "installmentCount": 24, "coeff": 0.055, "interestPercent": 17},
+      {"onlineProductCode": "PROMO", "installmentCount": 12, "coeff": 0.083333, "interestPercent": 0},
+      {"onlineProductCode": "PROMO", "installmentCount": 24, "coeff": 0.041667, "interestPercent": 0},
+      {"onlineProductCode": "CAT", "installmentCount": 6, "coeff": 0.17, "interestPercent": 12},
+      {"onlineProductCode": "CAT", "installmentCount": 12, "coeff": 0.09, "interestPercent": 10},
+      {"onlineProductCode": "PRODUCT", "installmentCount": 24, "coeff": 0.05, "interestPercent": 9},
+      {"onlineProductCode": "ZERO", "installmentCount": 12, "coeff": 0.083333, "interestPercent": 0}
+    ]
+  },
+  "schema_filters": [
+    {
+      "id": 10, "category_id": 7, "product_id": null, "uni_meseci": "6_12",
+      "uni_price_from": 500, "uni_price_to": 1000, "uni_promo": 0, "uni_parva": 0,
+      "uni_date_from": "2026-08-01", "uni_date_to": "2026-08-31", "uni_kop": "CAT"
+    },
+    {
+      "id": 11, "category_id": null, "product_id": 42, "uni_meseci": "24",
+      "uni_price_from": null, "uni_price_to": null, "uni_promo": 0, "uni_parva": 1,
+      "uni_date_from": null, "uni_date_to": null, "uni_kop": "PRODUCT"
+    },
+    {
+      "id": 12, "category_id": 7, "product_id": null, "uni_meseci": "12",
+      "uni_price_from": 500, "uni_price_to": 1000, "uni_promo": 1, "uni_parva": 0,
+      "uni_date_from": "2026-08-17", "uni_date_to": "2026-08-17", "uni_kop": "ZERO",
+      "uni_kop_desc": "0% schema promotion"
+    }
+  ],
+  "product": {"productId": 42, "categoryIds": [7, 9], "price": 1000.0},
+  "cases": [
+    {
+      "id": "standard_preferred",
+      "category": "standard_scheme",
+      "mode": "uni_typekop=0",
+      "input": {"price": 1000.0, "type": "standard"},
+      "expect": {
+        "present": true,
+        "kop_code": "STD",
+        "months": 12,
+        "monthly_installment": 95.00,
+        "coeff": 0.095,
+        "glp": 18.00,
+        "gpr_offerFactory": 27.96,
+        "financed_amount": 1000.00
+      }
+    },
+    {
+      "id": "promo_0_percent",
+      "category": "promotional_scheme",
+      "mode": "uni_typekop=0",
+      "input": {"price": 1000.0, "type": "promo"},
+      "expect": {
+        "present": true,
+        "kop_code": "PROMO",
+        "months": 12,
+        "monthly_installment": 83.33,
+        "coeff": 0.083333,
+        "glp": 0.0,
+        "gpr_offerFactory": 0.01,
+        "gpr_calculateScheme": 0.0,
+        "note": "OfferFactory does not apply the 0.1 GPR floor used by Calculator::calculateScheme."
+      }
+    },
+    {
+      "id": "nonzero_interest_promo_rejected",
+      "category": "promotional_scheme",
+      "input": {"promo_interestPercent": 1},
+      "expect": {"promo_present": false}
+    },
+    {
+      "id": "first_installment_locked_uni_parva",
+      "category": "first_installment",
+      "mode": "uni_typekop=1 filter 11",
+      "input": {"price": 1000.0, "months": 24, "type": "standard", "requested_first": 0, "filter_id": 11, "coeff": 0.05},
+      "expect": {
+        "first_installment": 41.67,
+        "locked": true,
+        "visible": true,
+        "financed_amount": 958.33,
+        "monthly_installment": 47.92,
+        "total_payable": 1150.08,
+        "gpr_calculateScheme": 19.76
+      }
+    },
+    {
+      "id": "first_installment_user_requested",
+      "category": "first_installment",
+      "mode": "uni_typekop=0 uni_first_vnoska=1",
+      "input": {"price": 1000.0, "months": 12, "type": "standard", "requested_first": 200.0, "coeff": 0.095},
+      "expect": {
+        "first_installment": 200.0,
+        "locked": false,
+        "visible": true,
+        "financed_amount": 800.0,
+        "monthly_installment": 76.0,
+        "total_payable": 912.0
+      }
+    },
+    {
+      "id": "price_boundary_shop",
+      "category": "price_boundary",
+      "expect": {
+        "inactive_shop": false,
+        "price_100_inclusive": true,
+        "price_10000_inclusive": true,
+        "price_10000_01_rejected": true
+      }
+    },
+    {
+      "id": "price_boundary_promo_min",
+      "category": "price_boundary",
+      "expect": {
+        "uni_promo_price": 500,
+        "price_499_99_promo_null": true,
+        "price_500_promo_present": true
+      }
+    },
+    {
+      "id": "month_selection",
+      "category": "month_selection",
+      "expect": {
+        "enabled_shop_months": [6, 12, 24],
+        "range_min": 3,
+        "range_max": 36,
+        "preferred_field": "uni_shema_current",
+        "disabled_month_12_calculate_throws": true,
+        "promo_greateq_12": [12, 24],
+        "preferred_18_missing_falls_back_to_highest_promo_month": 24,
+        "invalid_preferred_promo_coeff_does_not_fallback": true
+      }
+    },
+    {
+      "id": "preferred_offer_tie_break",
+      "category": "preferred_offer",
+      "input": {
+        "preferred_months": 12,
+        "candidates": [
+          {"type": "standard", "kop": "A", "months": 12, "monthly": 95.0},
+          {"type": "standard", "kop": "B", "months": 12, "monthly": 90.0},
+          {"type": "standard", "kop": "C", "months": 24, "monthly": 50.0}
+        ]
+      },
+      "expect": {"kop": "B", "months": 12}
+    },
+    {
+      "id": "preferred_offer_fallback_highest_months",
+      "category": "preferred_offer",
+      "input": {
+        "preferred_months": 18,
+        "candidates": [
+          {"type": "standard", "kop": "A", "months": 12, "monthly": 95.0},
+          {"type": "standard", "kop": "B", "months": 12, "monthly": 90.0},
+          {"type": "standard", "kop": "C", "months": 24, "monthly": 50.0}
+        ]
+      },
+      "expect": {"kop": "C", "months": 24}
+    },
+    {
+      "id": "scheme_ordering",
+      "category": "scheme_ordering",
+      "compare": ["months ASC", "type standard before promo", "rank standard=0 nonzero_promo=1 zero_promo=2", "filterId ASC", "kopCode strcmp", "type strcmp"],
+      "input": [
+        {"type": "promo", "kop": "PROMO", "months": 12, "filterId": 3, "interestPercent": 0.0, "uni_promo": 1},
+        {"type": "standard", "kop": "NZP", "months": 12, "filterId": 2, "interestPercent": 10.0, "uni_promo": 0},
+        {"type": "standard", "kop": "STD", "months": 6, "filterId": 0, "interestPercent": 18.0, "uni_promo": 0},
+        {"type": "standard", "kop": "STD", "months": 12, "filterId": 1, "interestPercent": 18.0, "uni_promo": 0},
+        {"type": "standard", "kop": "STD", "months": 4, "filterId": 0, "interestPercent": 20.0, "uni_promo": 0}
+      ],
+      "expect_labels": [
+        "4:standard",
+        "6:standard",
+        "12:standard",
+        "12:nonzero_promo",
+        "12:zero_promo"
+      ]
+    },
+    {
+      "id": "filter_eligibility",
+      "category": "filter_eligibility",
+      "today": "2026-08-17",
+      "expect": {
+        "product_42_cat_7_9_standard_scheme_count": 3,
+        "first_filter_id": 10,
+        "last_filter_id": 11,
+        "promo_scheme_count": 1,
+        "promo_filter_id": 12,
+        "category_and_product_together_rejected": true,
+        "outside_category_empty": true,
+        "price_499_99_empty": true,
+        "price_500_standard_count": 2,
+        "date_2026_09_01_empty_for_category_only": true
+      }
+    },
+    {
+      "id": "cart_intersection",
+      "category": "cart_intersection",
+      "identity_key": "type|kopCode|months",
+      "price_basis": "cart.total for every line (not line total)",
+      "expect": {
+        "single_product_standard_count": 3,
+        "same_standard_common_count": 3,
+        "same_standard_preferred_months": 12,
+        "same_promo_common_count": 2,
+        "different_kops_empty": true,
+        "different_months_empty": true,
+        "filter_id_is_metadata_lowest_wins": 31,
+        "lcm_6_12": 12,
+        "lcm_6_8": 24,
+        "cart_total_99_empty": true,
+        "cart_total_10000_ok": true,
+        "cart_total_10000_01_empty": true,
+        "common_zero_promo_count": 1
+      }
+    },
+    {
+      "id": "currency_gate",
+      "category": "currency",
+      "expect": {
+        "uni_eur_0_or_1_expected_iso": "BGN",
+        "uni_eur_2_or_3_expected_iso": "EUR",
+        "supported_iso": ["BGN", "EUR"],
+        "display_rate": 1.95583
+      }
+    }
+  ]
+}

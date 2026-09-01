@@ -1,0 +1,35 @@
+{
+  "contract_ids": ["OC3-CHECKOUT-001", "OC3-CHECKOUT-002", "OC3-CHECKOUT-003"],
+  "characterized_version": "3.0.3.9",
+  "source_root": "reference-oc3-core",
+  "files": {
+    "confirm": "catalog/controller/checkout/confirm.php",
+    "success": "catalog/controller/checkout/success.php",
+    "order_model": "catalog/model/checkout/order.php",
+    "payment_method": "catalog/controller/checkout/payment_method.php",
+    "cod_payment_controller": "catalog/controller/extension/payment/cod.php",
+    "cod_payment_model": "catalog/model/extension/payment/cod.php",
+    "sql_schema": "install/opencart.sql"
+  },
+  "findings": {
+    "addOrder_called_from_confirm_index_when_validation_passes": true,
+    "confirm_always_creates_new_order": true,
+    "confirm_does_not_reuse_existing_session_order_id": true,
+    "confirm_does_not_call_editOrder": true,
+    "session_order_id_set_immediately_after_addOrder": true,
+    "payment_controller_rendered_after_addOrder": true,
+    "payment_controller_route": "extension/payment/{code}",
+    "payment_method_identifier_format": "{code}",
+    "payment_method_stored_as": "varchar title + varchar payment_code",
+    "addOrder_omits_order_status_id_insert": true,
+    "order_status_id_db_default": 0,
+    "addOrderHistory_updates_order_status_and_inserts_order_history": true,
+    "checkout_success_clears_cart_and_session_not_db": true,
+    "native_cod_confirm_uses_session_order_id": true,
+    "native_cod_confirm_does_not_call_addOrder": true
+  },
+  "project_rule": "Checkout reuses the native OpenCart order and must never create a second order from the UniCredit payment controller.",
+  "product_cart_rule": "Product and Cart financing flows may materialize their own one local OC order in later phases.",
+  "oc4_void_hazard": "not_applicable_on_oc3_native_confirm",
+  "unproven_on": ["3.0.3.6", "3.0.3.8"]
+}

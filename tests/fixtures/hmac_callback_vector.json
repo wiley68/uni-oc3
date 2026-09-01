@@ -1,0 +1,36 @@
+{
+  "source": {
+    "uni_ps9": "src/Security/ModuleRequestSignatureProtocol.php",
+    "control_panel": "app/Support/ModuleRequestSigner.php",
+    "uni_ps9_test": "tests/Security/Aud012ModuleRequestSignatureTest.php"
+  },
+  "algorithm": "sha256",
+  "canonical_form": "timestamp + \"\\n\" + nonce + \"\\n\" + exact_raw_body",
+  "headers": {
+    "timestamp": "X-UniPayment-Timestamp",
+    "nonce": "X-UniPayment-Nonce",
+    "signature": "X-UniPayment-Signature"
+  },
+  "rules": {
+    "timestamp_must_be_digits": true,
+    "timestamp_tolerance_seconds": 300,
+    "nonce_hex_length": 64,
+    "nonce_pattern": "^[0-9a-fA-F]{64}$",
+    "nonce_retention_seconds": 900,
+    "nonce_stored_as": "sha256(nonce)",
+    "signature_encoding": "lowercase hex",
+    "compare": "hash_equals",
+    "raw_body": "exact php://input bytes; do not re-encode JSON"
+  },
+  "vector": {
+    "secret": "test_shared_secret_123",
+    "timestamp": "1787380000",
+    "nonce": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "raw_body": "{\"unicid\":\"TEST-UNICID\",\"order_id\":\"ABC123\",\"status\":\"approved\",\"status_id\":\"10\"}",
+    "expected_sha256_hmac": "2f4a55c19a2dd0f2f7f2390a6d720e95dbdff577c096d7ff291ef8f84a53e94f"
+  },
+  "notes": [
+    "CP defines TIMESTAMP_TOLERANCE_SECONDS=300 but does not verify inbound HMAC; the module verifier enforces the window.",
+    "Invalid signature must not consume the nonce (uni-ps9 ModuleRequestAuthenticator)."
+  ]
+}

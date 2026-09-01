@@ -1,0 +1,30 @@
+{
+  "contract_ids": ["CACHE-001", "CACHE-002", "CACHE-003"],
+  "scope_key": ["store_id", "unicid"],
+  "ttl_seconds": 86400,
+  "pull": "GET /api/v1/shop Bearer → validate → replace exact (store_id, unicid)",
+  "push": "signed inbound shop_cache POST validates and replaces the same record without calling CP",
+  "invalid_snapshot_does_not_overwrite_known_good": true,
+  "required_fields": [
+    "uni_status",
+    "uni_typekop",
+    "uni_proces",
+    "uni_env",
+    "uni_eur",
+    "uni_minstojnost",
+    "uni_maxstojnost",
+    "uni_meseci_3..uni_meseci_36",
+    "kop.by_default",
+    "kop.by_schema.filters",
+    "coeff_list"
+  ],
+  "coefficient_entry": ["onlineProductCode", "installmentCount", "coeff", "interestPercent"],
+  "installment_count_range": [3, 36],
+  "display_allowed": "last-known validated snapshot while TTL not expired",
+  "submission_requires_fresh": true,
+  "stale_grace_after_ttl": {
+    "status": "unresolved_d11",
+    "recommendation": "No extra grace after TTL. Display uses last-known only while expires_at is in the future. Side-effecting order submission requires a fresh validated snapshot or fails safely."
+  },
+  "bearer_token_not_in_snapshot": true
+}

@@ -1,0 +1,16 @@
+{
+  "patterns": [
+    {"id": "typed_property", "regex": "(?:public|protected|private)\\s+(?:\\??(?:string|int|float|bool|array|object|iterable|self|parent|[A-Z_\\\\][A-Za-z0-9_\\\\]*))\\s+\\$"},
+    {"id": "union_type", "regex": "function\\s+\\w+\\s*\\([^)]*\\|[^)]*\\)"},
+    {"id": "mixed_type", "regex": "(?:function\\s+\\w+\\s*\\([^)]*\\bmixed\\b|:\\s*mixed\\b)"},
+    {"id": "constructor_promotion", "regex": "function\\s+__construct\\s*\\([^)]*(?:public|protected|private)\\s+\\$"},
+    {"id": "attributes", "regex": "#\\["},
+    {"id": "enum", "regex": "^\\s*enum\\s+\\w+"},
+    {"id": "match", "regex": "\\bmatch\\s*\\("},
+    {"id": "arrow_fn", "regex": "\\bfn\\s*\\("},
+    {"id": "nullsafe", "regex": "\\?->"},
+    {"id": "str_contains", "regex": "\\bstr_contains\\s*\\("},
+    {"id": "str_starts_with", "regex": "\\bstr_starts_with\\s*\\("},
+    {"id": "str_ends_with", "regex": "\\bstr_ends_with\\s*\\("}
+  ]
+}

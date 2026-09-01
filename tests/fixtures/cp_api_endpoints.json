@@ -1,0 +1,56 @@
+{
+  "source": {
+    "cp_routes": "routes/api.php",
+    "auth_controller": "app/Http/Controllers/Api/V1/ShopAuthController.php",
+    "middleware": "app/Http/Middleware/ShopTokenMiddleware.php",
+    "limits": "config/shop_api.php",
+    "ps9_client": "src/Api/ControlPanelClient.php"
+  },
+  "base": "/api/v1",
+  "endpoints": [
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/login",
+      "auth": false,
+      "throttle": "10 / IP / minute",
+      "body": ["unicid", "name", "secret"],
+      "success": ["success", "access_token", "token_type", "expires_in", "shop"]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/refresh",
+      "auth": "Bearer",
+      "throttle": "30 / shop / minute",
+      "body": [],
+      "rotates_token": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/logout",
+      "auth": "Bearer",
+      "throttle": "30 / shop / minute",
+      "body": [],
+      "repeat_after_revoke": 401
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/shop",
+      "auth": "Bearer",
+      "throttle": "30 / shop / minute"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/orders",
+      "auth": "Bearer",
+      "throttle": "60 / shop / minute"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/orders/status",
+      "auth": "Bearer",
+      "throttle": "60 / shop / minute",
+      "required": ["order_id", "status"],
+      "optional": ["status_id"]
+    }
+  ]
+}

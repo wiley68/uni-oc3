@@ -1,0 +1,49 @@
+{
+  "contract_ids": ["OC3-ROUTE-001", "OC3-ROUTE-002", "OC3-INSTALL-001"],
+  "characterized_version": "3.0.3.9",
+  "class_discovery": {
+    "controller_file": "DIR_APPLICATION/controller/{route}.php",
+    "controller_class": "Controller + preg_replace('/[^a-zA-Z0-9]/', '', $route)",
+    "model_file": "DIR_APPLICATION/model/{route}.php",
+    "model_class": "Model + preg_replace('/[^a-zA-Z0-9]/', '', $route)",
+    "example": {
+      "route": "extension/payment/mt_uni_credit",
+      "file": "catalog/controller/extension/payment/mt_uni_credit.php",
+      "class": "ControllerExtensionPaymentMtUniCredit"
+    }
+  },
+  "action_method_split": "Action pops trailing path segments until a matching controller file exists; leftover segment becomes the method (default index).",
+  "nested_api_example": {
+    "route": "extension/mt_uni_credit/api/shopCache",
+    "file": "catalog/controller/extension/mt_uni_credit/api.php",
+    "class": "ControllerExtensionMtUniCreditApi",
+    "method": "shopCache",
+    "status": "characterized_on_3.0.3.9_Action; verify_3.0.3.6_and_3.0.3.8"
+  },
+  "payment_install": {
+    "discovery_glob": "admin/controller/extension/payment/*.php",
+    "install_route": "extension/extension/payment/install&extension={code}",
+    "install_hook": "extension/payment/{code}/install",
+    "permissions": ["access", "modify"]
+  },
+  "settings": {
+    "editSetting_code_prefix": "payment_{code}",
+    "status_key": "payment_{code}_status",
+    "store_scoped": true
+  },
+  "installer": {
+    "package": "module.ocmod.zip",
+    "requires_install_xml": true,
+    "upload_extracted_to_shop_root": true,
+    "modifications_table": "modification",
+    "refresh_required": true
+  },
+  "language_twig": {
+    "language_load": "extension/payment/mt_uni_credit",
+    "language_files": "{admin|catalog}/language/{en-gb|bg-bg}/extension/payment/mt_uni_credit.php",
+    "twig_load": "extension/payment/mt_uni_credit",
+    "twig_files_admin": "admin/view/template/extension/payment/mt_uni_credit.twig",
+    "twig_files_catalog": "catalog/view/theme/default/template/extension/payment/mt_uni_credit.twig"
+  },
+  "unproven_on": ["3.0.3.6", "3.0.3.8"]
+}

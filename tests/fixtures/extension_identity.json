@@ -1,0 +1,26 @@
+{
+  "contract_ids": ["MODULE-001", "MODULE-002", "MODULE-003", "MODULE-004"],
+  "code": "mt_uni_credit",
+  "display_name": "УниКредит покупки на Кредит",
+  "author": "Авалон ООД",
+  "link": "https://avalonbg.com",
+  "extension_type_primary": "payment",
+  "oc3_payment_code": "mt_uni_credit",
+  "oc3_payment_class_admin": "ControllerExtensionPaymentMtUniCredit",
+  "oc3_payment_class_catalog": "ControllerExtensionPaymentMtUniCredit",
+  "oc3_payment_model_catalog": "ModelExtensionPaymentMtUniCredit",
+  "oc3_admin_route": "extension/payment/mt_uni_credit",
+  "oc3_catalog_payment_route": "extension/payment/mt_uni_credit",
+  "oc3_settings_code": "payment_mt_uni_credit",
+  "oc3_language_locales": ["en-gb", "bg-bg"],
+  "package_root": "module.ocmod.zip",
+  "package_layout": ["install.xml", "upload/admin/", "upload/catalog/", "upload/system/"],
+  "cp_payload_version_format": "^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$",
+  "cp_payload_version_oc4_parity": "2.0.2",
+  "release_version_status": "pending_product_owner_d2",
+  "namespace_note": "OC3 uses classic non-namespaced class names; do not copy OC4 Opencart\\... namespaces.",
+  "separate_module_code": {
+    "status": "deferred",
+    "reason": "Homepage advertising / layout placement (D12) may require a catalog module code later. Payment discovery uses payment_mt_uni_credit only."
+  }
+}

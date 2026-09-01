@@ -1,0 +1,56 @@
+{
+  "contract_ids": ["PHP-001", "PHP-002"],
+  "decision": "D1",
+  "status": "recommendation_pending_approval",
+  "recommendation": {
+    "floor": "7.3.0",
+    "rationale": [
+      "reference-oc3-core 3.0.3.9 system/startup.php and installer require PHP 7.3.0+",
+      "First remote test runtime is PHP 7.3.33",
+      "AES-256-GCM, hash_hkdf, random_bytes, hash_equals, JSON and cURL+TLS are native on 7.3",
+      "Do not freeze 7.1 merely because crypto is theoretically available there"
+    ]
+  },
+  "candidates": [
+    {
+      "floor": "7.1.2",
+      "enables": ["hash_hkdf", "openssl AES-256-GCM", "nullable/void types", "random_bytes"],
+      "restricts": "Would claim support below the local OC 3.0.3.9 core floor. Untested against this module and against 3.0.3.6/3.0.3.8 trees.",
+      "rejected_unless_proven": true
+    },
+    {
+      "floor": "7.3.0",
+      "enables": ["native OC 3.0.3.9 install", "all required crypto primitives", "widest practical range for the approved OC3 matrix"],
+      "restricts": "Forbids PHP 7.4/8-only syntax until a higher floor is separately approved."
+    },
+    {
+      "floor": "7.4.0",
+      "enables": ["typed properties", "arrow functions"],
+      "restricts": "OC3 core has PHP 7.4 deprecation noise; not required for UniCredit contracts. Not recommended as the floor."
+    }
+  ],
+  "missing_verification": [
+    "Exact PHP version on the first remote test host (claimed 7.3.33, unconfirmed in this workspace)",
+    "OpenCart 3.0.3.6 and 3.0.3.8 startup.php PHP requirement",
+    "Remote openssl_get_cipher_methods includes aes-256-gcm",
+    "Remote hash_hkdf / random_bytes / hash_equals availability",
+    "Whether installed modifications permit PHP 8"
+  ],
+  "forbidden_until_floor_approved": [
+    "typed properties",
+    "union types",
+    "intersection types",
+    "mixed type",
+    "constructor property promotion",
+    "attributes",
+    "enums",
+    "match expressions",
+    "arrow functions (fn)",
+    "nullsafe operator (?->)",
+    "str_contains",
+    "str_starts_with",
+    "str_ends_with",
+    "Throwable-only catch assumptions that exclude Exception on older hierarchies"
+  ],
+  "required_extensions": ["curl", "openssl", "json", "hash"]
+}

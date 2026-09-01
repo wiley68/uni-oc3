@@ -1,0 +1,28 @@
+{
+  "contract_ids": ["P2-001", "P2-002", "P2-003"],
+  "selector": "uni_proces === 1",
+  "no_smartucf": true,
+  "inputs": {
+    "egn": {
+      "required": true,
+      "rule": "exactly 10 digits after stripping non-digits; first 8 are a valid YYYYMMDD calendar date; no Bulgarian EGN checksum"
+    },
+    "phone2": {
+      "required": true,
+      "charset": "[-0-9+() ]",
+      "must_contain_digit": true,
+      "no_min_max_length": true
+    }
+  },
+  "stored_locally": "encrypted process2_sensitive_enc envelope only",
+  "never_sent_to_cp": ["egn", "phone2"],
+  "encryption": "authenticated encryption (AES-256-GCM enc:v1: preferred); fail closed if key missing; no plaintext fallback",
+  "bank_status_timing": "validate first (failure leaves attempt issued); then encrypt; then PATCH/local bank_sent_process2 using shop order_id = local OC order id",
+  "mail": {
+    "customer": "leasing presentation; never EGN",
+    "admin": "leasing presentation; EGN + phone2 allowed",
+    "idempotent_marker": "process2_mail_sent",
+    "mail_failure_does_not_undo_bank_state": true
+  },
+  "forbidden_statuses_for_process2": ["bank_sent_process1", "bank_send_failed_smartucf"]
+}

@@ -1,0 +1,22 @@
+{
+  "contract_ids": ["PII-001", "RETENTION-001", "RETENTION-002"],
+  "cp_payload_pii": "frozen cp_payload on the attempt is the one necessary customer snapshot for idempotent recovery; no second permanent customer table",
+  "process2_encrypted_pii": ["egn", "phone2"],
+  "audiences": {
+    "customer_email": "no EGN, no phone2",
+    "customer_thank_you": "no EGN, no phone2; session-bound identity only; never GET order_id",
+    "admin_email": "EGN + phone2 allowed for Process 2",
+    "admin_order_detail": "EGN + phone2 allowed for Process 2",
+    "admin_order_list": "bank status label only"
+  },
+  "logging_exclusions": ["secret", "bearer token", "private key", "passphrase", "egn", "phone", "phone2", "email", "address", "raw payloads"],
+  "logging_allowed": ["attempt_id", "entry_point", "store_id", "local order_id", "cp order id", "state event", "error class", "HTTP status"],
+  "retention": {
+    "process2_ciphertext_days": 180,
+    "presentation_days": 183,
+    "diagnostics_months": 3,
+    "nonce_seconds": 900,
+    "cleanup": "bounded batches; opportunistic plus documented cron/manual"
+  },
+  "uninstall": "preserve financing/audit tables by default; remove module settings and OCMOD registration; no silent destructive purge"
+}

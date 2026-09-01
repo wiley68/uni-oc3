@@ -1,0 +1,22 @@
+{
+  "contract_ids": ["SEC-HMAC-001", "API-001"],
+  "methods": "POST only",
+  "content_type": "application/json; charset=utf-8",
+  "conceptual_oc3_routes": [
+    "index.php?route=extension/mt_uni_credit/api/shopCache",
+    "index.php?route=extension/mt_uni_credit/api/orderBankStatus",
+    "index.php?route=extension/mt_uni_credit/api/smartUcfDebugLog"
+  ],
+  "route_status": "conceptual_pending_d4_cp_owner_registration",
+  "http_errors": {
+    "400": "bad JSON/validation/unsupported status",
+    "401": "auth/replay/time",
+    "403": "module disabled",
+    "404": "owned order/log missing",
+    "405": "method",
+    "422": "invalid shop snapshot",
+    "500": "redacted unexpected failure"
+  },
+  "do_not_use_seo_aliases": true,
+  "hmac_fixture": "hmac_callback_vector.json"
+}

@@ -1,0 +1,41 @@
+{
+  "contract_ids": ["P1-001", "P1-002", "P1-003", "P1-004"],
+  "selector": "uni_proces !== 1",
+  "certificate_flag": "uni_sertificat yes-flag",
+  "prerequisites": [
+    "local OpenCart order exists",
+    "CP POST /api/v1/orders succeeded (cp_created)",
+    "validated store-scoped shop snapshot",
+    "Process 1 selected (not uni_proces === 1)"
+  ],
+  "endpoint_policy": {
+    "hosts": ["online.ucfin.bg", "onlinetest.ucfin.bg"],
+    "service_path": "/suos/api/otp",
+    "application_path": "/sucf-online/Request/Start",
+    "session_start_suffix": "sucfOnlineSessionStart",
+    "scheme": "https",
+    "port": 443,
+    "tls_peer_and_hostname_verify": true,
+    "timeout_seconds": 10,
+    "redirects": "disabled_or_revalidated",
+    "environment_selection": "uni_env === 0 → test host; otherwise production. Admin must not supply arbitrary URLs."
+  },
+  "lifecycle": {
+    "states": ["not_started", "submitting", "created", "failed", "outcome_unknown"],
+    "success": "persist trusted redirect; PATCH/local bank_sent_process1; redirect customer",
+    "definitive_failure": "only remote SmartUCF rejection → bank_send_failed_smartucf locally and CP",
+    "pre_send_failure": "certificate/sync/validation failure is retryable; do not write bank_send_failed_smartucf",
+    "ambiguous_post_send": "timeout, stale submitting, duplicate evidence, invalid post-send response → outcome_unknown; no auto resend; tell customer not to resubmit"
+  },
+  "idempotency": "created attempt replays stored trusted redirect; never a second SmartUCF session",
+  "certificate_sync": {
+    "when": "uni_sertificat enabled",
+    "metadata": "GET /api/v1/ssl/certificate",
+    "bundle": "GET /api/v1/ssl/certificate/bundle",
+    "sha256": "exact raw PEM bytes",
+    "passphrase": "local only",
+    "transient_cp_metadata_failure": "fail open only with a complete valid local pair",
+    "explicit_unavailable": "fail closed"
+  },
+  "no_live_request_in_phase_0": true
+}

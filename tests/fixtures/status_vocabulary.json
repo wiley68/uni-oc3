@@ -1,0 +1,75 @@
+{
+  "source": {
+    "module_bank_status": "src/Order/BankStatus.php",
+    "process_flag": "src/Configuration/ShopConfigurationFlags.php",
+    "cp_enum": "app/Enums/OrderStatus.php",
+    "cp_create_defaults": "app/Http/Requests/StoreOrderRequest.php"
+  },
+  "process_flag": {
+    "field": "uni_proces",
+    "process_2_when": 1,
+    "process_1_otherwise": true,
+    "note": "OC4 ShopConfigurationFlags::isSecondaryProcess() (parity with PS isProcess2) returns true iff (int) uni_proces === 1. The numeric value is inverted relative to the process name."
+  },
+  "module_outbound_bank_status": [
+    {
+      "status_id": "bank_sent_process1",
+      "status_label": "Изпратен Банка - Процес 1",
+      "when": "Phase 11: CP order already exists and SmartUCF Process 1 succeeded"
+    },
+    {
+      "status_id": "bank_sent_process2",
+      "status_label": "Изпратен Банка - Процес 2",
+      "when": "Phase 11: Process 2 bank handoff (no SmartUCF). Never written on Phase 10B CP create."
+    },
+    {
+      "status_id": "bank_send_failed",
+      "status_label": "Неуспешно изпратен Банка",
+      "when": "Phase 11 / legacy Process 2 bank-send failure path"
+    },
+    {
+      "status_id": "bank_send_failed_cp",
+      "status_label": "Неуспешно изпратен Банка - КП",
+      "when": "CP create failed (attempt error taxonomy; create payload still omits bank-sent labels)"
+    },
+    {
+      "status_id": "bank_send_failed_smartucf",
+      "status_label": "Неуспешно изпратен Банка - SmartUCF",
+      "when": "Phase 11: CP created and SmartUCF Process 1 failed"
+    }
+  ],
+  "cp_order_status_enum": [
+    {"status": "Създаден в КП Банка", "status_id": "cp_sent", "default_on_create": true},
+    {"status": "Създаден в SmartUCF", "status_id": "smartucf_sent"},
+    {"status": "Онлайн подписване на договор", "status_id": null},
+    {"status": "В процес на онлайн идентификация", "status_id": null},
+    {"status": "Отказана", "status_id": null},
+    {"status": "Сключен договор", "status_id": null},
+    {"status": "Въвежда се - фаза 1", "status_id": null},
+    {"status": "Регистрирана", "status_id": null},
+    {"status": "Отказана от клиент при контакт", "status_id": null},
+    {"status": "Активиран договор", "status_id": null},
+    {"status": "Отказана от клиент", "status_id": null}
+  ],
+  "cp_api_does_not_enum_validate_status": true,
+  "inbound_callback_orderbankstatus": {
+    "required_fields": ["unicid", "order_id", "status_id", "status"],
+    "order_id_max_in_ps9_handler": 64,
+    "ps_order_state_changed": false,
+    "hmac_required": true
+  },
+  "process_semantics": {
+    "process_1": {
+      "flag": "uni_proces !== 1",
+      "phase_10b_cp_create_status_fields": false,
+      "phase_11_after_cp": "SmartUCF session + redirect",
+      "customer_egn": false
+    },
+    "process_2": {
+      "flag": "uni_proces === 1",
+      "phase_10b_cp_create_status_fields": false,
+      "phase_11_after_cp": "native Process 2 bank handoff; no SmartUCF",
+      "customer_egn": true
+    }
+  }
+}

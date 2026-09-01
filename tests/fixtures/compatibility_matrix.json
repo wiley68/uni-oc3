@@ -1,0 +1,35 @@
+{
+  "target_family": "OpenCart 3.x",
+  "primary_release_targets": ["3.0.3.6", "3.0.3.8", "3.0.3.9"],
+  "primary_local_platform_reference": "3.0.3.9",
+  "current_first_remote_test_runtime": "PHP 7.3.33",
+  "rows": [
+    {
+      "version": "3.0.3.6",
+      "role": "target",
+      "characterized": false,
+      "locally_tested": false,
+      "remotely_tested": false,
+      "release_supported": false,
+      "note": "Primary release target. No local tree in workspace. Anchors/PHP floor require verification."
+    },
+    {
+      "version": "3.0.3.8",
+      "role": "target",
+      "characterized": false,
+      "locally_tested": false,
+      "remotely_tested": false,
+      "release_supported": false,
+      "note": "Primary release target. No local tree in workspace."
+    },
+    {
+      "version": "3.0.3.9",
+      "role": "primary_local_platform_reference",
+      "characterized": true,
+      "locally_tested": false,
+      "remotely_tested": false,
+      "release_supported": false,
+      "note": "Characterized from reference-oc3-core VERSION constant and checkout/payment/OCMOD sources. Not a live test run."
+    }
+  ]
+}

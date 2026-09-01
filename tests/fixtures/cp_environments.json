@@ -1,0 +1,19 @@
+{
+  "contract_ids": ["CP-ENV-001", "D4"],
+  "status": "recommendation_pending_approval",
+  "api_prefix": "/api/v1",
+  "oc4_tracked_host_source": "config/environment.php control_panel_url",
+  "oc4_example_host": "https://uni.avalonbg.com",
+  "allowlist_rule": "Production/test Control Panel hosts are constants/configuration, not arbitrary admin URLs. HTTPS required.",
+  "smartucf_hosts": ["online.ucfin.bg", "onlinetest.ucfin.bg"],
+  "oc3_callback_paths": {
+    "status": "not_frozen_for_cp_registration",
+    "conceptual": [
+      "index.php?route=extension/mt_uni_credit/api/shopCache",
+      "index.php?route=extension/mt_uni_credit/api/orderBankStatus",
+      "index.php?route=extension/mt_uni_credit/api/smartUcfDebugLog"
+    ],
+    "note": "Phase 6 must coordinate exact OC3 paths with the CP owner. Do not assume OC4 routes are accepted unchanged."
+  },
+  "no_live_network_in_phase_0": true
+}
