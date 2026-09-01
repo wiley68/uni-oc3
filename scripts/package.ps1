@@ -77,6 +77,7 @@ $expectedEntries = @(
     'upload/admin/controller/extension/module/mt_uni_credit.php',
     'upload/admin/controller/extension/payment/mt_uni_credit.php',
     'upload/admin/view/image/payment/uni_logo.svg',
+    'upload/admin/view/stylesheet/mt_uni_credit_module.css',
     'upload/system/library/mt_uni_credit/constants.php'
 )
 $zipRead = [System.IO.Compression.ZipFile]::OpenRead($OutputPath)

@@ -1,0 +1,60 @@
+/**
+ * Scoped toggle switches for mt_uni_credit Module admin only.
+ * Progressive fallback: without this file, native checkboxes remain usable.
+ */
+.mt-uni-credit-module .mt-uni-toggle {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 22px;
+  margin: 0;
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+.mt-uni-credit-module .mt-uni-toggle__input {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 44px;
+  height: 22px;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.mt-uni-credit-module .mt-uni-toggle__track {
+  display: block;
+  width: 44px;
+  height: 22px;
+  background: #ccc;
+  border-radius: 11px;
+  position: relative;
+  transition: background-color 0.15s ease;
+}
+
+.mt-uni-credit-module .mt-uni-toggle__track::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform 0.15s ease;
+}
+
+.mt-uni-credit-module .mt-uni-toggle__input:checked + .mt-uni-toggle__track {
+  background-color: #337ab7;
+}
+
+.mt-uni-credit-module .mt-uni-toggle__input:checked + .mt-uni-toggle__track::after {
+  transform: translateX(22px);
+}
+
+.mt-uni-credit-module .mt-uni-toggle__input:focus + .mt-uni-toggle__track {
+  box-shadow: 0 0 0 2px rgba(51, 122, 183, 0.35);
+}

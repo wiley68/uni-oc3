@@ -33,6 +33,7 @@ $requiredFiles = array(
     'upload/admin/language/en-gb/extension/module/mt_uni_credit.php',
     'upload/admin/language/bg-bg/extension/module/mt_uni_credit.php',
     'upload/admin/view/template/extension/module/mt_uni_credit.twig',
+    'upload/admin/view/stylesheet/mt_uni_credit_module.css',
     'upload/admin/controller/extension/payment/mt_uni_credit.php',
     'upload/admin/model/extension/payment/mt_uni_credit.php',
     'upload/admin/language/en-gb/extension/payment/mt_uni_credit.php',
@@ -144,6 +145,17 @@ $moduleTwig = file_get_contents($moduleTwigPath);
 mtuc1_assert(strpos($moduleTwig, 'module_mt_uni_credit_environment') === false, 'module twig has no environment field');
 mtuc1_assert(strpos($moduleTwig, 'health_checks') === false, 'module twig has no visible health panel');
 mtuc1_assert(strpos($moduleTwig, 'text_health') === false, 'module twig has no health heading');
+mtuc1_assert(strpos($moduleTwig, 'class="mt-uni-credit-module"') !== false || strpos($moduleTwig, 'mt-uni-credit-module') !== false, 'module twig scopes toggle container');
+mtuc1_assert(strpos($moduleTwig, 'mt-uni-toggle') !== false, 'module twig uses mt-uni-toggle class');
+mtuc1_assert(strpos($moduleTwig, 'mt-uni-toggle__input') !== false, 'module twig keeps native checkbox input');
+mtuc1_assert(strpos($moduleTwig, 'mt-uni-toggle__track') !== false, 'module twig renders toggle track');
+mtuc1_assert(substr_count($moduleTwig, 'mt-uni-toggle__input') === 3, 'module twig has three toggle inputs');
+mtuc1_assert(strpos($moduleController, 'mt_uni_credit_module.css') !== false, 'module controller loads scoped admin CSS only');
+$toggleCssPath = $root . DIRECTORY_SEPARATOR . 'upload/admin/view/stylesheet/mt_uni_credit_module.css';
+$toggleCss = file_get_contents($toggleCssPath);
+mtuc1_assert(strpos($toggleCss, '.mt-uni-credit-module') !== false, 'toggle CSS scoped to module container');
+mtuc1_assert(strpos($toggleCss, '.mt-uni-toggle') !== false, 'toggle CSS defines mt-uni-toggle');
+mtuc1_assert(stripos($toggleCss, 'bootstrap') === false, 'toggle CSS has no Bootstrap dependency');
 mtuc1_assert(strpos($moduleTwig, 'module_mt_uni_credit_advertising_enabled') !== false, 'module twig has advertising toggle');
 mtuc1_assert(strpos($moduleTwig, 'module_mt_uni_credit_product_button_action') !== false, 'module twig has product button action');
 mtuc1_assert(strpos($moduleTwig, 'module_mt_uni_credit_button_top_spacing') !== false, 'module twig has button top spacing');
@@ -267,10 +279,23 @@ $errors = $validationModel->validateSettings($postLongUnicid);
 mtuc1_assert(isset($errors['unicid']), 'module validate rejects UNICID over 36 chars');
 
 mtuc1_assert(
-    MtUniCreditLocalSettings::normalizeFlag('1') === '1'
-        && MtUniCreditLocalSettings::normalizeFlag('0') === '0'
-        && MtUniCreditLocalSettings::normalizeFlag('') === '0',
+    MtUniCreditLocalSettings::normalizeFlag('') === '0',
     'local settings normalizeFlag handles checkbox semantics'
+);
+
+$duplicateChecked = array();
+parse_str('module_mt_uni_credit_status=0&module_mt_uni_credit_status=1', $duplicateChecked);
+mtuc1_assert(
+    isset($duplicateChecked['module_mt_uni_credit_status'])
+        && $duplicateChecked['module_mt_uni_credit_status'] === '1'
+        && MtUniCreditLocalSettings::normalizeFlag($duplicateChecked['module_mt_uni_credit_status']) === '1',
+    'hidden+checkbox duplicate name resolves to checked value in PHP'
+);
+$duplicateUnchecked = array();
+parse_str('module_mt_uni_credit_status=0', $duplicateUnchecked);
+mtuc1_assert(
+    MtUniCreditLocalSettings::normalizeFlag($duplicateUnchecked['module_mt_uni_credit_status']) === '0',
+    'hidden-only duplicate name resolves to unchecked value in PHP'
 );
 mtuc1_assert(
     MtUniCreditLocalSettings::normalizeProductButtonAction('buy') === MtUniCreditConstants::BUTTON_ACTION_BUY,

@@ -1,5 +1,5 @@
 {{ header }}{{ column_left }}
-<div id="content">
+<div id="content" class="mt-uni-credit-module">
   <div class="page-header">
     <div class="container-fluid">
       <div class="pull-right">
@@ -32,15 +32,13 @@
       <div class="panel-body">
         <form action="{{ action }}" method="post" enctype="multipart/form-data" id="form-module" class="form-horizontal">
           <div class="form-group">
-            <label class="col-sm-2 control-label">{{ entry_status }}</label>
+            <label class="col-sm-2 control-label" for="input-status">{{ entry_status }}</label>
             <div class="col-sm-10">
               <input type="hidden" name="module_mt_uni_credit_status" value="0" />
-              <div class="checkbox">
-                <label>
-                  <input type="checkbox" name="module_mt_uni_credit_status" value="1"{% if module_mt_uni_credit_status %} checked="checked"{% endif %} />
-                  {{ entry_status }}
-                </label>
-              </div>
+              <label class="mt-uni-toggle" for="input-status">
+                <input type="checkbox" name="module_mt_uni_credit_status" value="1" id="input-status" class="mt-uni-toggle__input"{% if module_mt_uni_credit_status %} checked="checked"{% endif %} />
+                <span class="mt-uni-toggle__track" aria-hidden="true"></span>
+              </label>
             </div>
           </div>
           <div class="form-group{% if error_unicid %} has-error{% endif %}">
@@ -61,28 +59,24 @@
             </div>
           </div>
           <div class="form-group">
-            <label class="col-sm-2 control-label">{{ entry_advertising_enabled }}</label>
+            <label class="col-sm-2 control-label" for="input-advertising">{{ entry_advertising_enabled }}</label>
             <div class="col-sm-10">
               <input type="hidden" name="module_mt_uni_credit_advertising_enabled" value="0" />
-              <div class="checkbox">
-                <label>
-                  <input type="checkbox" name="module_mt_uni_credit_advertising_enabled" value="1"{% if module_mt_uni_credit_advertising_enabled %} checked="checked"{% endif %} />
-                  {{ entry_advertising_enabled }}
-                </label>
-              </div>
+              <label class="mt-uni-toggle" for="input-advertising">
+                <input type="checkbox" name="module_mt_uni_credit_advertising_enabled" value="1" id="input-advertising" class="mt-uni-toggle__input"{% if module_mt_uni_credit_advertising_enabled %} checked="checked"{% endif %} />
+                <span class="mt-uni-toggle__track" aria-hidden="true"></span>
+              </label>
               <p class="help-block">{{ help_advertising_enabled }}</p>
             </div>
           </div>
           <div class="form-group">
-            <label class="col-sm-2 control-label">{{ entry_debug_enabled }}</label>
+            <label class="col-sm-2 control-label" for="input-debug">{{ entry_debug_enabled }}</label>
             <div class="col-sm-10">
               <input type="hidden" name="module_mt_uni_credit_debug_enabled" value="0" />
-              <div class="checkbox">
-                <label>
-                  <input type="checkbox" name="module_mt_uni_credit_debug_enabled" value="1"{% if module_mt_uni_credit_debug_enabled %} checked="checked"{% endif %} />
-                  {{ entry_debug_enabled }}
-                </label>
-              </div>
+              <label class="mt-uni-toggle" for="input-debug">
+                <input type="checkbox" name="module_mt_uni_credit_debug_enabled" value="1" id="input-debug" class="mt-uni-toggle__input"{% if module_mt_uni_credit_debug_enabled %} checked="checked"{% endif %} />
+                <span class="mt-uni-toggle__track" aria-hidden="true"></span>
+              </label>
               <p class="help-block">{{ help_debug_enabled }}</p>
             </div>
           </div>
