@@ -275,3 +275,32 @@ Strip emails, tokens, URLs with secrets, EGN, phone numbers before sharing.
 - [ ] sanitized error log sample
 
 Phase 0 does not install the module. D1–D4 Phase 0 blockers are closed; remaining items above feed their dependent phase STOP GATEs.
+
+---
+
+## Phase 1 remote checklist (admin skeleton)
+
+Build locally with `powershell -File scripts/package.ps1`, then install `dist/mt_uni_credit-2.0.2.ocmod.zip` on the test shop. Record sanitized results only; do **not** mark PASS until each item is verified on the server.
+
+1. [ ] Package installs through **Extensions → Installer** (or documented manual staging of `upload/` + `install.xml`) without fatal errors.
+2. [ ] **Extensions → Extensions → Payments** lists **УниКредит покупки на Кредит** / UniCredit (`mt_uni_credit`).
+3. [ ] Payment extension **Install** succeeds; **Modify** opens the admin page without PHP/Twig warnings.
+4. [ ] Settings save: status, sort order, environment, debug, UNICID persist per store scope; success message shown.
+5. [ ] Permission denial: user without `modify` on `extension/payment/mt_uni_credit` cannot save (warning shown).
+6. [ ] Health panel shows module version **2.0.2**, PHP floor **7.3.0+**, extension checks, and Phase 2/4/6/9 placeholders.
+7. [ ] No secret value, bearer token, private key, passphrase, or `enc:v1:` ciphertext appears in HTML source or health table.
+8. [ ] Enable/disable toggle works; disabled module produces **no storefront payment output** (catalog files absent by design).
+9. [ ] **Uninstall** removes `payment_mt_uni_credit` settings and extension registration only; no financing tables dropped (none installed yet).
+10. [ ] **Reinstall** after uninstall succeeds and defaults apply idempotently.
+11. [ ] **Modifications** lists OCMOD code `mt_uni_credit` v2.0.2; refresh completes cleanly (no file operations in Phase 1 XML).
+12. [ ] OpenCart / PHP error logs remain clean after install, save, disable, uninstall, reinstall.
+
+Optional evidence to attach (sanitized):
+
+```sql
+SELECT * FROM <DB_PREFIX>extension WHERE type = 'payment' AND code = 'mt_uni_credit';
+SELECT store_id, `key`, LEFT(`value`, 20) AS value_prefix FROM <DB_PREFIX>setting WHERE `code` = 'payment_mt_uni_credit' ORDER BY store_id, `key`;
+SELECT modification_id, name, code, version, status FROM <DB_PREFIX>modification WHERE code = 'mt_uni_credit';
+```
+
+Never paste full `payment_mt_uni_credit_secret` values — Phase 1 must not persist plaintext secrets anyway.

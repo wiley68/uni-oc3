@@ -173,15 +173,19 @@ mtuc_assert(strpos($contracts, 'D4 CP/SmartUCF env + OC3 callbacks | **CLOSED FO
 mtuc_assert(strpos($contracts, 'Phase 0 STOP GATE:** **PASS**') !== false, 'CONTRACTS.md STOP GATE PASS');
 
 $forbiddenTree = array(
-    MTUC_PHASE0_ROOT . DIRECTORY_SEPARATOR . 'upload' . DIRECTORY_SEPARATOR . 'admin' . DIRECTORY_SEPARATOR . 'controller' . DIRECTORY_SEPARATOR . 'extension' . DIRECTORY_SEPARATOR . 'payment' . DIRECTORY_SEPARATOR . 'mt_uni_credit.php',
     MTUC_PHASE0_ROOT . DIRECTORY_SEPARATOR . 'upload' . DIRECTORY_SEPARATOR . 'catalog' . DIRECTORY_SEPARATOR . 'controller' . DIRECTORY_SEPARATOR . 'extension' . DIRECTORY_SEPARATOR . 'payment' . DIRECTORY_SEPARATOR . 'mt_uni_credit.php',
 );
 foreach ($forbiddenTree as $path) {
-    mtuc_assert(!is_file($path), 'Phase 0 must not create implementation file: ' . str_replace(MTUC_PHASE0_ROOT . DIRECTORY_SEPARATOR, '', $path));
+    mtuc_assert(!is_file($path), 'Phase 0/1 must not create storefront payment controller: ' . str_replace(MTUC_PHASE0_ROOT . DIRECTORY_SEPARATOR, '', $path));
 }
 $installXml = MTUC_PHASE0_ROOT . DIRECTORY_SEPARATOR . 'install.xml';
+$phase1Admin = MTUC_PHASE0_ROOT . DIRECTORY_SEPARATOR . 'upload' . DIRECTORY_SEPARATOR . 'admin' . DIRECTORY_SEPARATOR . 'controller' . DIRECTORY_SEPARATOR . 'extension' . DIRECTORY_SEPARATOR . 'payment' . DIRECTORY_SEPARATOR . 'mt_uni_credit.php';
 if (is_file($installXml)) {
-    mtuc_assert(filesize($installXml) === 0, 'baseline install.xml placeholder must stay empty in Phase 0');
+    if (is_file($phase1Admin)) {
+        mtuc_assert(filesize($installXml) > 0, 'Phase 1 install.xml must be populated');
+    } else {
+        mtuc_assert(filesize($installXml) === 0, 'baseline install.xml placeholder must stay empty before Phase 1');
+    }
 } else {
     mtuc_assert(true, 'install.xml absent in Phase 0');
 }
@@ -194,6 +198,9 @@ $iterator = new RecursiveIteratorIterator(
 foreach ($iterator as $file) {
     $path = $file->getPathname();
     if (strpos($path, DIRECTORY_SEPARATOR . '.git' . DIRECTORY_SEPARATOR) !== false) {
+        continue;
+    }
+    if (strpos($path, DIRECTORY_SEPARATOR . 'dist' . DIRECTORY_SEPARATOR) !== false) {
         continue;
     }
     if ($file->isFile() && strtolower($file->getExtension()) === 'php') {
