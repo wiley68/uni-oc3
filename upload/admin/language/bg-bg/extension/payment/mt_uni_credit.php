@@ -9,7 +9,7 @@ $_['text_edit'] = 'Редакция на УниКредит покупки на 
 $_['text_enabled'] = 'Включено';
 $_['text_disabled'] = 'Изключено';
 $_['text_all_zones'] = 'Всички зони';
-$_['text_mt_uni_credit'] = '<img src="view/image/payment/uni_logo.svg" alt="УниКредит покупки на Кредит" title="УниКредит покупки на Кредит" style="border: 1px solid #EEEEEE;" />';
+$_['text_mt_uni_credit'] = '<img src="view/image/payment/uni_logo.svg" alt="УниКредит покупки на Кредит" title="УниКредит покупки на Кредит" style="max-width:200px;height:auto;border: 1px solid #EEEEEE;" />';
 
 $_['entry_order_status'] = 'Състояние на поръчката';
 $_['entry_geo_zone'] = 'Географска зона';

@@ -24,10 +24,15 @@ final class MtUniCreditConstants
     /** @deprecated Phase 1 legacy key; migrated to MODULE_SETTING_DEBUG on install */
     const MODULE_SETTING_DEBUG_LEGACY = 'module_mt_uni_credit_debug';
 
+    /** @deprecated Removed from visible Module admin; reserved for Phase 4 internal use */
+    const MODULE_SETTING_ENVIRONMENT_LEGACY = 'module_mt_uni_credit_environment';
+
     /** Fresh OC3 install seed maps English "Processing" to this ID; used only when name lookup fails. */
     const PROCESSING_ORDER_STATUS_FALLBACK_ID = '2';
 
     const PAYMENT_LISTING_IMAGE = 'view/image/payment/uni_logo.svg';
+
+    const PAYMENT_LISTING_IMAGE_STYLE = 'max-width:200px;height:auto;border: 1px solid #EEEEEE;';
 
     const PHP_FLOOR = '7.3.0';
 
@@ -49,11 +54,29 @@ final class MtUniCreditConstants
 
     const MODULE_SETTING_UNICID = 'module_mt_uni_credit_unicid';
 
-    const MODULE_SETTING_ENVIRONMENT = 'module_mt_uni_credit_environment';
+    const MODULE_SETTING_ADVERTISING = 'module_mt_uni_credit_advertising_enabled';
 
     const MODULE_SETTING_DEBUG = 'module_mt_uni_credit_debug_enabled';
 
+    const MODULE_SETTING_PRODUCT_BUTTON_ACTION = 'module_mt_uni_credit_product_button_action';
+
+    const MODULE_SETTING_BUTTON_TOP_SPACING = 'module_mt_uni_credit_button_top_spacing';
+
     const MODULE_SETTING_SECRET = 'module_mt_uni_credit_secret';
+
+    const BUTTON_ACTION_ADD_TO_CART = 'add_to_cart';
+
+    const BUTTON_ACTION_BUY = 'buy';
+
+    const DEFAULT_ADVERTISING_ENABLED = '0';
+
+    const DEFAULT_DEBUG_ENABLED = '0';
+
+    const DEFAULT_PRODUCT_BUTTON_ACTION = self::BUTTON_ACTION_ADD_TO_CART;
+
+    const DEFAULT_BUTTON_TOP_SPACING = '0';
+
+    const MAX_BUTTON_TOP_SPACING = 200;
 
     const PAYMENT_SETTING_ORDER_STATUS_ID = 'payment_mt_uni_credit_order_status_id';
 
@@ -92,9 +115,11 @@ final class MtUniCreditConstants
     {
         return array(
             self::MODULE_SETTING_STATUS => '0',
-            self::MODULE_SETTING_ENVIRONMENT => self::ENVIRONMENT_TEST,
-            self::MODULE_SETTING_DEBUG => '0',
             self::MODULE_SETTING_UNICID => '',
+            self::MODULE_SETTING_ADVERTISING => self::DEFAULT_ADVERTISING_ENABLED,
+            self::MODULE_SETTING_DEBUG => self::DEFAULT_DEBUG_ENABLED,
+            self::MODULE_SETTING_PRODUCT_BUTTON_ACTION => self::DEFAULT_PRODUCT_BUTTON_ACTION,
+            self::MODULE_SETTING_BUTTON_TOP_SPACING => self::DEFAULT_BUTTON_TOP_SPACING,
         );
     }
 
@@ -118,9 +143,11 @@ final class MtUniCreditConstants
     {
         return array(
             self::MODULE_SETTING_STATUS,
-            self::MODULE_SETTING_ENVIRONMENT,
-            self::MODULE_SETTING_DEBUG,
             self::MODULE_SETTING_UNICID,
+            self::MODULE_SETTING_ADVERTISING,
+            self::MODULE_SETTING_DEBUG,
+            self::MODULE_SETTING_PRODUCT_BUTTON_ACTION,
+            self::MODULE_SETTING_BUTTON_TOP_SPACING,
             self::MODULE_SETTING_SECRET,
         );
     }
@@ -132,9 +159,11 @@ final class MtUniCreditConstants
     {
         return array(
             self::MODULE_SETTING_STATUS,
-            self::MODULE_SETTING_ENVIRONMENT,
-            self::MODULE_SETTING_DEBUG,
             self::MODULE_SETTING_UNICID,
+            self::MODULE_SETTING_ADVERTISING,
+            self::MODULE_SETTING_DEBUG,
+            self::MODULE_SETTING_PRODUCT_BUTTON_ACTION,
+            self::MODULE_SETTING_BUTTON_TOP_SPACING,
         );
     }
 

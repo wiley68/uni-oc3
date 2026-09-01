@@ -59,10 +59,22 @@ class ModelExtensionModuleMtUniCredit extends Model
             $errors['unicid'] = 'unicid_max_length';
         }
 
-        if (isset($post[MtUniCreditConstants::MODULE_SETTING_ENVIRONMENT])) {
-            $environment = (string) $post[MtUniCreditConstants::MODULE_SETTING_ENVIRONMENT];
-            if (!in_array($environment, array(MtUniCreditConstants::ENVIRONMENT_TEST, MtUniCreditConstants::ENVIRONMENT_PRODUCTION), true)) {
-                $errors['environment'] = 'invalid_environment';
+        if (array_key_exists(MtUniCreditConstants::MODULE_SETTING_PRODUCT_BUTTON_ACTION, $post)) {
+            $action = trim((string) $post[MtUniCreditConstants::MODULE_SETTING_PRODUCT_BUTTON_ACTION]);
+            if (!in_array($action, MtUniCreditLocalSettings::productButtonActions(), true)) {
+                $errors['product_button_action'] = 'invalid_product_button_action';
+            }
+        }
+
+        if (array_key_exists(MtUniCreditConstants::MODULE_SETTING_BUTTON_TOP_SPACING, $post)) {
+            $spacing = $post[MtUniCreditConstants::MODULE_SETTING_BUTTON_TOP_SPACING];
+            if (!is_numeric($spacing)) {
+                $errors['button_top_spacing'] = 'invalid_button_top_spacing';
+            } else {
+                $value = (int) $spacing;
+                if ($value < 0 || $value > MtUniCreditConstants::MAX_BUTTON_TOP_SPACING) {
+                    $errors['button_top_spacing'] = 'invalid_button_top_spacing';
+                }
             }
         }
 
@@ -101,14 +113,17 @@ class ModelExtensionModuleMtUniCredit extends Model
                 continue;
             }
 
-            if ($key === MtUniCreditConstants::MODULE_SETTING_ENVIRONMENT) {
-                $payload[$key] = !empty($post[$key]) && (string) $post[$key] !== '0'
-                    ? MtUniCreditConstants::ENVIRONMENT_PRODUCTION
-                    : MtUniCreditConstants::ENVIRONMENT_TEST;
+            if ($key === MtUniCreditConstants::MODULE_SETTING_PRODUCT_BUTTON_ACTION) {
+                $payload[$key] = MtUniCreditLocalSettings::normalizeProductButtonAction($post[$key]);
                 continue;
             }
 
-            $payload[$key] = self::normalizeFlag($post[$key]);
+            if ($key === MtUniCreditConstants::MODULE_SETTING_BUTTON_TOP_SPACING) {
+                $payload[$key] = MtUniCreditLocalSettings::normalizeButtonTopSpacing($post[$key]);
+                continue;
+            }
+
+            $payload[$key] = MtUniCreditLocalSettings::normalizeFlag($post[$key]);
         }
 
         if ($payload) {
@@ -122,15 +137,6 @@ class ModelExtensionModuleMtUniCredit extends Model
 
             $this->model_setting_setting->editSetting(MtUniCreditConstants::MODULE_SETTINGS_CODE, $merged);
         }
-    }
-
-    /**
-     * @param mixed $value
-     * @return string
-     */
-    public static function normalizeFlag($value)
-    {
-        return !empty($value) && (string) $value !== '0' ? '1' : '0';
     }
 
     /**
@@ -148,6 +154,8 @@ class ModelExtensionModuleMtUniCredit extends Model
     }
 
     /**
+     * Internal readiness helper; not rendered in Phase 1 admin UI.
+     *
      * @return array<string, mixed>
      */
     public function getHealthReport()
@@ -157,5 +165,22 @@ class ModelExtensionModuleMtUniCredit extends Model
             'unicid' => (string) $this->config->get(MtUniCreditConstants::MODULE_SETTING_UNICID),
             'protected_root' => MtUniCreditBootstrap::resolveProtectedRoot(),
         ));
+    }
+
+    /**
+     * Phase 1 placeholder export for journal download parity.
+     *
+     * @param int $storeId
+     * @return array<string, mixed>
+     */
+    public function buildPhase1JournalExport($storeId = 0)
+    {
+        return array(
+            'module' => MtUniCreditConstants::EXTENSION_CODE,
+            'version' => MtUniCreditConstants::VERSION,
+            'store_id' => (int) $storeId,
+            'generated_at' => gmdate('c'),
+            'entries' => array(),
+        );
     }
 }

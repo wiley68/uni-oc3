@@ -22,21 +22,91 @@ class ControllerExtensionModuleMtUniCredit extends Controller
             $this->session->data['success'] = $this->language->get('text_success');
 
             $this->response->redirect($this->url->link(
-                'marketplace/extension',
-                'user_token=' . $this->session->data['user_token'] . '&type=module',
+                'extension/module/mt_uni_credit',
+                'user_token=' . $this->session->data['user_token'],
                 true
             ));
         }
 
         $data = array();
+        $this->assignFlashMessages($data);
         $this->assignErrors($data);
         $this->assignBreadcrumbs($data);
         $this->assignFormAction($data);
+        $this->assignOperationalActions($data);
         $this->assignSettings($data);
-        $this->assignHealth($data);
         $this->assignLayout($data);
 
         $this->response->setOutput($this->load->view('extension/module/mt_uni_credit', $data));
+    }
+
+    public function refreshBankData()
+    {
+        $this->load->language('extension/module/mt_uni_credit');
+
+        $token = 'user_token=' . $this->session->data['user_token'];
+        $redirect = $this->url->link('extension/module/mt_uni_credit', $token, true);
+
+        if (($this->request->server['REQUEST_METHOD'] ?? '') !== 'POST') {
+            $this->response->redirect($redirect);
+            return;
+        }
+
+        if (!$this->user->hasPermission('modify', 'extension/module/mt_uni_credit')) {
+            $this->session->data['error'] = $this->language->get('error_permission');
+            $this->response->redirect($redirect);
+            return;
+        }
+
+        $this->session->data['error'] = $this->language->get('text_bank_data_phase1_unavailable');
+        $this->response->redirect($redirect);
+    }
+
+    public function downloadJournal()
+    {
+        $this->load->language('extension/module/mt_uni_credit');
+
+        $token = 'user_token=' . $this->session->data['user_token'];
+        $redirect = $this->url->link('extension/module/mt_uni_credit', $token, true);
+
+        if (($this->request->server['REQUEST_METHOD'] ?? '') !== 'POST') {
+            $this->response->redirect($redirect);
+            return;
+        }
+
+        if (!$this->user->hasPermission('modify', 'extension/module/mt_uni_credit')) {
+            $this->session->data['error'] = $this->language->get('error_permission');
+            $this->response->redirect($redirect);
+            return;
+        }
+
+        $this->load->model('extension/module/mt_uni_credit');
+
+        $storeId = 0;
+        if (isset($this->config) && is_object($this->config) && method_exists($this->config, 'get')) {
+            $storeId = (int) $this->config->get('config_store_id');
+        }
+
+        $export = $this->model_extension_module_mt_uni_credit->buildPhase1JournalExport($storeId);
+        $json = json_encode($export, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        if ($json === false) {
+            $this->session->data['error'] = $this->language->get('error_journal_download_failed');
+            $this->response->redirect($redirect);
+            return;
+        }
+
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+
+        $filename = 'unipayment-smartucf-log-' . gmdate('Ymd-His') . '.json';
+        $this->response->addHeader('Content-Type: application/json; charset=utf-8');
+        $this->response->addHeader('Content-Disposition: attachment; filename="' . $filename . '"');
+        $this->response->addHeader('Content-Length: ' . strlen($json));
+        $this->response->addHeader('Cache-Control: no-store');
+        $this->response->addHeader('X-Content-Type-Options: nosniff');
+        $this->response->setOutput($json);
     }
 
     public function install()
@@ -55,11 +125,29 @@ class ControllerExtensionModuleMtUniCredit extends Controller
      * @param array<string, mixed> $data
      * @return void
      */
+    private function assignFlashMessages(array &$data)
+    {
+        $data['success'] = '';
+        if (isset($this->session->data['success'])) {
+            $data['success'] = $this->session->data['success'];
+            unset($this->session->data['success']);
+        }
+
+        if (isset($this->session->data['error'])) {
+            $this->error['warning'] = $this->session->data['error'];
+            unset($this->session->data['error']);
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @return void
+     */
     private function assignErrors(array &$data)
     {
         $data['error_warning'] = isset($this->error['warning']) ? $this->error['warning'] : '';
 
-        foreach (array('environment', 'secret', 'unicid') as $field) {
+        foreach (array('secret', 'unicid', 'product_button_action', 'button_top_spacing') as $field) {
             $key = 'error_' . $field;
             $data[$key] = isset($this->error[$field]) ? $this->error[$field] : '';
         }
@@ -105,16 +193,31 @@ class ControllerExtensionModuleMtUniCredit extends Controller
      * @param array<string, mixed> $data
      * @return void
      */
+    private function assignOperationalActions(array &$data)
+    {
+        $token = 'user_token=' . $this->session->data['user_token'];
+
+        $data['refresh_bank_data'] = $this->url->link(
+            'extension/module/mt_uni_credit/refreshBankData',
+            $token,
+            true
+        );
+        $data['download_journal'] = $this->url->link(
+            'extension/module/mt_uni_credit/downloadJournal',
+            $token,
+            true
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @return void
+     */
     private function assignSettings(array &$data)
     {
-        $keys = array(
-            MtUniCreditConstants::MODULE_SETTING_STATUS,
-            MtUniCreditConstants::MODULE_SETTING_ENVIRONMENT,
-            MtUniCreditConstants::MODULE_SETTING_DEBUG,
-            MtUniCreditConstants::MODULE_SETTING_UNICID,
-        );
+        $defaults = MtUniCreditConstants::defaultModuleSettings();
 
-        foreach ($keys as $key) {
+        foreach (array_keys($defaults) as $key) {
             if (isset($this->request->post[$key])) {
                 $data[$key] = $this->request->post[$key];
             } else {
@@ -122,34 +225,32 @@ class ControllerExtensionModuleMtUniCredit extends Controller
                 if ($stored === null && $key === MtUniCreditConstants::MODULE_SETTING_DEBUG) {
                     $stored = $this->config->get(MtUniCreditConstants::MODULE_SETTING_DEBUG_LEGACY);
                 }
-                $data[$key] = $stored !== null ? $stored : MtUniCreditConstants::defaultModuleSettings()[$key];
+                $data[$key] = $stored !== null ? $stored : $defaults[$key];
             }
         }
 
-        $data['module_version'] = MtUniCreditConstants::VERSION;
-        $data['module_code'] = MtUniCreditConstants::EXTENSION_CODE;
+        if (isset($data[MtUniCreditConstants::MODULE_SETTING_PRODUCT_BUTTON_ACTION])) {
+            $data[MtUniCreditConstants::MODULE_SETTING_PRODUCT_BUTTON_ACTION] = MtUniCreditLocalSettings::normalizeProductButtonAction(
+                $data[MtUniCreditConstants::MODULE_SETTING_PRODUCT_BUTTON_ACTION]
+            );
+        }
+
+        if (isset($data[MtUniCreditConstants::MODULE_SETTING_BUTTON_TOP_SPACING])) {
+            $data[MtUniCreditConstants::MODULE_SETTING_BUTTON_TOP_SPACING] = MtUniCreditLocalSettings::normalizeButtonTopSpacing(
+                $data[MtUniCreditConstants::MODULE_SETTING_BUTTON_TOP_SPACING]
+            );
+        }
+
         $data['has_secret'] = $this->model_extension_module_mt_uni_credit->isSecretConfigured();
-        $data['text_secret_keep_current'] = $this->language->get('text_secret_keep_current');
-        $data['text_secret_phase2'] = $this->language->get('text_secret_phase2');
-    }
-
-    /**
-     * @param array<string, mixed> $data
-     * @return void
-     */
-    private function assignHealth(array &$data)
-    {
-        $health = $this->model_extension_module_mt_uni_credit->getHealthReport();
-
-        $data['health_summary'] = $health['summary'];
-        $data['health_checks'] = $health['checks'];
-        $data['health_paths'] = $health['paths'];
-        $data['health_status_labels'] = array(
-            MtUniCreditConstants::HEALTH_READY => $this->language->get('text_health_ready'),
-            MtUniCreditConstants::HEALTH_WARNING => $this->language->get('text_health_warning'),
-            MtUniCreditConstants::HEALTH_NOT_CONFIGURED => $this->language->get('text_health_not_configured'),
-            MtUniCreditConstants::HEALTH_UNAVAILABLE => $this->language->get('text_health_unavailable'),
-            MtUniCreditConstants::HEALTH_FUTURE_PHASE => $this->language->get('text_health_future_phase'),
+        $data['product_button_actions'] = array(
+            array(
+                'value' => MtUniCreditConstants::BUTTON_ACTION_ADD_TO_CART,
+                'label' => $this->language->get('text_product_button_add_to_cart'),
+            ),
+            array(
+                'value' => MtUniCreditConstants::BUTTON_ACTION_BUY,
+                'label' => $this->language->get('text_product_button_buy'),
+            ),
         );
     }
 

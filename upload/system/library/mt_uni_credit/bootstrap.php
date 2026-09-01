@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'constants.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'local_settings.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'health.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'installer.php';
 

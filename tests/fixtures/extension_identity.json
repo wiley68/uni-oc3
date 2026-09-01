@@ -19,7 +19,19 @@
   "oc3_module_settings_code": "module_mt_uni_credit",
   "oc3_payment_settings_code": "payment_mt_uni_credit",
   "oc3_module_setting_debug": "module_mt_uni_credit_debug_enabled",
+  "oc3_module_setting_advertising": "module_mt_uni_credit_advertising_enabled",
+  "oc3_module_setting_product_button_action": "module_mt_uni_credit_product_button_action",
+  "oc3_module_setting_button_top_spacing": "module_mt_uni_credit_button_top_spacing",
+  "oc3_module_product_button_actions": ["add_to_cart", "buy"],
+  "oc3_module_defaults": {
+    "module_mt_uni_credit_status": "0",
+    "module_mt_uni_credit_advertising_enabled": "0",
+    "module_mt_uni_credit_debug_enabled": "0",
+    "module_mt_uni_credit_product_button_action": "add_to_cart",
+    "module_mt_uni_credit_button_top_spacing": "0"
+  },
   "oc3_payment_listing_image": "upload/admin/view/image/payment/uni_logo.svg",
+  "oc3_payment_listing_image_style": "max-width:200px;height:auto;",
   "oc3_language_locales": ["en-gb", "bg-bg"],
   "package_filename": "CC_OpenCartv.3.x_UNI_v.2.0.2.ocmod.zip",
   "package_root": "module.ocmod.zip",
@@ -29,8 +41,17 @@
   "release_version_status": "closed_d2",
   "namespace_note": "OC3 uses classic non-namespaced class names; do not copy OC4 Opencart\\... namespaces.",
   "admin_split": {
-    "status": "frozen_phase_1_correction",
-    "module_owns": ["status", "unicid", "environment", "debug_enabled", "secret_placeholder", "health"],
+    "status": "frozen_phase_1_final_parity",
+    "module_owns": [
+      "status",
+      "unicid",
+      "advertising_enabled",
+      "debug_enabled",
+      "product_button_action",
+      "button_top_spacing",
+      "secret_placeholder",
+      "operational_buttons"
+    ],
     "payment_owns": ["order_status_id", "geo_zone_id", "status", "sort_order"]
   }
 }

@@ -42,6 +42,7 @@ $requiredFiles = array(
     'upload/system/library/mt_uni_credit/bootstrap.php',
     'upload/system/library/mt_uni_credit/constants.php',
     'upload/system/library/mt_uni_credit/health.php',
+    'upload/system/library/mt_uni_credit/local_settings.php',
     'upload/system/library/mt_uni_credit/installer.php',
     'scripts/package.ps1',
 );
@@ -76,7 +77,23 @@ $constantsPath = $root . DIRECTORY_SEPARATOR . 'upload/system/library/mt_uni_cre
 require_once $constantsPath;
 require_once $root . DIRECTORY_SEPARATOR . 'upload/system/library/mt_uni_credit/health.php';
 require_once $root . DIRECTORY_SEPARATOR . 'upload/system/library/mt_uni_credit/installer.php';
+require_once $root . DIRECTORY_SEPARATOR . 'upload/system/library/mt_uni_credit/local_settings.php';
 require_once $root . DIRECTORY_SEPARATOR . 'upload/system/library/mt_uni_credit/bootstrap.php';
+
+foreach ($identity['oc3_module_defaults'] as $settingKey => $expectedDefault) {
+    mtuc1_assert(
+        MtUniCreditConstants::defaultModuleSettings()[$settingKey] === $expectedDefault,
+        'module default matches OC4 authority: ' . $settingKey
+    );
+}
+mtuc1_assert(
+    MtUniCreditConstants::MODULE_SETTING_ADVERTISING === $identity['oc3_module_setting_advertising'],
+    'constants advertising setting key'
+);
+mtuc1_assert(
+    in_array(MtUniCreditConstants::DEFAULT_PRODUCT_BUTTON_ACTION, $identity['oc3_module_product_button_actions'], true),
+    'default product button action in fixture choices'
+);
 
 mtuc1_assert(MtUniCreditConstants::EXTENSION_CODE === $identity['code'], 'constants extension code');
 mtuc1_assert(MtUniCreditConstants::VERSION === $identity['version'], 'constants version');
@@ -96,7 +113,7 @@ $bgPaymentLangPath = $root . DIRECTORY_SEPARATOR . 'upload/admin/language/bg-bg/
 $bgPaymentLang = file_get_contents($bgPaymentLangPath);
 mtuc1_assert(strpos($bgPaymentLang, "'heading_title'] = 'УниКредит покупки на Кредит'") !== false, 'BG payment heading_title is established title');
 mtuc1_assert(strpos($bgPaymentLang, "text_mt_uni_credit']") !== false, 'BG payment listing logo language key present');
-mtuc1_assert(strpos($bgPaymentLang, 'view/image/payment/uni_logo.svg') !== false, 'BG payment listing logo path');
+mtuc1_assert(strpos($bgPaymentLang, $identity['oc3_payment_listing_image_style']) !== false, 'BG payment listing logo max-width style');
 
 $paymentImagePath = $root . DIRECTORY_SEPARATOR . 'upload/admin/view/image/payment/uni_logo.svg';
 mtuc1_assert(is_file($paymentImagePath), 'payment listing logo asset exists');
@@ -117,10 +134,23 @@ mtuc1_assert(strpos($moduleModel, 'getHealthReport') !== false, 'module model ow
 mtuc1_assert(strpos($moduleModel, 'unicid_required') !== false, 'module validates UNICID required');
 mtuc1_assert(strpos($moduleModel, 'unicid_max_length') !== false, 'module validates UNICID max length');
 mtuc1_assert(strpos($moduleModel, 'secret_required') !== false, 'module validates secret required when missing');
-mtuc1_assert(strpos($moduleModel, 'normalizeFlag') !== false, 'module normalizes boolean flags');
+mtuc1_assert(strpos($moduleModel, 'MtUniCreditLocalSettings::normalizeFlag') !== false, 'module model delegates flag normalization to local settings');
+mtuc1_assert(strpos($moduleModel, 'invalid_product_button_action') !== false, 'module validates product button action');
+mtuc1_assert(strpos($moduleModel, 'invalid_button_top_spacing') !== false, 'module validates button top spacing range');
+mtuc1_assert(strpos($moduleModel, 'buildPhase1JournalExport') !== false, 'module model provides Phase 1 journal placeholder');
 
 $moduleTwigPath = $root . DIRECTORY_SEPARATOR . 'upload/admin/view/template/extension/module/mt_uni_credit.twig';
 $moduleTwig = file_get_contents($moduleTwigPath);
+mtuc1_assert(strpos($moduleTwig, 'module_mt_uni_credit_environment') === false, 'module twig has no environment field');
+mtuc1_assert(strpos($moduleTwig, 'health_checks') === false, 'module twig has no visible health panel');
+mtuc1_assert(strpos($moduleTwig, 'text_health') === false, 'module twig has no health heading');
+mtuc1_assert(strpos($moduleTwig, 'module_mt_uni_credit_advertising_enabled') !== false, 'module twig has advertising toggle');
+mtuc1_assert(strpos($moduleTwig, 'module_mt_uni_credit_product_button_action') !== false, 'module twig has product button action');
+mtuc1_assert(strpos($moduleTwig, 'module_mt_uni_credit_button_top_spacing') !== false, 'module twig has button top spacing');
+mtuc1_assert(strpos($moduleTwig, 'button_refresh_bank_data') !== false, 'module twig has refresh bank data button');
+mtuc1_assert(strpos($moduleTwig, 'button_download_journal') !== false, 'module twig has download journal button');
+mtuc1_assert(strpos($moduleTwig, 'refresh_bank_data') !== false, 'module twig wires refresh bank data route');
+mtuc1_assert(strpos($moduleTwig, 'download_journal') !== false, 'module twig wires download journal route');
 mtuc1_assert(strpos($moduleTwig, 'module_mt_uni_credit_unicid') !== false, 'module twig has UNICID');
 mtuc1_assert(strpos($moduleTwig, 'maxlength="36"') !== false, 'module twig UNICID maxlength 36');
 mtuc1_assert(strpos($moduleTwig, 'module_mt_uni_credit_debug_enabled') !== false, 'module twig uses normalized debug key');
@@ -128,11 +158,21 @@ mtuc1_assert(strpos($moduleTwig, 'type="hidden" name="module_mt_uni_credit_statu
 mtuc1_assert(strpos($moduleTwig, 'type="checkbox" name="module_mt_uni_credit_status"') !== false, 'module status checkbox control');
 mtuc1_assert(strpos($moduleTwig, 'type="hidden" name="module_mt_uni_credit_debug_enabled" value="0"') !== false, 'module debug hidden false value');
 mtuc1_assert(strpos($moduleTwig, 'type="checkbox" name="module_mt_uni_credit_debug_enabled"') !== false, 'module debug checkbox control');
+mtuc1_assert(strpos($moduleTwig, 'type="hidden" name="module_mt_uni_credit_advertising_enabled" value="0"') !== false, 'module advertising hidden false value');
+mtuc1_assert(strpos($moduleTwig, 'type="checkbox" name="module_mt_uni_credit_advertising_enabled"') !== false, 'module advertising checkbox control');
 mtuc1_assert(strpos($moduleTwig, 'name="module_mt_uni_credit_secret" value=""') !== false, 'module secret never renders stored value');
 mtuc1_assert(strpos($moduleTwig, 'maxlength="64"') !== false, 'module twig secret maxlength 64');
-mtuc1_assert(strpos($moduleTwig, 'health_checks') !== false, 'module twig renders health');
 mtuc1_assert(strpos($moduleTwig, 'type="password"') !== false, 'module secret uses password input');
 mtuc1_assert(strpos($moduleTwig, '<select name="module_mt_uni_credit_status"') === false, 'module status is not a select menu');
+mtuc1_assert(strpos($moduleTwig, 'text_product_button_add_to_cart') !== false || strpos($moduleTwig, 'product_button_actions') !== false, 'module twig renders product button choices');
+mtuc1_assert(substr_count($moduleTwig, 'product_button_actions') >= 1, 'module twig iterates product button actions');
+mtuc1_assert(strpos($moduleTwig, 'min="0"') !== false && strpos($moduleTwig, 'max="200"') !== false, 'module twig spacing min/max attributes');
+
+mtuc1_assert(strpos($moduleController, 'function refreshBankData') !== false, 'module controller defines refreshBankData');
+mtuc1_assert(strpos($moduleController, 'function downloadJournal') !== false, 'module controller defines downloadJournal');
+mtuc1_assert(strpos($moduleController, 'text_bank_data_phase1_unavailable') !== false, 'refresh bank data uses Phase 1 unavailable message');
+mtuc1_assert(strpos($moduleController, 'assignHealth') === false, 'module controller does not assign visible health panel');
+mtuc1_assert(strpos($moduleController, 'MODULE_SETTING_ENVIRONMENT') === false, 'module controller does not reference environment setting');
 
 $paymentControllerPath = $root . DIRECTORY_SEPARATOR . 'upload/admin/controller/extension/payment/mt_uni_credit.php';
 $paymentController = file_get_contents($paymentControllerPath);
@@ -157,6 +197,7 @@ mtuc1_assert(strpos($paymentTwig, 'type="password"') === false, 'payment twig ha
 
 foreach (MtUniCreditConstants::phase1ModulePersistedSettingKeys() as $key) {
     mtuc1_assert(strpos($key, MtUniCreditConstants::MODULE_SETTINGS_CODE . '_') === 0, 'module setting key prefix: ' . $key);
+    mtuc1_assert(strpos($key, 'environment') === false, 'phase1 module keys exclude environment: ' . $key);
 }
 foreach (MtUniCreditConstants::paymentPersistedSettingKeys() as $key) {
     mtuc1_assert(strpos($key, MtUniCreditConstants::PAYMENT_SETTINGS_CODE . '_') === 0, 'payment setting key prefix: ' . $key);
@@ -173,8 +214,10 @@ foreach ($health['checks'] as $check) {
 
 $post = array(
     MtUniCreditConstants::MODULE_SETTING_STATUS => '1',
-    MtUniCreditConstants::MODULE_SETTING_ENVIRONMENT => MtUniCreditConstants::ENVIRONMENT_TEST,
+    MtUniCreditConstants::MODULE_SETTING_ADVERTISING => '0',
     MtUniCreditConstants::MODULE_SETTING_DEBUG => '0',
+    MtUniCreditConstants::MODULE_SETTING_PRODUCT_BUTTON_ACTION => MtUniCreditConstants::BUTTON_ACTION_ADD_TO_CART,
+    MtUniCreditConstants::MODULE_SETTING_BUTTON_TOP_SPACING => '0',
     MtUniCreditConstants::MODULE_SETTING_UNICID => 'SHOP-1',
     MtUniCreditConstants::MODULE_SETTING_SECRET => '',
 );
@@ -199,8 +242,10 @@ mtuc1_assert(isset($errors['secret']), 'module validate requires secret when non
 
 $postSecretPersist = array(
     MtUniCreditConstants::MODULE_SETTING_STATUS => '1',
-    MtUniCreditConstants::MODULE_SETTING_ENVIRONMENT => MtUniCreditConstants::ENVIRONMENT_TEST,
+    MtUniCreditConstants::MODULE_SETTING_ADVERTISING => '0',
     MtUniCreditConstants::MODULE_SETTING_DEBUG => '0',
+    MtUniCreditConstants::MODULE_SETTING_PRODUCT_BUTTON_ACTION => MtUniCreditConstants::BUTTON_ACTION_BUY,
+    MtUniCreditConstants::MODULE_SETTING_BUTTON_TOP_SPACING => '10',
     MtUniCreditConstants::MODULE_SETTING_UNICID => 'SHOP-1',
     MtUniCreditConstants::MODULE_SETTING_SECRET => 'must-not-persist',
 );
@@ -222,11 +267,43 @@ $errors = $validationModel->validateSettings($postLongUnicid);
 mtuc1_assert(isset($errors['unicid']), 'module validate rejects UNICID over 36 chars');
 
 mtuc1_assert(
-    ModelExtensionModuleMtUniCredit::normalizeFlag('1') === '1'
-        && ModelExtensionModuleMtUniCredit::normalizeFlag('0') === '0'
-        && ModelExtensionModuleMtUniCredit::normalizeFlag('') === '0',
-    'module normalizeFlag handles checkbox semantics'
+    MtUniCreditLocalSettings::normalizeFlag('1') === '1'
+        && MtUniCreditLocalSettings::normalizeFlag('0') === '0'
+        && MtUniCreditLocalSettings::normalizeFlag('') === '0',
+    'local settings normalizeFlag handles checkbox semantics'
 );
+mtuc1_assert(
+    MtUniCreditLocalSettings::normalizeProductButtonAction('buy') === MtUniCreditConstants::BUTTON_ACTION_BUY,
+    'local settings accepts buy action'
+);
+mtuc1_assert(
+    MtUniCreditLocalSettings::normalizeProductButtonAction('invalid') === MtUniCreditConstants::DEFAULT_PRODUCT_BUTTON_ACTION,
+    'local settings falls back to add_to_cart'
+);
+mtuc1_assert(
+    MtUniCreditLocalSettings::normalizeButtonTopSpacing('250') === '200',
+    'local settings clamps button top spacing to 200'
+);
+mtuc1_assert(
+    MtUniCreditLocalSettings::normalizeButtonTopSpacing('-5') === '0',
+    'local settings clamps negative button top spacing to 0'
+);
+
+$postInvalidSpacing = array(
+    MtUniCreditConstants::MODULE_SETTING_BUTTON_TOP_SPACING => '999',
+    MtUniCreditConstants::MODULE_SETTING_UNICID => 'SHOP-1',
+    MtUniCreditConstants::MODULE_SETTING_SECRET => '',
+);
+$errors = $validationModel->validateSettings($postInvalidSpacing);
+mtuc1_assert(isset($errors['button_top_spacing']), 'module validate rejects spacing over 200');
+
+$postInvalidAction = array(
+    MtUniCreditConstants::MODULE_SETTING_PRODUCT_BUTTON_ACTION => 'invalid-action',
+    MtUniCreditConstants::MODULE_SETTING_UNICID => 'SHOP-1',
+    MtUniCreditConstants::MODULE_SETTING_SECRET => '',
+);
+$errors = $validationModel->validateSettings($postInvalidAction);
+mtuc1_assert(isset($errors['product_button_action']), 'module validate rejects invalid product button action');
 
 class Phase1InstallHarness
 {

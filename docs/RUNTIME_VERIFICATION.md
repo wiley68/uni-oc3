@@ -293,33 +293,27 @@ Build locally with `powershell -File scripts/package.ps1`, then install `dist/CC
 
 1. [ ] **УниКредит покупки на Кредит** (`mt_uni_credit`) appears under Modules with the established title.
 2. [ ] Module **Install** succeeds.
-3. [ ] **Modify** opens the module admin page without PHP/Twig warnings (HTTP 500 resolved).
-4. [ ] Field labels match established UniCredit terminology (UNICID, secret, debug mode).
-5. [ ] Status and debug use checkbox/toggle controls (not select menus); values save as `0`/`1`.
-6. [ ] UNICID is required server-side; maxlength 36 enforced.
-7. [ ] Secret password field never renders stored value; blank preserves existing where allowed; Phase 1 rejects new plaintext secret save.
-8. [ ] Module settings save: status, environment, debug_enabled, UNICID persist per store scope.
-9. [ ] Health section renders module version **2.0.2**, PHP floor **7.3.0+**, extension checks, deployment paths, Phase 2/4/6/9 placeholders.
-10. [ ] No secret value, bearer token, private key, passphrase, or `enc:v1:` ciphertext in HTML source or health table.
-11. [ ] Permission denial: user without `modify` on `extension/module/mt_uni_credit` cannot save.
-12. [ ] Module enable/disable works.
-13. [ ] Module **Uninstall** removes only `module_mt_uni_credit` settings; payment settings remain if Payment still installed.
+3. [ ] **Modify** opens the module admin page without PHP/Twig warnings.
+4. [ ] Field order matches established UniCredit family: Status, UNICID, Secret, Advertising, Debug, Product button, Button top spacing, operational buttons.
+5. [ ] **Environment (`Среда`) is absent** from Module admin.
+6. [ ] **Health/readiness panel is absent** from Module admin.
+7. [ ] Status, Advertising and Debug use checkbox/toggle controls; values save as `0`/`1`.
+8. [ ] Product button select has exactly **Добави в количката** / **Купи** (`add_to_cart` / `buy`).
+9. [ ] Button top spacing accepts `0..200` and persists.
+10. [ ] **Обнови данните от банката** visible; POST shows Phase 1 unavailable message (no CP call).
+11. [ ] **Изтегли журнал операции** visible; POST downloads empty/sanitized JSON (no Phase 9 persistence).
+12. [ ] UNICID required; secret behaviour correct; save/reload works.
+13. [ ] Module **Uninstall** removes only `module_mt_uni_credit` settings.
 14. [ ] Module **Reinstall** succeeds with idempotent defaults.
 
 ### Payment (`Extensions → Extensions → Payments`)
 
-1. [ ] **УниКредит покупки на Кредит** / UniCredit Purchases on Credit (`mt_uni_credit`) appears under Payments.
-2. [ ] UniCredit logo displays in the payment extensions listing column.
-3. [ ] Payment **Install** succeeds independently of Module install order.
-4. [ ] **Modify** opens a payment-only page without PHP/Twig warnings (no health, UNICID, environment, debug, secret).
-5. [ ] Fresh install: order status defaults to **Processing** (not first arbitrary status such as Canceled).
-6. [ ] Manually changed order status persists after save and reopen.
-7. [ ] Order status dropdown loads native OC order statuses.
-8. [ ] Geo zone dropdown loads; **All Zones** works.
-9. [ ] Payment status and sort order save correctly.
-10. [ ] Permission denial: user without `modify` on `extension/payment/mt_uni_credit` cannot save.
-11. [ ] Payment **Uninstall** removes only `payment_mt_uni_credit` settings; module settings remain if Module still installed.
-12. [ ] Payment **Reinstall** succeeds with idempotent defaults; existing explicit order status not overwritten.
+1. [ ] **УниКредит покупки на Кредит** appears under Payments.
+2. [ ] UniCredit logo displays at reasonable width (**max ~200 px**, aspect ratio preserved).
+3. [ ] Payment **Modify** opens payment-only page (order status, geo zone, status, sort order).
+4. [ ] Fresh install: order status defaults to **Processing**.
+5. [ ] Manually changed order status persists after save and reopen.
+6. [ ] Payment **Uninstall/Reinstall** behaviour unchanged.
 
 Optional evidence to attach (sanitized):
 

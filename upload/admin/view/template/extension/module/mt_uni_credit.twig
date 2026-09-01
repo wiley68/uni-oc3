@@ -15,6 +15,11 @@
     </div>
   </div>
   <div class="container-fluid">
+    {% if success %}
+    <div class="alert alert-success alert-dismissible"><i class="fa fa-check-circle"></i> {{ success }}
+      <button type="button" class="close" data-dismiss="alert">&times;</button>
+    </div>
+    {% endif %}
     {% if error_warning %}
     <div class="alert alert-danger alert-dismissible"><i class="fa fa-exclamation-circle"></i> {{ error_warning }}
       <button type="button" class="close" data-dismiss="alert">&times;</button>
@@ -26,107 +31,95 @@
       </div>
       <div class="panel-body">
         <form action="{{ action }}" method="post" enctype="multipart/form-data" id="form-module" class="form-horizontal">
-          <fieldset>
-            <legend>{{ text_edit }}</legend>
-            <div class="form-group">
-              <label class="col-sm-2 control-label">{{ entry_status }}</label>
-              <div class="col-sm-10">
-                <input type="hidden" name="module_mt_uni_credit_status" value="0" />
-                <div class="checkbox">
-                  <label>
-                    <input type="checkbox" name="module_mt_uni_credit_status" value="1"{% if module_mt_uni_credit_status %} checked="checked"{% endif %} />
-                    {{ entry_status }}
-                  </label>
-                </div>
+          <div class="form-group">
+            <label class="col-sm-2 control-label">{{ entry_status }}</label>
+            <div class="col-sm-10">
+              <input type="hidden" name="module_mt_uni_credit_status" value="0" />
+              <div class="checkbox">
+                <label>
+                  <input type="checkbox" name="module_mt_uni_credit_status" value="1"{% if module_mt_uni_credit_status %} checked="checked"{% endif %} />
+                  {{ entry_status }}
+                </label>
               </div>
             </div>
-            <div class="form-group{% if error_unicid %} has-error{% endif %}">
-              <label class="col-sm-2 control-label" for="input-unicid"><span class="text-danger">*</span> {{ entry_unicid }}</label>
-              <div class="col-sm-10">
-                <input type="text" name="module_mt_uni_credit_unicid" value="{{ module_mt_uni_credit_unicid }}" placeholder="{{ entry_unicid }}" id="input-unicid" class="form-control" maxlength="36" required="required" autocomplete="off" />
-                {% if error_unicid %}<div class="text-danger">{{ error_unicid }}</div>{% endif %}
-                <p class="help-block">{{ help_unicid }}</p>
-              </div>
+          </div>
+          <div class="form-group{% if error_unicid %} has-error{% endif %}">
+            <label class="col-sm-2 control-label" for="input-unicid"><span class="text-danger">*</span> {{ entry_unicid }}</label>
+            <div class="col-sm-10">
+              <input type="text" name="module_mt_uni_credit_unicid" value="{{ module_mt_uni_credit_unicid }}" placeholder="{{ entry_unicid }}" id="input-unicid" class="form-control" maxlength="36" required="required" autocomplete="off" />
+              {% if error_unicid %}<div class="text-danger">{{ error_unicid }}</div>{% endif %}
+              <p class="help-block">{{ help_unicid }}</p>
             </div>
-            <div class="form-group{% if error_secret %} has-error{% endif %}">
-              <label class="col-sm-2 control-label" for="input-secret">{% if not has_secret %}<span class="text-danger">*</span> {% endif %}{{ entry_secret }}</label>
-              <div class="col-sm-10">
-                <input type="password" name="module_mt_uni_credit_secret" value="" placeholder="{{ entry_secret }}" id="input-secret" class="form-control" maxlength="64" autocomplete="new-password"{% if not has_secret %} required="required"{% endif %} />
-                {% if error_secret %}<div class="text-danger">{{ error_secret }}</div>{% endif %}
-                <p class="help-block">{{ help_secret }}</p>
-                {% if has_secret %}
-                <p class="help-block">{{ text_secret_keep_current }}</p>
-                {% endif %}
-                <p class="help-block">{{ text_secret_phase2 }}</p>
-              </div>
+          </div>
+          <div class="form-group{% if error_secret %} has-error{% endif %}">
+            <label class="col-sm-2 control-label" for="input-secret">{% if not has_secret %}<span class="text-danger">*</span> {% endif %}{{ entry_secret }}</label>
+            <div class="col-sm-10">
+              <input type="password" name="module_mt_uni_credit_secret" value="" placeholder="{{ entry_secret }}" id="input-secret" class="form-control" maxlength="64" autocomplete="new-password"{% if not has_secret %} required="required"{% endif %} />
+              {% if error_secret %}<div class="text-danger">{{ error_secret }}</div>{% endif %}
+              <p class="help-block">{{ help_secret }}{% if has_secret %} {{ text_secret_keep_current }}{% endif %}</p>
+              <p class="help-block">{{ text_secret_phase2 }}</p>
             </div>
-            <div class="form-group{% if error_environment %} has-error{% endif %}">
-              <label class="col-sm-2 control-label" for="input-environment">{{ entry_environment }}</label>
-              <div class="col-sm-10">
-                <select name="module_mt_uni_credit_environment" id="input-environment" class="form-control">
-                  {% if module_mt_uni_credit_environment == '1' %}
-                  <option value="0">{{ text_environment_test }}</option>
-                  <option value="1" selected="selected">{{ text_environment_production }}</option>
-                  {% else %}
-                  <option value="0" selected="selected">{{ text_environment_test }}</option>
-                  <option value="1">{{ text_environment_production }}</option>
-                  {% endif %}
-                </select>
-                {% if error_environment %}<div class="text-danger">{{ error_environment }}</div>{% endif %}
-                <p class="help-block">{{ help_environment }}</p>
+          </div>
+          <div class="form-group">
+            <label class="col-sm-2 control-label">{{ entry_advertising_enabled }}</label>
+            <div class="col-sm-10">
+              <input type="hidden" name="module_mt_uni_credit_advertising_enabled" value="0" />
+              <div class="checkbox">
+                <label>
+                  <input type="checkbox" name="module_mt_uni_credit_advertising_enabled" value="1"{% if module_mt_uni_credit_advertising_enabled %} checked="checked"{% endif %} />
+                  {{ entry_advertising_enabled }}
+                </label>
               </div>
+              <p class="help-block">{{ help_advertising_enabled }}</p>
             </div>
-            <div class="form-group">
-              <label class="col-sm-2 control-label">{{ entry_debug_enabled }}</label>
-              <div class="col-sm-10">
-                <input type="hidden" name="module_mt_uni_credit_debug_enabled" value="0" />
-                <div class="checkbox">
-                  <label>
-                    <input type="checkbox" name="module_mt_uni_credit_debug_enabled" value="1"{% if module_mt_uni_credit_debug_enabled %} checked="checked"{% endif %} />
-                    {{ entry_debug_enabled }}
-                  </label>
-                </div>
-                <p class="help-block">{{ help_debug_enabled }}</p>
+          </div>
+          <div class="form-group">
+            <label class="col-sm-2 control-label">{{ entry_debug_enabled }}</label>
+            <div class="col-sm-10">
+              <input type="hidden" name="module_mt_uni_credit_debug_enabled" value="0" />
+              <div class="checkbox">
+                <label>
+                  <input type="checkbox" name="module_mt_uni_credit_debug_enabled" value="1"{% if module_mt_uni_credit_debug_enabled %} checked="checked"{% endif %} />
+                  {{ entry_debug_enabled }}
+                </label>
               </div>
+              <p class="help-block">{{ help_debug_enabled }}</p>
             </div>
-          </fieldset>
+          </div>
+          <div class="form-group{% if error_product_button_action %} has-error{% endif %}">
+            <label class="col-sm-2 control-label" for="input-product-button-action">{{ entry_product_button_action }}</label>
+            <div class="col-sm-10">
+              <select name="module_mt_uni_credit_product_button_action" id="input-product-button-action" class="form-control">
+                {% for action in product_button_actions %}
+                <option value="{{ action.value }}"{% if module_mt_uni_credit_product_button_action == action.value %} selected="selected"{% endif %}>{{ action.label }}</option>
+                {% endfor %}
+              </select>
+              {% if error_product_button_action %}<div class="text-danger">{{ error_product_button_action }}</div>{% endif %}
+              <p class="help-block">{{ help_product_button_action }}</p>
+            </div>
+          </div>
+          <div class="form-group{% if error_button_top_spacing %} has-error{% endif %}">
+            <label class="col-sm-2 control-label" for="input-button-top-spacing">{{ entry_button_top_spacing }}</label>
+            <div class="col-sm-10">
+              <input type="number" name="module_mt_uni_credit_button_top_spacing" value="{{ module_mt_uni_credit_button_top_spacing }}" min="0" max="200" step="1" id="input-button-top-spacing" class="form-control" style="max-width:8rem;" />
+              {% if error_button_top_spacing %}<div class="text-danger">{{ error_button_top_spacing }}</div>{% endif %}
+              <p class="help-block">{{ help_button_top_spacing }}</p>
+            </div>
+          </div>
+          <div class="form-group">
+            <div class="col-sm-offset-2 col-sm-10">
+              <button type="submit" formaction="{{ refresh_bank_data }}" formmethod="post" formnovalidate="formnovalidate" form="form-refresh-bank" name="mt_uni_credit_refresh_bank" value="1" class="btn btn-default">
+                <i class="fa fa-refresh"></i> {{ button_refresh_bank_data }}
+              </button>
+              <button type="submit" formaction="{{ download_journal }}" formmethod="post" formnovalidate="formnovalidate" form="form-download-journal" class="btn btn-default">
+                <i class="fa fa-download"></i> {{ button_download_journal }}
+              </button>
+              <p class="help-block">{{ help_download_journal }}</p>
+            </div>
+          </div>
         </form>
-      </div>
-    </div>
-    <div class="panel panel-default">
-      <div class="panel-heading">
-        <h3 class="panel-title"><i class="fa fa-heartbeat"></i> {{ text_health }}</h3>
-      </div>
-      <div class="panel-body">
-        <div class="alert alert-info">
-          <strong>{{ health_summary.status|upper }}</strong>: {{ health_summary.detail }}
-        </div>
-        <p>{{ text_deployment_paths }}:</p>
-        <ul class="list-unstyled">
-          <li><code>{{ health_paths.passphrase }}</code></li>
-          <li><code>{{ health_paths.certificate }}</code></li>
-          <li><code>{{ health_paths.private_key }}</code></li>
-        </ul>
-        <div class="table-responsive">
-          <table class="table table-bordered table-hover">
-            <thead>
-              <tr>
-                <td>{{ column_check }}</td>
-                <td>{{ column_status }}</td>
-                <td>{{ column_detail }}</td>
-              </tr>
-            </thead>
-            <tbody>
-              {% for check in health_checks %}
-              <tr>
-                <td>{{ check.id }}</td>
-                <td>{{ health_status_labels[check.status] }}</td>
-                <td>{{ check.detail }}</td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
+        <form id="form-refresh-bank" action="{{ refresh_bank_data }}" method="post" style="display:none;" aria-hidden="true"></form>
+        <form id="form-download-journal" action="{{ download_journal }}" method="post" style="display:none;" aria-hidden="true"></form>
       </div>
     </div>
   </div>

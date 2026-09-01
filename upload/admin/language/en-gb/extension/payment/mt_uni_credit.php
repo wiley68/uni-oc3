@@ -9,7 +9,7 @@ $_['text_edit'] = 'Edit UniCredit Purchases on Credit';
 $_['text_enabled'] = 'Enabled';
 $_['text_disabled'] = 'Disabled';
 $_['text_all_zones'] = 'All Zones';
-$_['text_mt_uni_credit'] = '<img src="view/image/payment/uni_logo.svg" alt="UniCredit Purchases on Credit" title="UniCredit Purchases on Credit" style="border: 1px solid #EEEEEE;" />';
+$_['text_mt_uni_credit'] = '<img src="view/image/payment/uni_logo.svg" alt="UniCredit Purchases on Credit" title="UniCredit Purchases on Credit" style="max-width:200px;height:auto;border: 1px solid #EEEEEE;" />';
 
 $_['entry_order_status'] = 'Order status';
 $_['entry_geo_zone'] = 'Geo zone';
