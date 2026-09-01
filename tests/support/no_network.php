@@ -3,7 +3,7 @@
 /**
  * Fail tests if unexpected outbound HTTP wrappers are used.
  */
-function mtuc_phase0_install_network_guard()
+function mtuc_phase0_install_network_guard(): void
 {
     if (getenv('MTUC_PHASE0_ALLOW_NETWORK') === '1') {
         return;
@@ -16,11 +16,7 @@ function mtuc_phase0_install_network_guard()
     }
 }
 
-/**
- * @param string $contents
- * @return bool
- */
-function mtuc_phase0_contains_live_remote_host($contents)
+function mtuc_phase0_contains_live_remote_host(string $contents): bool
 {
     $hosts = array(
         'uni.avalonbg.com',

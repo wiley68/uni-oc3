@@ -27,12 +27,12 @@ These are source characterizations, not live shop measurements.
 
 ### UniCredit contracts (from `reference-uni-oc4`)
 
-- Module code `mt_uni_credit`, CP payload version parity candidate `2.0.2`.
-- CP API prefix `/api/v1`; auth login/refresh/logout; shop GET; orders POST/PATCH; SSL certificate endpoints for Process 1.
+- Module code `mt_uni_credit`, version **`2.0.2`** (D2 closed).
+- Module PHP floor **7.3.0+** (D1 closed) — deliberate module support across the practical OC3 matrix; not a universal OC 3.0.3.6 core requirement.
+- CP API prefix `/api/v1`; SmartUCF hosts `online.ucfin.bg` / `onlinetest.ucfin.bg` (D4 closed for Phase 0).
 - HMAC replay protocol as in `tests/fixtures/hmac_callback_vector.json`.
-- SmartUCF hosts `online.ucfin.bg` / `onlinetest.ucfin.bg` only.
-- Secret filenames `secrets/smartucf-key.php`, `keys/avalon_cert.pem`, `keys/avalon_private_key.pem`.
-- Encryption envelope `enc:v1:` AES-256-GCM; settings key HKDF from `DB_PASSWORD`.
+- Secret filenames `secrets/smartucf-key.php`, `keys/avalon_cert.pem`, `keys/avalon_private_key.pem` (D3 closed for Phase 0).
+- Settings encryption contract: HKDF from `DB_PASSWORD` + AES-256-GCM `enc:v1:` (Phase 2 semantic verification against OC4 implementation).
 
 ### JET OC3 (`reference-jet-oc3`)
 
@@ -41,12 +41,22 @@ These are source characterizations, not live shop measurements.
 - Product assets: default-theme path + `filemtime` + fragment `<link>`/`<script>`.
 - JET `filemtime` is **unguarded**; UniCredit must guard missing files.
 
-### What this workspace cannot prove
+### What this workspace cannot prove (deferred by phase)
 
-- Exact OC version of the **remote** test shop.
-- PHP 7.3.33 on that host (ENVIRONMENT.md claim; not measured here).
-- Installed theme, Journal version, checkout extension, DB engine/version, SQL mode, charset, prefix, cron, NTP, outbound TLS, mail engine, OCMOD collision set.
-- Whether `secrets/` / `keys/` can live at shop root or must use `DIR_STORAGE`.
+| Item                                                         | Blocks Phase 1? | Phase            |
+| ------------------------------------------------------------ | --------------- | ---------------- |
+| Exact OC version of the remote test shop                     | no              | runtime matrix   |
+| PHP 7.3.33 on that host (ENVIRONMENT.md claim)               | no              | runtime matrix   |
+| OpenSSL `aes-256-gcm`, `hash_hkdf`, cURL/TLS on host         | no              | runtime matrix   |
+| DB engine/version, SQL mode, charset, prefix                 | no              | Phase 2 install  |
+| Installed theme, Journal version, checkout extension         | no              | Phase 8+         |
+| OCMOD collision set                                          | no              | OCMOD phase gate |
+| Exact deployment CP hostname                                 | no              | **Phase 4**      |
+| Final OC3 inbound callback URLs registered with CP           | no              | **Phase 6**      |
+| Physical protected root for secrets/keys, owner, permissions | no              | deployment (D3)  |
+| HKDF/AES-GCM semantic parity with OC4 implementation         | no              | **Phase 2**      |
+| Outbound DNS/TLS to approved test CP host                    | no              | Phase 4          |
+| Mail engine, cron, NTP                                       | no              | Phase 10 / ops   |
 
 ---
 
@@ -264,4 +274,4 @@ Strip emails, tokens, URLs with secrets, EGN, phone numbers before sharing.
 - [ ] cron availability
 - [ ] sanitized error log sample
 
-Phase 0 does not install the module. Results feed D1/D3/D4 and later STOP GATEs.
+Phase 0 does not install the module. D1–D4 Phase 0 blockers are closed; remaining items above feed their dependent phase STOP GATEs.

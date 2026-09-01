@@ -10,7 +10,7 @@ It records **verified** contracts extracted from:
 | OpenCart 3 platform  | `reference-oc3-core` (`VERSION = '3.0.3.9'`) | Payment routes, checkout order lifecycle, OCMOD, settings  |
 | Proven OC3 packaging | `reference-jet-oc3`                          | Package layout, Journal asset pattern, payment conventions |
 
-Planning baseline (this Phase 0 task): `67504ea7c7b3aa14dca3dc33ea85919ed605135a`.
+Planning baseline (Phase 0): `67504ea7c7b3aa14dca3dc33ea85919ed605135a`. Phase 0 STOP GATE closure: `9a63d70cb1f1cb9183925880c070950cf8fa5e3a`.
 
 The Master Plan file itself cites an earlier analysis baseline `e7787b091e5258ac0f9d105b5131bf4e58dd9c11`. Phase 0 treats the task commit as the approved planning snapshot and the Master Plan as the authoritative task list.
 
@@ -31,6 +31,8 @@ Later phases cite contract IDs (`CALC-001`, `CP-AUTH-001`, …). Do not rename f
 - OpenCart 3.0.3.9
 
 **Primary local platform reference:** OpenCart 3.0.3.9 (`reference-oc3-core`)
+
+**Module PHP compatibility floor (D1 closed):** **PHP 7.3.0+** — deliberate module support across the practical OC3 matrix above. This is **not** a claim that OpenCart 3.0.3.6 itself universally requires PHP 7.3.
 
 **Current first remote test runtime:** PHP 7.3.33 (unconfirmed in this workspace — see `docs/RUNTIME_VERIFICATION.md`)
 
@@ -91,15 +93,14 @@ module.ocmod.zip
 
 No Composer runtime install on the shop. Do not bundle a second mail stack when OC3 Mail can satisfy Process 2.
 
-### MODULE-004 — Version policy (D2 pending)
+### MODULE-004 — Version policy (D2 closed)
 
+- **Module code:** `mt_uni_credit` (frozen).
+- **Extension type:** `payment` (frozen).
+- **Module / CP version:** **`2.0.2`** (frozen for initial OC3 UniCredit release and CP payload identity).
 - CP `version` field format: `^\d{1,3}\.\d{1,3}\.\d{1,3}$`.
-- Completed UniCredit line (OC4/PS9) transmits **`2.0.2`**.
-- **Release version is not invented here.** Product owner must confirm before Phase 1 whether the OC3 module:
-  1. keeps `2.0.2` for CP payload parity, or
-  2. assigns an OC3-specific version that still matches the CP regex.
 
-Until D2 is approved, fixtures and later code must treat `2.0.2` as the **parity candidate**, not as a released OC3 version.
+Use `2.0.2` unless a later coordinated release explicitly changes it.
 
 Fixture: `tests/fixtures/extension_identity.json`.
 
@@ -232,13 +233,21 @@ Login is **not** idempotent. Token length 64, type Bearer, TTL **86400** seconds
 - Permanent 4xx/auth/invalid payload → purge scoped cache + tokens.
 - Transient 5xx/network → preserve cache + tokens.
 
-### CP-AUTH-004 — Environment selection (D4 pending)
+### CP-AUTH-004 — Environment selection (D4 closed for Phase 0)
 
-Allowed Control Panel hosts are configuration constants, **not** arbitrary admin URLs. HTTPS required.
+**Frozen for Phase 0:**
 
-OC4 tracks a single `config/environment.php` → `control_panel_url` (example host `https://uni.avalonbg.com`). OC3 should follow the same pattern.
+- CP API prefix: **`/api/v1`**
+- SmartUCF destination allowlist: **`online.ucfin.bg`**, **`onlinetest.ucfin.bg`**
+- Trusted paths: `/suos/api/otp/` + `sucfOnlineSessionStart`; `/sucf-online/Request/Start`
+- Control Panel and SmartUCF hosts are configuration constants, **not** arbitrary admin URLs. HTTPS required.
 
-Exact production/test CP hosts for this OC3 deployment are **not** invented here. See D4.
+**Deferred (not Phase 1 blockers):**
+
+- Exact deployment CP hostname → Phase 4 outbound configuration
+- Final OC3 inbound callback URLs → Phase 6 CP registration
+
+Do not invent deployment hostnames or registered callback URLs in Phase 0.
 
 No live network in Phase 0.
 
@@ -320,7 +329,7 @@ Throttle (CP-side): 60 / shop / minute.
 | `products_q`    | optional; implode qty `_`, qty ≥ 1                                                                                      |
 | `type_client`   | 0–255, default 0; completed modules: `0` if mobile else `1`                                                             |
 | `currency`      | max 3, **`in:BGN,EUR`**, API default BGN                                                                                |
-| `version`       | max 11, `x.x.x`; parity candidate `2.0.2` (D2)                                                                          |
+| `version`       | max 11, `x.x.x`; frozen **`2.0.2`** (D2)                                                                                |
 
 **Create-time:** omit `status` / `status_id`. CP defaults to `Създаден в КП Банка` / `cp_sent`.
 
@@ -510,9 +519,9 @@ From `hmac_callback_vector.json` (not a production secret):
 - raw body: `{"unicid":"TEST-UNICID","order_id":"ABC123","status":"approved","status_id":"10"}`
 - expected HMAC: `2f4a55c19a2dd0f2f7f2390a6d720e95dbdff577c096d7ff291ef8f84a53e94f`
 
-### API-001 — Conceptual OC3 inbound routes (D4)
+### API-001 — Conceptual OC3 inbound routes (D4 deferred to Phase 6)
 
-POST-only JSON, no SEO aliases. Conceptual (Master Plan); **not** registered with CP until Phase 6:
+POST-only JSON, no SEO aliases. Conceptual only; **not** registered with CP until Phase 6:
 
 ```text
 index.php?route=extension/mt_uni_credit/api/shopCache
@@ -684,23 +693,19 @@ On 3.0.3.9, `Action` resolves `extension/mt_uni_credit/api/shopCache` to file `c
 
 Fixture: `tests/fixtures/php_floor.json`.
 
-### PHP-001 — Floor (D1 pending approval)
+### PHP-001 — Floor (D1 closed)
 
-Do **not** freeze PHP 7.1 by default.
+**Minimum module PHP version:** **7.3.0**
 
-| Candidate               | Enables                                        | Restricts                                           | Notes                                                         |
-| ----------------------- | ---------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------- |
-| 7.1.2                   | `hash_hkdf`, AES-256-GCM, `random_bytes`       | Claims support below local OC 3.0.3.9 core          | Reject unless 3.0.3.6/3.0.3.8 + runtime prove a need          |
-| **7.3.0 (recommended)** | Native OC 3.0.3.9 install; all required crypto | Forbids 7.4/8-only syntax until separately approved | Matches `system/startup.php` and installer `PHP7.3+ Required` |
-| 7.4.0                   | typed properties, arrow functions              | OC3 core deprecation noise; not required            | Not recommended as floor                                      |
+The UniCredit OpenCart 3 module deliberately supports **PHP 7.3.0+** across its practical OC3 compatibility matrix (3.0.3.6, 3.0.3.8, 3.0.3.9). This is the **module** floor — not a statement that OpenCart 3.0.3.6 itself universally requires PHP 7.3.
 
-**Recommendation:** implementation/syntax floor **PHP 7.3.0**. First remote runtime reference is PHP 7.3.33. Newer PHP only where OC3 and installed modifications permit (not claimed as release-supported here).
+Do not freeze PHP 7.1 merely because crypto is theoretically available there. Newer PHP may run where OC3 and installed modifications permit; that is not claimed as release-supported here.
 
-Missing before closing D1: remote `php -v` / modules / OpenSSL ciphers; 3.0.3.6 and 3.0.3.8 `startup.php` PHP check.
+Deferred runtime checks (do not block Phase 1): remote `php -v` / modules / OpenSSL ciphers on the test host.
 
-### PHP-002 — Forbidden syntax until the floor is approved
+### PHP-002 — Forbidden syntax above PHP 7.3 floor
 
-Regardless of the approved number, implementation must avoid until explicitly allowed:
+Implementation must avoid until a higher floor is explicitly approved:
 
 typed properties; union/intersection types; `mixed`; constructor promotion; attributes; enums; `match`; arrow functions; nullsafe `?->`; `str_contains` / `str_starts_with` / `str_ends_with`; `Throwable`-only assumptions.
 
@@ -729,19 +734,27 @@ Follow completed modules wherever technically possible:
 
 Authoritative modes: cert `0640`, key `0600`, passphrase file `0600`. Health checks: presence, path, owner/group, permissions, PEM SHA-256 — **never** secret contents.
 
-### DEPLOY-002 — Key sources
+### DEPLOY-002 — Key sources (D3 closed for Phase 0)
 
 - CP login secret: admin setting, AES-256-GCM `enc:v1:`, never re-displayed.
-- Settings encryption key: HKDF-SHA256(DB_PASSWORD, 32 bytes, info `mt_uni_credit/settings-encryption/v1`). Fail closed if `DB_PASSWORD` / OpenSSL cannot produce a key. No predictable metadata fallback.
-- SmartUCF passphrase: secrets file only.
+- Settings encryption key (contract from OC4): HKDF-SHA256(`DB_PASSWORD`, 32 bytes, info `mt_uni_credit/settings-encryption/v1`) → AES-256-GCM `enc:v1:`. Fail closed if key material cannot be resolved. **No plaintext fallback. No predictable metadata fallback.**
+- SmartUCF passphrase: `secrets/smartucf-key.php` only.
 
-### DEPLOY-003 — OC3 path translation (D3 pending)
+Phase 2 must semantically verify the exact OC4 `ModuleEncryptionKeyProvider` / `ModuleSettingCipher` implementation against this contract before production use. Phase 0 inferred the mechanism from OC4 reference sources, not live runtime.
 
-OC4 keeps `secrets/` and `keys/` beside the extension root. OC3 OCMOD extracts `upload/` into the shop tree (often the web root).
+### DEPLOY-003 — OC3 path translation (D3 closed for Phase 0)
 
-**Recommendation:** keep the **same filenames and secret format**. Resolve the directory via a module helper. If the document root would expose PEM/passphrase, place the pair under a protected path (`DIR_STORAGE/mt_uni_credit/…` or an already used UniCredit directory on the server) and document that as an OC3 filesystem constraint — do not invent a new secret file format.
+Keep the **same relative filenames** as OC4:
 
-Developer must confirm the test shop can host this layout (D3).
+```text
+secrets/smartucf-key.php
+keys/avalon_cert.pem
+keys/avalon_private_key.pem
+```
+
+Resolve the directory from a module root helper. If the shop document root would expose PEM/passphrase, use a protected location (`DIR_STORAGE/mt_uni_credit/…` or equivalent) — an OC3 filesystem constraint, **not** a new secret format.
+
+Final physical protected root, ownership and permissions are **runtime/deployment verification** items. They do **not** block Phase 1.
 
 ---
 
@@ -751,13 +764,15 @@ Phase 0 does **not** create: admin/catalog payment implementation, product/cart 
 
 ---
 
-## Decision log (Phase 0)
+## Decision log (Phase 0 STOP GATE)
 
-| ID                                 | Status                              | Recommendation                                                                                                                                                     |
-| ---------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| D1 PHP floor                       | **RECOMMENDATION PENDING APPROVAL** | PHP **7.3.0** syntax/runtime floor; verify remote 7.3.33 and 3.0.3.6/3.0.3.8 startup checks                                                                        |
-| D2 Module version                  | **RECOMMENDATION PENDING APPROVAL** | Keep code `mt_uni_credit`; CP payload version parity candidate `2.0.2`; product owner confirms release version before Phase 1                                      |
-| D3 Secrets/certs                   | **RECOMMENDATION PENDING APPROVAL** | Same filenames as OC4; protect path on OC3; HKDF from `DB_PASSWORD`; AES-256-GCM; no plaintext fallback                                                            |
-| D4 CP/SmartUCF env + OC3 callbacks | **RECOMMENDATION PENDING APPROVAL** | Freeze allowlists (`/api/v1`, `online.ucfin.bg` / `onlinetest.ucfin.bg`); CP owner registers exact OC3 callback paths before Phase 4/6. Host URL not invented here |
+| ID                                 | Status                 | Outcome                                                                                                                                             |
+| ---------------------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1 PHP floor                       | **CLOSED**             | Module minimum **PHP 7.3.0+** across practical OC3 matrix; not a universal OC 3.0.3.6 core requirement                                              |
+| D2 Module version                  | **CLOSED**             | Code `mt_uni_credit`, type `payment`, version **`2.0.2`** for module and CP payload identity                                                        |
+| D3 Secrets/certs                   | **CLOSED FOR PHASE 0** | OC4 filenames frozen; HKDF+AES-256-GCM contract preserved; Phase 2 semantic verification; physical root/permissions deferred; no plaintext fallback |
+| D4 CP/SmartUCF env + OC3 callbacks | **CLOSED FOR PHASE 0** | `/api/v1` and SmartUCF allowlist frozen; deployment CP hostname → Phase 4; final inbound callback URLs → Phase 6                                    |
 
-D5–D12 remain as in the Master Plan (several already approved there: D5 targets, D6 OCMOD, D9 preserve tables). They do not block Phase 0 documentation; D8/D11 stay open for later phases with recommendations recorded above.
+D5–D12 remain as in the Master Plan (several already approved there: D5 targets, D6 OCMOD, D9 preserve tables). D8/D11 stay open for later phases.
+
+**Phase 0 STOP GATE:** **PASS** (developer approved D1–D4 on commit `9a63d70cb1f1cb9183925880c070950cf8fa5e3a`).

@@ -1,19 +1,26 @@
 {
-  "contract_ids": ["CP-ENV-001", "D4"],
-  "status": "recommendation_pending_approval",
+  "contract_ids": ["CP-ENV-001", "CP-AUTH-004", "D4"],
+  "status": "closed_for_phase_0",
   "api_prefix": "/api/v1",
-  "oc4_tracked_host_source": "config/environment.php control_panel_url",
-  "oc4_example_host": "https://uni.avalonbg.com",
-  "allowlist_rule": "Production/test Control Panel hosts are constants/configuration, not arbitrary admin URLs. HTTPS required.",
   "smartucf_hosts": ["online.ucfin.bg", "onlinetest.ucfin.bg"],
-  "oc3_callback_paths": {
-    "status": "not_frozen_for_cp_registration",
-    "conceptual": [
-      "index.php?route=extension/mt_uni_credit/api/shopCache",
-      "index.php?route=extension/mt_uni_credit/api/orderBankStatus",
-      "index.php?route=extension/mt_uni_credit/api/smartUcfDebugLog"
-    ],
-    "note": "Phase 6 must coordinate exact OC3 paths with the CP owner. Do not assume OC4 routes are accepted unchanged."
+  "smartucf_service_path": "/suos/api/otp",
+  "smartucf_application_path": "/sucf-online/Request/Start",
+  "smartucf_session_start_suffix": "sucfOnlineSessionStart",
+  "allowlist_rule": "Production/test Control Panel hosts and SmartUCF destinations are constants/configuration, not arbitrary admin URLs. HTTPS required.",
+  "deferred_coordination": {
+    "deployment_cp_hostname": {
+      "phase": 4,
+      "note": "Exact deployment CP hostname is packaging/runtime configuration. Do not invent in Phase 0."
+    },
+    "oc3_inbound_callback_urls": {
+      "phase": 6,
+      "conceptual": [
+        "index.php?route=extension/mt_uni_credit/api/shopCache",
+        "index.php?route=extension/mt_uni_credit/api/orderBankStatus",
+        "index.php?route=extension/mt_uni_credit/api/smartUcfDebugLog"
+      ],
+      "note": "Final OC3 callback paths require CP owner registration. Do not assume OC4 routes unchanged."
+    }
   },
   "no_live_network_in_phase_0": true
 }

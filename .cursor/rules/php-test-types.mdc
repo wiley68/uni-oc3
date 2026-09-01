@@ -1,0 +1,31 @@
+---
+description: PHP type hints for uni-oc3 tests and support code (PHP 7.3 floor)
+globs: tests/**/*.php
+alwaysApply: false
+---
+
+# PHP test/support type hints
+
+All functions in `tests/**/*.php` must declare parameter and return types in the signature. Docblocks alone are not enough for static analysis.
+
+## Floor
+
+- Target PHP **7.3.0+** (see `docs/CONTRACTS.md` D1).
+- Allowed: `bool`, `int`, `float`, `string`, `array`, `void`, class names, `?T` nullable (PHP 7.1+).
+- Avoid PHP 7.4+ only syntax in signatures: typed properties, union types, `mixed`, constructor promotion.
+
+## Examples
+
+```php
+// BAD — analyzer: "Parameter has no type information available"
+function mtuc_assert($condition, $message) { }
+
+// GOOD
+function mtuc_assert(bool $condition, string $message): void { }
+
+function mtuc_phase0_load_fixture(string $name): array { }
+
+function mtuc_phase0_contains_live_remote_host(string $contents): bool { }
+```
+
+When adding new test helpers, type every parameter and return value explicitly.

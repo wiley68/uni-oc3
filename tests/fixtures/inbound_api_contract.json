@@ -7,7 +7,7 @@
     "index.php?route=extension/mt_uni_credit/api/orderBankStatus",
     "index.php?route=extension/mt_uni_credit/api/smartUcfDebugLog"
   ],
-  "route_status": "conceptual_pending_d4_cp_owner_registration",
+  "route_status": "deferred_to_phase_6_cp_registration",
   "http_errors": {
     "400": "bad JSON/validation/unsupported status",
     "401": "auth/replay/time",

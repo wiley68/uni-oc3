@@ -10,7 +10,7 @@ require_once __DIR__ . '/bootstrap.php';
 $failures = array();
 $passes = 0;
 
-function mtuc_assert($condition, $message)
+function mtuc_assert(bool $condition, string $message): void
 {
     global $failures, $passes;
     if ($condition) {
@@ -108,7 +108,8 @@ foreach (array('standard_preferred', 'promo_0_percent', 'cart_intersection', 'cu
 $identity = mtuc_phase0_load_fixture('extension_identity.json');
 mtuc_assert($identity['code'] === 'mt_uni_credit', 'module code mt_uni_credit');
 mtuc_assert($identity['extension_type_primary'] === 'payment', 'primary type payment');
-mtuc_assert($identity['release_version_status'] === 'pending_product_owner_d2', 'version not silently frozen');
+mtuc_assert($identity['version'] === '2.0.2', 'module version 2.0.2 frozen');
+mtuc_assert($identity['release_version_status'] === 'closed_d2', 'D2 version closed');
 
 $life = mtuc_phase0_load_fixture('oc3_lifecycle.json');
 mtuc_assert($life['findings']['confirm_always_creates_new_order'] === true, 'OC3 confirm always addOrder');
@@ -125,8 +126,17 @@ foreach (array('bank_sent_process1', 'bank_sent_process2', 'bank_send_failed', '
 mtuc_assert((int) $status['process_flag']['process_2_when'] === 1, 'Process 2 when uni_proces === 1');
 
 $phpFloor = mtuc_phase0_load_fixture('php_floor.json');
-mtuc_assert($phpFloor['status'] === 'recommendation_pending_approval', 'PHP floor not silently closed');
-mtuc_assert($phpFloor['recommendation']['floor'] === '7.3.0', 'recommended PHP floor 7.3.0');
+mtuc_assert($phpFloor['status'] === 'closed', 'D1 PHP floor closed');
+mtuc_assert($phpFloor['floor'] === '7.3.0', 'PHP floor 7.3.0');
+
+$secretDeploy = mtuc_phase0_load_fixture('secret_deployment.json');
+mtuc_assert($secretDeploy['status'] === 'closed_for_phase_0', 'D3 closed for Phase 0');
+mtuc_assert($secretDeploy['filenames']['passphrase'] === 'secrets/smartucf-key.php', 'D3 passphrase path frozen');
+
+$cpEnv = mtuc_phase0_load_fixture('cp_environments.json');
+mtuc_assert($cpEnv['status'] === 'closed_for_phase_0', 'D4 closed for Phase 0');
+mtuc_assert($cpEnv['api_prefix'] === '/api/v1', 'CP API prefix frozen');
+mtuc_assert(in_array('online.ucfin.bg', $cpEnv['smartucf_hosts'], true), 'SmartUCF production host frozen');
 
 $contractsPath = MTUC_PHASE0_DOCS . DIRECTORY_SEPARATOR . 'CONTRACTS.md';
 $runtimePath = MTUC_PHASE0_DOCS . DIRECTORY_SEPARATOR . 'RUNTIME_VERIFICATION.md';
@@ -156,6 +166,11 @@ $requiredIds = array(
 foreach ($requiredIds as $cid) {
     mtuc_assert(strpos($contracts, $cid) !== false, 'CONTRACTS.md contains ' . $cid);
 }
+mtuc_assert(strpos($contracts, 'D1 PHP floor                       | **CLOSED**') !== false, 'CONTRACTS.md D1 closed');
+mtuc_assert(strpos($contracts, 'D2 Module version                  | **CLOSED**') !== false, 'CONTRACTS.md D2 closed');
+mtuc_assert(strpos($contracts, 'D3 Secrets/certs                   | **CLOSED FOR PHASE 0**') !== false, 'CONTRACTS.md D3 closed');
+mtuc_assert(strpos($contracts, 'D4 CP/SmartUCF env + OC3 callbacks | **CLOSED FOR PHASE 0**') !== false, 'CONTRACTS.md D4 closed');
+mtuc_assert(strpos($contracts, 'Phase 0 STOP GATE:** **PASS**') !== false, 'CONTRACTS.md STOP GATE PASS');
 
 $forbiddenTree = array(
     MTUC_PHASE0_ROOT . DIRECTORY_SEPARATOR . 'upload' . DIRECTORY_SEPARATOR . 'admin' . DIRECTORY_SEPARATOR . 'controller' . DIRECTORY_SEPARATOR . 'extension' . DIRECTORY_SEPARATOR . 'payment' . DIRECTORY_SEPARATOR . 'mt_uni_credit.php',
