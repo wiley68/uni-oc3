@@ -592,15 +592,15 @@ Phases are intentionally small and sequential. Cursor should receive only one ap
 
 **Expected files/components:** package skeleton; **module** and **payment** admin controller/model/languages/templates; bootstrap/constants; shared install helper; install/uninstall/OCMOD shell; packaging script.
 
-**Tasks:** implement classic OC3 names/routes for both surfaces; separate `module_mt_uni_credit_*` and `payment_mt_uni_credit_*` settings; independent permissions; idempotent install per surface; health/readiness on Module admin only; deterministic package.
+**Tasks:** implement classic OC3 names/routes for both surfaces; separate `module_mt_uni_credit_*` and `payment_mt_uni_credit_*` settings; independent permissions; idempotent install per surface; health/readiness on Module admin only; deterministic package; align Phase 1 admin UX with established UniCredit terminology (BG title **УниКредит покупки на Кредит**); module boolean fields as OC3 checkboxes; payment listing logo; fresh payment install defaults order status to **Processing** via install-time name resolution.
 
 **Dependencies:** Phase 0.
 
-**Tests:** OC3 discovery for Module and Payment; PHP-floor lint; install twice per surface; permission denial per route; package layout; uninstall preserves other surface settings and data tables.
+**Tests:** OC3 discovery for Module and Payment; PHP-floor lint; install twice per surface; permission denial per route; package layout; uninstall preserves other surface settings and data tables; UNICID/secret validation; payment logo in package; Processing default not first arbitrary status.
 
-**Runtime/manual verification:** install package; verify both Module and Payment admin pages; settings per store; modification records/generated files and logs.
+**Runtime/manual verification:** install package; verify both Module and Payment admin pages; established labels and toggles; Processing default on clean payment install; settings per store; modification records/generated files and logs.
 
-**Acceptance criteria:** both admin surfaces install/configure without storefront output or warnings; Module reports missing prerequisites safely; Payment shows payment-only settings.
+**Acceptance criteria:** both admin surfaces install/configure without storefront output or warnings; Module reports missing prerequisites safely; Payment shows payment-only settings and listing logo; existing explicit payment order status preserved on reopen.
 
 **STOP GATE:** approve skeleton and remote install evidence before adding schema/business code.
 

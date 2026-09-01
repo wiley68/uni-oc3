@@ -3,11 +3,13 @@
 $_['heading_title'] = 'UniCredit Purchases on Credit';
 
 $_['text_extension'] = 'Extensions';
+$_['text_home'] = 'Home';
 $_['text_success'] = 'Success: You have modified UniCredit payment settings!';
-$_['text_edit'] = 'Edit UniCredit Payment Method';
+$_['text_edit'] = 'Edit UniCredit Purchases on Credit';
 $_['text_enabled'] = 'Enabled';
 $_['text_disabled'] = 'Disabled';
 $_['text_all_zones'] = 'All Zones';
+$_['text_mt_uni_credit'] = '<img src="view/image/payment/uni_logo.svg" alt="UniCredit Purchases on Credit" title="UniCredit Purchases on Credit" style="border: 1px solid #EEEEEE;" />';
 
 $_['entry_order_status'] = 'Order status';
 $_['entry_geo_zone'] = 'Geo zone';

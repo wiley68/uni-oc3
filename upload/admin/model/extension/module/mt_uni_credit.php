@@ -16,6 +16,10 @@ class ModelExtensionModuleMtUniCredit extends Model
             MtUniCreditConstants::MODULE_SETTINGS_CODE,
             MtUniCreditConstants::defaultModuleSettings()
         );
+        MtUniCreditInstaller::migrateLegacyDebugSetting(
+            $this,
+            MtUniCreditConstants::MODULE_SETTINGS_CODE
+        );
     }
 
     /**
@@ -45,6 +49,16 @@ class ModelExtensionModuleMtUniCredit extends Model
     {
         $errors = array();
 
+        $unicid = isset($post[MtUniCreditConstants::MODULE_SETTING_UNICID])
+            ? trim((string) $post[MtUniCreditConstants::MODULE_SETTING_UNICID])
+            : '';
+
+        if ($unicid === '') {
+            $errors['unicid'] = 'unicid_required';
+        } elseif (strlen($unicid) > 36) {
+            $errors['unicid'] = 'unicid_max_length';
+        }
+
         if (isset($post[MtUniCreditConstants::MODULE_SETTING_ENVIRONMENT])) {
             $environment = (string) $post[MtUniCreditConstants::MODULE_SETTING_ENVIRONMENT];
             if (!in_array($environment, array(MtUniCreditConstants::ENVIRONMENT_TEST, MtUniCreditConstants::ENVIRONMENT_PRODUCTION), true)) {
@@ -52,11 +66,18 @@ class ModelExtensionModuleMtUniCredit extends Model
             }
         }
 
-        if (
-            array_key_exists(MtUniCreditConstants::MODULE_SETTING_SECRET, $post)
-            && trim((string) $post[MtUniCreditConstants::MODULE_SETTING_SECRET]) !== ''
-        ) {
-            $errors['secret'] = 'secret_phase2_required';
+        if (array_key_exists(MtUniCreditConstants::MODULE_SETTING_SECRET, $post)) {
+            $secret = trim((string) $post[MtUniCreditConstants::MODULE_SETTING_SECRET]);
+
+            if ($secret !== '') {
+                if (strlen($secret) > 64) {
+                    $errors['secret'] = 'secret_max_length';
+                } else {
+                    $errors['secret'] = 'secret_phase2_required';
+                }
+            } elseif (!$this->isSecretConfigured()) {
+                $errors['secret'] = 'secret_required';
+            }
         }
 
         return $errors;
@@ -80,7 +101,14 @@ class ModelExtensionModuleMtUniCredit extends Model
                 continue;
             }
 
-            $payload[$key] = !empty($post[$key]) ? '1' : '0';
+            if ($key === MtUniCreditConstants::MODULE_SETTING_ENVIRONMENT) {
+                $payload[$key] = !empty($post[$key]) && (string) $post[$key] !== '0'
+                    ? MtUniCreditConstants::ENVIRONMENT_PRODUCTION
+                    : MtUniCreditConstants::ENVIRONMENT_TEST;
+                continue;
+            }
+
+            $payload[$key] = self::normalizeFlag($post[$key]);
         }
 
         if ($payload) {
@@ -97,10 +125,23 @@ class ModelExtensionModuleMtUniCredit extends Model
     }
 
     /**
+     * @param mixed $value
+     * @return string
+     */
+    public static function normalizeFlag($value)
+    {
+        return !empty($value) && (string) $value !== '0' ? '1' : '0';
+    }
+
+    /**
      * @return bool
      */
     public function isSecretConfigured()
     {
+        if (!isset($this->config) || !is_object($this->config) || !method_exists($this->config, 'get')) {
+            return false;
+        }
+
         $stored = $this->config->get(MtUniCreditConstants::MODULE_SETTING_SECRET);
 
         return is_string($stored) && trim($stored) !== '';

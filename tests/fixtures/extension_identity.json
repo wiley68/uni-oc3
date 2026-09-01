@@ -3,7 +3,7 @@
   "code": "mt_uni_credit",
   "version": "2.0.2",
   "display_name": "УниКредит покупки на Кредит",
-  "module_display_name": "UniCredit",
+  "module_display_name": "УниКредит покупки на Кредит",
   "author": "Авалон ООД",
   "link": "https://avalonbg.com",
   "extension_type_primary": "payment",
@@ -18,7 +18,10 @@
   "oc3_catalog_payment_route": "extension/payment/mt_uni_credit",
   "oc3_module_settings_code": "module_mt_uni_credit",
   "oc3_payment_settings_code": "payment_mt_uni_credit",
+  "oc3_module_setting_debug": "module_mt_uni_credit_debug_enabled",
+  "oc3_payment_listing_image": "upload/admin/view/image/payment/uni_logo.svg",
   "oc3_language_locales": ["en-gb", "bg-bg"],
+  "package_filename": "CC_OpenCartv.3.x_UNI_v.2.0.2.ocmod.zip",
   "package_root": "module.ocmod.zip",
   "package_layout": ["install.xml", "upload/admin/", "upload/catalog/", "upload/system/"],
   "cp_payload_version_format": "^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$",
@@ -27,7 +30,7 @@
   "namespace_note": "OC3 uses classic non-namespaced class names; do not copy OC4 Opencart\\... namespaces.",
   "admin_split": {
     "status": "frozen_phase_1_correction",
-    "module_owns": ["status", "unicid", "environment", "debug", "secret_placeholder", "health"],
+    "module_owns": ["status", "unicid", "environment", "debug_enabled", "secret_placeholder", "health"],
     "payment_owns": ["order_status_id", "geo_zone_id", "status", "sort_order"]
   }
 }

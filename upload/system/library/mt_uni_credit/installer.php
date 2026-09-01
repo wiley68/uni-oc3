@@ -29,4 +29,74 @@ final class MtUniCreditInstaller
             }
         }
     }
+
+    /**
+     * Resolve the store order status ID for the canonical English label "Processing".
+     *
+     * Prefers the admin language configured for the store, then English (language_id 1),
+     * then PROCESSING_ORDER_STATUS_FALLBACK_ID documented in constants.
+     *
+     * @param Model $model
+     * @param int $storeId
+     * @return string
+     */
+    public static function resolveProcessingOrderStatusId($model, $storeId = 0)
+    {
+        $model->load->model('setting/setting');
+
+        $languageId = (int) $model->model_setting_setting->getSettingValue('config_language_id', $storeId);
+        if ($languageId < 1) {
+            $languageId = 1;
+        }
+
+        $languageIds = array($languageId);
+        if ($languageId !== 1) {
+            $languageIds[] = 1;
+        }
+
+        foreach ($languageIds as $candidateLanguageId) {
+            $query = $model->db->query(
+                "SELECT `order_status_id` FROM `" . DB_PREFIX . "order_status`"
+                    . " WHERE `language_id` = '" . (int) $candidateLanguageId . "'"
+                    . " AND `name` = 'Processing' LIMIT 1"
+            );
+
+            if ($query->num_rows) {
+                return (string) $query->row['order_status_id'];
+            }
+        }
+
+        return MtUniCreditConstants::PROCESSING_ORDER_STATUS_FALLBACK_ID;
+    }
+
+    /**
+     * Copy legacy debug flag to the normalized key when only the old setting exists.
+     *
+     * @param Model $model
+     * @param string $settingsCode
+     * @param int $storeId
+     * @return void
+     */
+    public static function migrateLegacyDebugSetting($model, $settingsCode, $storeId = 0)
+    {
+        $model->load->model('setting/setting');
+
+        $legacy = $model->model_setting_setting->getSettingValue(
+            MtUniCreditConstants::MODULE_SETTING_DEBUG_LEGACY,
+            $storeId
+        );
+        $current = $model->model_setting_setting->getSettingValue(
+            MtUniCreditConstants::MODULE_SETTING_DEBUG,
+            $storeId
+        );
+
+        if ($legacy !== null && $current === null) {
+            $model->db->query(
+                "INSERT INTO `" . DB_PREFIX . "setting` SET store_id = '" . (int) $storeId
+                    . "', `code` = '" . $model->db->escape($settingsCode)
+                    . "', `key` = '" . $model->db->escape(MtUniCreditConstants::MODULE_SETTING_DEBUG)
+                    . "', `value` = '" . $model->db->escape((string) $legacy) . "'"
+            );
+        }
+    }
 }

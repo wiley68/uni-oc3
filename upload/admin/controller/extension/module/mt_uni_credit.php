@@ -59,7 +59,7 @@ class ControllerExtensionModuleMtUniCredit extends Controller
     {
         $data['error_warning'] = isset($this->error['warning']) ? $this->error['warning'] : '';
 
-        foreach (array('environment', 'secret') as $field) {
+        foreach (array('environment', 'secret', 'unicid') as $field) {
             $key = 'error_' . $field;
             $data[$key] = isset($this->error[$field]) ? $this->error[$field] : '';
         }
@@ -119,6 +119,9 @@ class ControllerExtensionModuleMtUniCredit extends Controller
                 $data[$key] = $this->request->post[$key];
             } else {
                 $stored = $this->config->get($key);
+                if ($stored === null && $key === MtUniCreditConstants::MODULE_SETTING_DEBUG) {
+                    $stored = $this->config->get(MtUniCreditConstants::MODULE_SETTING_DEBUG_LEGACY);
+                }
                 $data[$key] = $stored !== null ? $stored : MtUniCreditConstants::defaultModuleSettings()[$key];
             }
         }

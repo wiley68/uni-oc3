@@ -19,7 +19,15 @@ final class MtUniCreditConstants
 
     const DISPLAY_NAME = 'УниКредит покупки на Кредит';
 
-    const MODULE_DISPLAY_NAME = 'UniCredit';
+    const MODULE_DISPLAY_NAME = 'УниКредит покупки на Кредит';
+
+    /** @deprecated Phase 1 legacy key; migrated to MODULE_SETTING_DEBUG on install */
+    const MODULE_SETTING_DEBUG_LEGACY = 'module_mt_uni_credit_debug';
+
+    /** Fresh OC3 install seed maps English "Processing" to this ID; used only when name lookup fails. */
+    const PROCESSING_ORDER_STATUS_FALLBACK_ID = '2';
+
+    const PAYMENT_LISTING_IMAGE = 'view/image/payment/uni_logo.svg';
 
     const PHP_FLOOR = '7.3.0';
 
@@ -43,7 +51,7 @@ final class MtUniCreditConstants
 
     const MODULE_SETTING_ENVIRONMENT = 'module_mt_uni_credit_environment';
 
-    const MODULE_SETTING_DEBUG = 'module_mt_uni_credit_debug';
+    const MODULE_SETTING_DEBUG = 'module_mt_uni_credit_debug_enabled';
 
     const MODULE_SETTING_SECRET = 'module_mt_uni_credit_secret';
 

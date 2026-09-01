@@ -70,10 +70,10 @@ Homepage advertising may later use the catalog module/layout surface (decision D
 
 > UniCredit OC3 uses two separate admin extension surfaces. The **Module** extension owns module-wide configuration and operations. The **Payment** extension owns only native OpenCart checkout/payment settings.
 
-| Surface | Admin route                       | Permission             | Settings prefix           | Phase 1 owns                                                             |
-| ------- | --------------------------------- | ---------------------- | ------------------------- | ------------------------------------------------------------------------ |
-| Module  | `extension/module/mt_uni_credit`  | `modify` on same route | `module_mt_uni_credit_*`  | status, UNICID, environment, debug, secret placeholder, health/readiness |
-| Payment | `extension/payment/mt_uni_credit` | `modify` on same route | `payment_mt_uni_credit_*` | order status, geo zone, payment status, sort order                       |
+| Surface | Admin route                       | Permission             | Settings prefix           | Phase 1 owns                                                                       |
+| ------- | --------------------------------- | ---------------------- | ------------------------- | ---------------------------------------------------------------------------------- |
+| Module  | `extension/module/mt_uni_credit`  | `modify` on same route | `module_mt_uni_credit_*`  | status, UNICID, environment, `debug_enabled`, secret placeholder, health/readiness |
+| Payment | `extension/payment/mt_uni_credit` | `modify` on same route | `payment_mt_uni_credit_*` | order status, geo zone, payment status, sort order                                 |
 
 Install/uninstall ownership:
 
@@ -82,6 +82,14 @@ Install/uninstall ownership:
 - Neither uninstall removes financing/order evidence tables (none in Phase 1; preservation policy unchanged).
 
 Do not store module-wide settings under `payment_mt_uni_credit_*`. Do not store payment-method settings under `module_mt_uni_credit_*`.
+
+Phase 1 admin UX (frozen):
+
+- Visible Bulgarian title: **УниКредит покупки на Кредит** (module and payment admin surfaces).
+- Module boolean settings (`status`, `debug_enabled`) use OC3 checkbox + hidden `0` semantics, not select menus.
+- Debug setting key: `module_mt_uni_credit_debug_enabled` (legacy `module_mt_uni_credit_debug` migrated on module install).
+- Payment listing logo: `admin/view/image/payment/uni_logo.svg` via `text_mt_uni_credit` language key (asset from `reference-uni-oc4` catalog `uni_logo.svg`).
+- Fresh payment install default `payment_mt_uni_credit_order_status_id` resolves store **Processing** by localized name lookup, then documented fallback `2` (canonical fresh OC3 seed).
 
 ### MODULE-002 — Classic OC3 class / route identity
 

@@ -27,79 +27,69 @@
       <div class="panel-body">
         <form action="{{ action }}" method="post" enctype="multipart/form-data" id="form-module" class="form-horizontal">
           <fieldset>
-            <legend>{{ text_module_identity }}</legend>
+            <legend>{{ text_edit }}</legend>
             <div class="form-group">
-              <label class="col-sm-2 control-label">{{ text_module_identity }}</label>
+              <label class="col-sm-2 control-label">{{ entry_status }}</label>
               <div class="col-sm-10">
-                <p class="form-control-static">{{ module_code }} v{{ module_version }}</p>
+                <input type="hidden" name="module_mt_uni_credit_status" value="0" />
+                <div class="checkbox">
+                  <label>
+                    <input type="checkbox" name="module_mt_uni_credit_status" value="1"{% if module_mt_uni_credit_status %} checked="checked"{% endif %} />
+                    {{ entry_status }}
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div class="form-group{% if error_unicid %} has-error{% endif %}">
+              <label class="col-sm-2 control-label" for="input-unicid"><span class="text-danger">*</span> {{ entry_unicid }}</label>
+              <div class="col-sm-10">
+                <input type="text" name="module_mt_uni_credit_unicid" value="{{ module_mt_uni_credit_unicid }}" placeholder="{{ entry_unicid }}" id="input-unicid" class="form-control" maxlength="36" required="required" autocomplete="off" />
+                {% if error_unicid %}<div class="text-danger">{{ error_unicid }}</div>{% endif %}
+                <p class="help-block">{{ help_unicid }}</p>
+              </div>
+            </div>
+            <div class="form-group{% if error_secret %} has-error{% endif %}">
+              <label class="col-sm-2 control-label" for="input-secret">{% if not has_secret %}<span class="text-danger">*</span> {% endif %}{{ entry_secret }}</label>
+              <div class="col-sm-10">
+                <input type="password" name="module_mt_uni_credit_secret" value="" placeholder="{{ entry_secret }}" id="input-secret" class="form-control" maxlength="64" autocomplete="new-password"{% if not has_secret %} required="required"{% endif %} />
+                {% if error_secret %}<div class="text-danger">{{ error_secret }}</div>{% endif %}
+                <p class="help-block">{{ help_secret }}</p>
+                {% if has_secret %}
+                <p class="help-block">{{ text_secret_keep_current }}</p>
+                {% endif %}
+                <p class="help-block">{{ text_secret_phase2 }}</p>
+              </div>
+            </div>
+            <div class="form-group{% if error_environment %} has-error{% endif %}">
+              <label class="col-sm-2 control-label" for="input-environment">{{ entry_environment }}</label>
+              <div class="col-sm-10">
+                <select name="module_mt_uni_credit_environment" id="input-environment" class="form-control">
+                  {% if module_mt_uni_credit_environment == '1' %}
+                  <option value="0">{{ text_environment_test }}</option>
+                  <option value="1" selected="selected">{{ text_environment_production }}</option>
+                  {% else %}
+                  <option value="0" selected="selected">{{ text_environment_test }}</option>
+                  <option value="1">{{ text_environment_production }}</option>
+                  {% endif %}
+                </select>
+                {% if error_environment %}<div class="text-danger">{{ error_environment }}</div>{% endif %}
+                <p class="help-block">{{ help_environment }}</p>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="col-sm-2 control-label">{{ entry_debug_enabled }}</label>
+              <div class="col-sm-10">
+                <input type="hidden" name="module_mt_uni_credit_debug_enabled" value="0" />
+                <div class="checkbox">
+                  <label>
+                    <input type="checkbox" name="module_mt_uni_credit_debug_enabled" value="1"{% if module_mt_uni_credit_debug_enabled %} checked="checked"{% endif %} />
+                    {{ entry_debug_enabled }}
+                  </label>
+                </div>
+                <p class="help-block">{{ help_debug_enabled }}</p>
               </div>
             </div>
           </fieldset>
-          <div class="form-group">
-            <label class="col-sm-2 control-label" for="input-status">{{ entry_status }}</label>
-            <div class="col-sm-10">
-              <select name="module_mt_uni_credit_status" id="input-status" class="form-control">
-                {% if module_mt_uni_credit_status %}
-                <option value="1" selected="selected">{{ text_enabled }}</option>
-                <option value="0">{{ text_disabled }}</option>
-                {% else %}
-                <option value="1">{{ text_enabled }}</option>
-                <option value="0" selected="selected">{{ text_disabled }}</option>
-                {% endif %}
-              </select>
-              <p class="help-block">{{ help_status }}</p>
-            </div>
-          </div>
-          <div class="form-group{% if error_environment %} has-error{% endif %}">
-            <label class="col-sm-2 control-label" for="input-environment">{{ entry_environment }}</label>
-            <div class="col-sm-10">
-              <select name="module_mt_uni_credit_environment" id="input-environment" class="form-control">
-                {% if module_mt_uni_credit_environment == '1' %}
-                <option value="0">{{ text_environment_test }}</option>
-                <option value="1" selected="selected">{{ text_environment_production }}</option>
-                {% else %}
-                <option value="0" selected="selected">{{ text_environment_test }}</option>
-                <option value="1">{{ text_environment_production }}</option>
-                {% endif %}
-              </select>
-              {% if error_environment %}<div class="text-danger">{{ error_environment }}</div>{% endif %}
-              <p class="help-block">{{ help_environment }}</p>
-            </div>
-          </div>
-          <div class="form-group">
-            <label class="col-sm-2 control-label" for="input-debug">{{ entry_debug }}</label>
-            <div class="col-sm-10">
-              <select name="module_mt_uni_credit_debug" id="input-debug" class="form-control">
-                {% if module_mt_uni_credit_debug %}
-                <option value="1" selected="selected">{{ text_yes }}</option>
-                <option value="0">{{ text_no }}</option>
-                {% else %}
-                <option value="1">{{ text_yes }}</option>
-                <option value="0" selected="selected">{{ text_no }}</option>
-                {% endif %}
-              </select>
-              <p class="help-block">{{ help_debug }}</p>
-            </div>
-          </div>
-          <div class="form-group">
-            <label class="col-sm-2 control-label" for="input-unicid">{{ entry_unicid }}</label>
-            <div class="col-sm-10">
-              <input type="text" name="module_mt_uni_credit_unicid" value="{{ module_mt_uni_credit_unicid }}" placeholder="{{ entry_unicid }}" id="input-unicid" class="form-control" autocomplete="off" />
-              <p class="help-block">{{ help_unicid }}</p>
-            </div>
-          </div>
-          <div class="form-group{% if error_secret %} has-error{% endif %}">
-            <label class="col-sm-2 control-label" for="input-secret">{{ entry_secret }}</label>
-            <div class="col-sm-10">
-              <input type="password" name="module_mt_uni_credit_secret" value="" placeholder="{{ entry_secret }}" id="input-secret" class="form-control" autocomplete="new-password" />
-              {% if error_secret %}<div class="text-danger">{{ error_secret }}</div>{% endif %}
-              <p class="help-block">{{ help_secret }}</p>
-              <p class="help-block">{{ text_secret_phase2 }}</p>
-              {% if has_secret %}
-              <p class="help-block text-muted">{{ text_secret_keep_current }}</p>
-              {% endif %}
-            </div>
-          </div>
         </form>
       </div>
     </div>
