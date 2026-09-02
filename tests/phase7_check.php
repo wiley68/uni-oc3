@@ -46,9 +46,42 @@ $required = array(
     'control_panel_order_submission_result.php',
     'control_panel_order_lifecycle_service.php',
     'checkout_financing_submission_service.php',
+    'checkout_submit_token.php',
+    'checkout_prepared_view_state.php',
 );
 foreach ($required as $file) {
     mtuc7_assert(is_file($lib . DIRECTORY_SEPARATOR . $file), 'required file: ' . $file);
+}
+
+/**
+ * Extract a single method body from PHP class source (best-effort for source guards).
+ *
+ * @param string $source
+ * @param string $methodName
+ * @return string
+ */
+function mtuc7_extract_method($source, $methodName)
+{
+    $pattern = '/function\s+' . preg_quote($methodName, '/') . '\s*\([^)]*\)\s*\{/';
+    if (!preg_match($pattern, $source, $m, PREG_OFFSET_CAPTURE)) {
+        return '';
+    }
+    $start = (int) $m[0][1] + strlen($m[0][0]);
+    $depth = 1;
+    $len = strlen($source);
+    for ($i = $start; $i < $len; $i++) {
+        $ch = $source[$i];
+        if ($ch === '{') {
+            $depth++;
+        } elseif ($ch === '}') {
+            $depth--;
+            if ($depth === 0) {
+                return substr($source, $start, $i - $start);
+            }
+        }
+    }
+
+    return '';
 }
 
 $phase7Sql = MtUniCreditPersistenceSchema::createPhase7TableStatements('oc_');
@@ -64,8 +97,32 @@ $modelSource = (string) file_get_contents(
 );
 mtuc7_assert(strpos($controllerSource, 'addOrder(') === false, 'controller never calls addOrder');
 mtuc7_assert(strpos($modelSource, 'addOrder(') === false, 'model never calls addOrder');
-mtuc7_assert(strpos($controllerSource, 'submitCheckoutFinancing') !== false, 'prepared path submits financing');
+mtuc7_assert(strpos($controllerSource, 'function submit(') !== false, 'controller exposes POST submit action');
+mtuc7_assert(strpos($controllerSource, 'submitCheckoutFinancing') !== false, 'submit path delegates financing');
 mtuc7_assert(strpos($modelSource, 'createOrder') === false, 'model does not call CP createOrder directly');
+mtuc7_assert(
+    MtUniCreditConstants::CHECKOUT_SUBMIT_ROUTE === 'extension/payment/mt_uni_credit/submit',
+    'submit route constant frozen'
+);
+
+$preparedBody = mtuc7_extract_method($controllerSource, 'prepared');
+$submitBody = mtuc7_extract_method($controllerSource, 'submit');
+mtuc7_assert($preparedBody !== '', 'prepared() method extractable');
+mtuc7_assert($submitBody !== '', 'submit() method extractable');
+mtuc7_assert(strpos($preparedBody, 'submitCheckoutFinancing(') === false, 'GET prepared does not call submitCheckoutFinancing');
+mtuc7_assert(strpos($preparedBody, 'createOrder(') === false, 'GET prepared does not call createOrder');
+mtuc7_assert(strpos($preparedBody, 'addOrderHistory(') === false, 'GET prepared does not call addOrderHistory');
+mtuc7_assert(strpos($submitBody, 'submitCheckoutFinancing(') !== false, 'POST submit calls submitCheckoutFinancing');
+mtuc7_assert(strpos($submitBody, 'REQUEST_METHOD') !== false, 'POST submit guards HTTP method');
+mtuc7_assert(strpos($submitBody, 'MtUniCreditCheckoutSubmitToken::verify') !== false, 'POST submit verifies CSRF token');
+mtuc7_assert(strpos($submitBody, 'redirect') !== false, 'POST submit uses PRG redirect');
+
+$twigSource = (string) file_get_contents(
+    $root . DIRECTORY_SEPARATOR . 'upload/catalog/view/theme/default/template/extension/payment/mt_uni_credit_prepared.twig'
+);
+mtuc7_assert(strpos($twigSource, 'method="post"') !== false, 'prepared template uses POST form');
+mtuc7_assert(strpos($twigSource, 'mt_uni_credit_submit_token') !== false, 'prepared template includes CSRF token field');
+mtuc7_assert(strpos($twigSource, 'can_submit') !== false, 'prepared template gates submit button');
 
 $fixture = mtuc_phase0_load_fixture('cp_order_payload.json');
 $builder = new MtUniCreditControlPanelOrderPayloadBuilder();
@@ -270,6 +327,124 @@ mtuc7_assert(Phase7TestHarness::countOrderPosts($transportVal) === 0, 'validatio
 foreach (MtUniCreditFinancingAttemptState::all() as $state) {
     mtuc7_assert(MtUniCreditFinancingAttemptState::isValid($state), 'state valid: ' . $state);
 }
+
+// GET prepared is read-only: view-state path never touches CP transport
+$transportGet = new Phase4FakeCpHttpTransport();
+$stackGet = Phase7TestHarness::stack($transportGet);
+$getOrderId = 7100;
+$getInput = $input;
+$getInput['order_id'] = $getOrderId;
+$getInput['order'] = Phase7TestHarness::orderRow($getOrderId);
+
+// Simulate repeated GET prepared with no attempt yet
+for ($i = 0; $i < 5; $i++) {
+    $attemptGet = $stackGet['attempts']->findByStoreOrder($stackGet['storeId'], $getOrderId);
+    $viewGet = MtUniCreditCheckoutPreparedViewState::fromAttempt($attemptGet);
+    mtuc7_assert($viewGet['mode'] === MtUniCreditCheckoutPreparedViewState::MODE_READY, 'GET ready mode without attempt #' . ($i + 1));
+    mtuc7_assert(!empty($viewGet['can_submit']), 'GET ready shows submit #' . ($i + 1));
+}
+mtuc7_assert(Phase7TestHarness::countOrderPosts($transportGet) === 0, 'repeated GET ready: CP POST count = 0');
+
+// Explicit POST submit once
+$transportGet->enqueueJson(200, $payloads['login']);
+$transportGet->enqueueJson(201, $payloads['order']);
+$posted = $stackGet['submission']->submit($getInput);
+mtuc7_assert(!empty($posted['success']), 'explicit POST submit succeeds');
+mtuc7_assert(Phase7TestHarness::countOrderPosts($transportGet) === 1, 'explicit POST: exactly one CP /orders');
+$createdAttempt = $stackGet['attempts']->findByStoreOrder($stackGet['storeId'], $getOrderId);
+$viewCreated = MtUniCreditCheckoutPreparedViewState::fromAttempt($createdAttempt);
+mtuc7_assert($viewCreated['mode'] === MtUniCreditCheckoutPreparedViewState::MODE_SUCCESS, 'GET after success: success mode');
+mtuc7_assert(empty($viewCreated['can_submit']), 'GET after success: no submit button');
+mtuc7_assert(!empty($posted['apply_native_order_status']), 'first definitive success requests native status once');
+
+// Repeated GET after cp_created
+for ($i = 0; $i < 3; $i++) {
+    $replayView = MtUniCreditCheckoutPreparedViewState::fromAttempt(
+        $stackGet['attempts']->findByStoreOrder($stackGet['storeId'], $getOrderId)
+    );
+    mtuc7_assert($replayView['mode'] === MtUniCreditCheckoutPreparedViewState::MODE_SUCCESS, 'GET cp_created read-only #' . ($i + 1));
+}
+mtuc7_assert(Phase7TestHarness::countOrderPosts($transportGet) === 1, 'GET with cp_created: CP POST count remains 1');
+
+// Local replay via submission still does not add POST (controller would not call on GET)
+$replaySubmit = $stackGet['submission']->submit($getInput);
+mtuc7_assert(!empty($replaySubmit['local_replay']), 'local replay after success');
+mtuc7_assert(empty($replaySubmit['apply_native_order_status']), 'local replay does not re-apply native status');
+mtuc7_assert(Phase7TestHarness::countOrderPosts($transportGet) === 1, 'local replay: CP POST count remains 1');
+
+// CSRF / intent token
+$sessionTok = array();
+$tokenA = MtUniCreditCheckoutSubmitToken::issue($sessionTok);
+$tokenB = MtUniCreditCheckoutSubmitToken::issue($sessionTok);
+mtuc7_assert($tokenA === $tokenB && $tokenA !== '', 'CSRF token stable across GET renders');
+mtuc7_assert(MtUniCreditCheckoutSubmitToken::verify($sessionTok, $tokenA), 'valid CSRF token accepted');
+mtuc7_assert(!MtUniCreditCheckoutSubmitToken::verify($sessionTok, ''), 'missing CSRF token rejected');
+mtuc7_assert(!MtUniCreditCheckoutSubmitToken::verify($sessionTok, 'deadbeef'), 'wrong CSRF token rejected');
+mtuc7_assert(!MtUniCreditCheckoutSubmitToken::verify(array(), $tokenA), 'CSRF fails without session token');
+
+// Retryable failure: GET shows retry; POST reuses attempt
+$transportRetry = new Phase4FakeCpHttpTransport();
+$transportRetry->enqueueJson(200, $payloads['login']);
+$transportRetry->enqueueJson(422, array('success' => false, 'message' => 'invalid'));
+$stackRetry = Phase7TestHarness::stack($transportRetry);
+$retryOrderId = 7110;
+$retryInput = $input;
+$retryInput['order_id'] = $retryOrderId;
+$retryInput['order'] = Phase7TestHarness::orderRow($retryOrderId);
+$stackRetry['submission']->submit($retryInput);
+$retryAttempt = $stackRetry['attempts']->findByStoreOrder($stackRetry['storeId'], $retryOrderId);
+$retryView = MtUniCreditCheckoutPreparedViewState::fromAttempt($retryAttempt);
+mtuc7_assert($retryView['mode'] === MtUniCreditCheckoutPreparedViewState::MODE_RETRYABLE, 'GET retryable mode');
+mtuc7_assert(!empty($retryView['can_submit']), 'GET retryable shows retry submit');
+$retryId = (int) $retryAttempt['attempt_id'];
+$fp = (string) $retryAttempt['request_fingerprint'];
+// Client already holds auth from first attempt — only enqueue the order response.
+$transportRetry->enqueueJson(201, $payloads['order']);
+$retryOk = $stackRetry['submission']->submit($retryInput);
+mtuc7_assert(!empty($retryOk['success']), 'POST retry succeeds');
+$retryAfter = $stackRetry['attempts']->findByStoreOrder($stackRetry['storeId'], $retryOrderId);
+mtuc7_assert((int) $retryAfter['attempt_id'] === $retryId, 'retry reuses existing attempt row');
+mtuc7_assert((string) $retryAfter['request_fingerprint'] === $fp, 'retry keeps frozen fingerprint');
+
+// Ambiguous: GET blocked; POST must not issue /orders
+$transportAmbGet = new Phase4FakeCpHttpTransport();
+$transportAmbGet->enqueueJson(200, $payloads['login']);
+$transportAmbGet->enqueueTimeout();
+$stackAmbGet = Phase7TestHarness::stack($transportAmbGet);
+$ambOrderId = 7120;
+$ambInput = $input;
+$ambInput['order_id'] = $ambOrderId;
+$ambInput['order'] = Phase7TestHarness::orderRow($ambOrderId);
+$stackAmbGet['submission']->submit($ambInput);
+$ambAttempt = $stackAmbGet['attempts']->findByStoreOrder($stackAmbGet['storeId'], $ambOrderId);
+$ambView = MtUniCreditCheckoutPreparedViewState::fromAttempt($ambAttempt);
+mtuc7_assert($ambView['mode'] === MtUniCreditCheckoutPreparedViewState::MODE_AMBIGUOUS, 'GET ambiguous mode');
+mtuc7_assert(empty($ambView['can_submit']), 'GET ambiguous: no submit/retry button');
+mtuc7_assert(Phase7TestHarness::countOrderPosts($transportAmbGet) === 1, 'ambiguous baseline POST count = 1');
+for ($i = 0; $i < 3; $i++) {
+    MtUniCreditCheckoutPreparedViewState::fromAttempt(
+        $stackAmbGet['attempts']->findByStoreOrder($stackAmbGet['storeId'], $ambOrderId)
+    );
+}
+mtuc7_assert(Phase7TestHarness::countOrderPosts($transportAmbGet) === 1, 'GET with cp_outcome_unknown: CP POST unchanged');
+$ambPost = $stackAmbGet['submission']->submit($ambInput);
+mtuc7_assert(!empty($ambPost['ambiguous_blocked']), 'POST after ambiguous → ambiguous_blocked');
+mtuc7_assert(Phase7TestHarness::countOrderPosts($transportAmbGet) === 1, 'POST after ambiguous: CP POST count unchanged');
+
+// Double POST: at most one semantic CP create
+$transportDouble = new Phase4FakeCpHttpTransport();
+$payloadsDouble = Phase7TestHarness::loginAndOrderSuccessPayloads();
+$transportDouble->enqueueJson(200, $payloadsDouble['login']);
+$transportDouble->enqueueJson(201, $payloadsDouble['order']);
+$stackDouble = Phase7TestHarness::stack($transportDouble);
+$doubleId = 7130;
+$doubleInput = $input;
+$doubleInput['order_id'] = $doubleId;
+$doubleInput['order'] = Phase7TestHarness::orderRow($doubleId);
+$d1 = $stackDouble['submission']->submit($doubleInput);
+$d2 = $stackDouble['submission']->submit($doubleInput);
+mtuc7_assert(!empty($d1['success']) && !empty($d2['success']), 'double POST both report success');
+mtuc7_assert(Phase7TestHarness::countOrderPosts($transportDouble) === 1, 'double POST: at most one CP create');
 
 echo PHP_EOL . 'Phase 7 checks: ' . $passes . ' passed';
 if ($failures) {

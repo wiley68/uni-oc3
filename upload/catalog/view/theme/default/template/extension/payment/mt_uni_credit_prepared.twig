@@ -19,12 +19,26 @@
       <div class="alert alert-success">{{ message }}</div>
       {% elseif ambiguous %}
       <div class="alert alert-warning">{{ message }}</div>
+      {% elseif mode == 'retryable' %}
+      <div class="alert alert-warning">{{ message }}</div>
       {% else %}
-      <div class="alert alert-danger">{{ message }}</div>
+      <div class="alert alert-info">{{ message }}</div>
       {% endif %}
+
+      {% if can_submit %}
+      <form action="{{ action }}" method="post" enctype="multipart/form-data" id="mt-uni-credit-submit-form">
+        <input type="hidden" name="mt_uni_credit_submit_token" value="{{ submit_token }}" />
+        <div class="buttons">
+          <div class="pull-right">
+            <input type="submit" value="{% if mode == 'retryable' %}{{ button_retry_financing }}{% else %}{{ button_submit_financing }}{% endif %}" class="btn btn-primary" />
+          </div>
+        </div>
+      </form>
+      {% else %}
       <div class="buttons">
         <div class="pull-right"><a href="{{ continue }}" class="btn btn-primary">{% if success %}{{ text_continue_shopping }}{% else %}{{ text_continue_checkout }}{% endif %}</a></div>
       </div>
+      {% endif %}
       {{ content_bottom }}</div>
     {{ column_right }}</div>
 </div>

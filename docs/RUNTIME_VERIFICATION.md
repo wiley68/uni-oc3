@@ -644,20 +644,22 @@ index.php?route=extension/mt_uni_credit/api/smartucf_debug_log
 
 ## Phase 7 — Local financing attempt + CP order lifecycle (local PASS)
 
-Automated gate: `php tests/phase7_check.php` (70 checks, no live network).
+Automated gate: `php tests/phase7_check.php` (no live network). Includes GET side-effect closure: GET `prepared` is read-only; explicit POST `submit` + PRG.
 
-### Happy path
+### Happy path (GET read-only + explicit POST)
 
-1. [ ] Native UniCredit checkout creates OC order (`order_status_id = 0`), payment confirm redirects to prepared.
-2. [ ] Prepared page submits CP `POST /api/v1/orders` exactly once.
-3. [ ] Exactly one row in `{prefix}mt_uni_credit_financing_attempt` for `(store_id, order_id)`.
-4. [ ] `control_panel_order_id` persisted; `state = cp_created`; `cp_payload` frozen.
-5. [ ] Refresh/revisit prepared → success local replay; **no** second CP order.
-6. [ ] On first CP success, native order history may advance to configured `payment_mt_uni_credit_order_status_id` (Checkout only).
+1. [ ] Native UniCredit checkout creates OC order (`order_status_id = 0`), payment confirm redirects to **GET** `extension/payment/mt_uni_credit/prepared`.
+2. [ ] On first GET prepared: verify **no** CP order exists yet (Control Panel / attempt still not `cp_created`).
+3. [ ] Refresh prepared several times (or open/prefetch repeatedly) → still **no** CP order; page remains ready-to-submit.
+4. [ ] Click explicit submit button (**POST** `extension/payment/mt_uni_credit/submit` with CSRF token) → PRG redirect back to GET prepared.
+5. [ ] Exactly one CP `POST /api/v1/orders`; attempt `state = cp_created`; `control_panel_order_id` persisted; `cp_payload` frozen.
+6. [ ] Exactly one row in `{prefix}mt_uni_credit_financing_attempt` for `(store_id, order_id)`.
+7. [ ] Refresh GET prepared again → success render; **no** second CP order.
+8. [ ] On first definitive CP success only, native order history may advance to configured `payment_mt_uni_credit_order_status_id` (Checkout only). Not on GET / local replay.
 
 ### Duplicate click / concurrency
 
-1. [ ] Parallel prepared submits → operation lock allows one owner; at most one remote POST.
+1. [ ] Parallel POST submit → operation lock allows one owner; at most one remote POST; both land back on GET prepared.
 
 ### Definitive rejection
 

@@ -45,6 +45,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'control_panel_order_payload_builde
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'financing_attempt_repository.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'control_panel_order_lifecycle_service.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'checkout_financing_submission_service.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'checkout_submit_token.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'checkout_prepared_view_state.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'checkout_live_grand_total.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'checkout_order_cart_parity.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'oc3_cart_context_factory.php';

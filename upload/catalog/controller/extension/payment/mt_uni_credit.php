@@ -50,45 +50,26 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
         $this->respondJson($json);
     }
 
+    /**
+     * GET-only prepared boundary — read attempt state, never mutate / call CP.
+     */
     public function prepared()
     {
         $this->load->language('extension/payment/mt_uni_credit');
 
-        $orderId = (int) (isset($this->session->data['order_id']) ? $this->session->data['order_id'] : 0);
-        $preparedOrderId = (int) (isset($this->session->data[MtUniCreditCheckoutConfirmPreparation::SESSION_PREPARED_ORDER_ID])
-            ? $this->session->data[MtUniCreditCheckoutConfirmPreparation::SESSION_PREPARED_ORDER_ID]
-            : 0);
-        $storeId = (int) $this->config->get('config_store_id');
-
-        $this->load->model('checkout/order');
-        $this->load->model('extension/payment/mt_uni_credit');
-        $order = $orderId > 0 ? $this->model_checkout_order->getOrder($orderId) : null;
-
-        $attempt = null;
-        if ($orderId > 0) {
-            $db = MtUniCreditBootstrap::dbFromRegistry($this->db);
-            $attempt = (new MtUniCreditFinancingAttemptRepository($db))->findByStoreOrder($storeId, $orderId);
-        }
-
-        $access = MtUniCreditCheckoutPreparedBoundary::validateAccess(
-            $orderId,
-            $preparedOrderId,
-            $order,
-            $storeId,
-            $attempt
-        );
-        if (empty($access['ok'])) {
+        $context = $this->resolvePreparedContext();
+        if ($context === null) {
             $this->response->redirect($this->url->link('checkout/checkout', '', true));
             return;
         }
 
-        $result = $this->model_extension_payment_mt_uni_credit->submitCheckoutFinancing($orderId);
+        $view = MtUniCreditCheckoutPreparedViewState::fromAttempt($context['attempt']);
+        $token = MtUniCreditCheckoutSubmitToken::issue($this->session->data);
 
-        if (!empty($result['success']) && !empty($result['apply_native_order_status'])) {
-            $statusId = (int) $this->config->get(MtUniCreditConstants::PAYMENT_SETTING_ORDER_STATUS_ID);
-            if ($statusId > 0 && method_exists($this->model_checkout_order, 'addOrderHistory')) {
-                $this->model_checkout_order->addOrderHistory($orderId, $statusId);
-            }
+        $flash = '';
+        if (isset($this->session->data['mt_uni_credit_checkout_flash']) && is_string($this->session->data['mt_uni_credit_checkout_flash'])) {
+            $flash = (string) $this->session->data['mt_uni_credit_checkout_flash'];
+            unset($this->session->data['mt_uni_credit_checkout_flash']);
         }
 
         $this->document->setTitle($this->language->get('heading_prepared_title'));
@@ -109,14 +90,20 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
         );
 
         $data['heading_title'] = $this->language->get('heading_prepared_title');
-        $data['success'] = !empty($result['success']);
-        $data['ambiguous'] = !empty($result['ambiguous_blocked']);
-        $data['message'] = isset($result['message'])
-            ? (string) $result['message']
-            : $this->language->get('text_prepared_not_submitted');
+        $data['success'] = !empty($view['success']);
+        $data['ambiguous'] = !empty($view['ambiguous']);
+        $data['can_submit'] = !empty($view['can_submit']);
+        $data['mode'] = $view['mode'];
+        $data['message'] = $flash !== ''
+            ? $flash
+            : $this->language->get($view['message_key']);
         $data['text_continue_checkout'] = $this->language->get('text_continue_checkout');
         $data['text_continue_shopping'] = $this->language->get('text_continue_shopping');
-        $data['continue'] = !empty($result['success'])
+        $data['button_submit_financing'] = $this->language->get('button_submit_financing');
+        $data['button_retry_financing'] = $this->language->get('button_retry_financing');
+        $data['action'] = $this->url->link(MtUniCreditConstants::CHECKOUT_SUBMIT_ROUTE, '', true);
+        $data['submit_token'] = $token;
+        $data['continue'] = !empty($view['success'])
             ? $this->url->link('common/home', '', true)
             : $this->url->link('checkout/checkout', '', true);
 
@@ -128,6 +115,100 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
         $data['header'] = $this->load->controller('common/header');
 
         $this->response->setOutput($this->load->view('extension/payment/mt_uni_credit_prepared', $data));
+    }
+
+    /**
+     * POST-only financing submit — PRG back to prepared.
+     */
+    public function submit()
+    {
+        $this->load->language('extension/payment/mt_uni_credit');
+
+        $method = isset($this->request->server['REQUEST_METHOD'])
+            ? strtoupper((string) $this->request->server['REQUEST_METHOD'])
+            : 'GET';
+        if ($method !== 'POST') {
+            $this->response->redirect($this->url->link(MtUniCreditConstants::CHECKOUT_PREPARED_ROUTE, '', true));
+            return;
+        }
+
+        $token = isset($this->request->post['mt_uni_credit_submit_token'])
+            ? $this->request->post['mt_uni_credit_submit_token']
+            : '';
+        if (!MtUniCreditCheckoutSubmitToken::verify($this->session->data, $token)) {
+            $this->session->data['mt_uni_credit_checkout_flash'] = $this->language->get('error_submit_token');
+            $this->response->redirect($this->url->link(MtUniCreditConstants::CHECKOUT_PREPARED_ROUTE, '', true));
+            return;
+        }
+
+        $context = $this->resolvePreparedContext();
+        if ($context === null) {
+            $this->response->redirect($this->url->link('checkout/checkout', '', true));
+            return;
+        }
+
+        $viewBefore = MtUniCreditCheckoutPreparedViewState::fromAttempt($context['attempt']);
+        if (empty($viewBefore['can_submit'])) {
+            $this->response->redirect($this->url->link(MtUniCreditConstants::CHECKOUT_PREPARED_ROUTE, '', true));
+            return;
+        }
+
+        $this->load->model('extension/payment/mt_uni_credit');
+        $this->load->model('checkout/order');
+        $result = $this->model_extension_payment_mt_uni_credit->submitCheckoutFinancing((int) $context['order_id']);
+
+        if (!empty($result['success']) && !empty($result['apply_native_order_status'])) {
+            $statusId = (int) $this->config->get(MtUniCreditConstants::PAYMENT_SETTING_ORDER_STATUS_ID);
+            if ($statusId > 0 && method_exists($this->model_checkout_order, 'addOrderHistory')) {
+                $this->model_checkout_order->addOrderHistory((int) $context['order_id'], $statusId);
+            }
+        }
+
+        if (empty($result['success']) && isset($result['message']) && is_string($result['message'])) {
+            $this->session->data['mt_uni_credit_checkout_flash'] = (string) $result['message'];
+        }
+
+        $this->response->redirect($this->url->link(MtUniCreditConstants::CHECKOUT_PREPARED_ROUTE, '', true));
+    }
+
+    /**
+     * @return array{order_id: int, prepared_order_id: int, store_id: int, order: array<string, mixed>, attempt: array<string, mixed>|null}|null
+     */
+    private function resolvePreparedContext()
+    {
+        $orderId = (int) (isset($this->session->data['order_id']) ? $this->session->data['order_id'] : 0);
+        $preparedOrderId = (int) (isset($this->session->data[MtUniCreditCheckoutConfirmPreparation::SESSION_PREPARED_ORDER_ID])
+            ? $this->session->data[MtUniCreditCheckoutConfirmPreparation::SESSION_PREPARED_ORDER_ID]
+            : 0);
+        $storeId = (int) $this->config->get('config_store_id');
+
+        $this->load->model('checkout/order');
+        $order = $orderId > 0 ? $this->model_checkout_order->getOrder($orderId) : null;
+
+        $attempt = null;
+        if ($orderId > 0) {
+            $db = MtUniCreditBootstrap::dbFromRegistry($this->db);
+            $attempt = (new MtUniCreditFinancingAttemptRepository($db))->findByStoreOrder($storeId, $orderId);
+        }
+
+        $access = MtUniCreditCheckoutPreparedBoundary::validateAccess(
+            $orderId,
+            $preparedOrderId,
+            $order,
+            $storeId,
+            $attempt
+        );
+        if (empty($access['ok']) || !is_array($order)) {
+            return null;
+        }
+
+        return array(
+            'order_id' => $orderId,
+            'prepared_order_id' => $preparedOrderId,
+            'store_id' => $storeId,
+            'order' => $order,
+            'attempt' => $attempt,
+        );
     }
 
     /**
