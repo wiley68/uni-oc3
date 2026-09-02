@@ -2,6 +2,9 @@
 
 /**
  * Replay-protection nonce claims — stores sha256(nonce), never raw nonce.
+ *
+ * Duplicate claims use INSERT ... ON DUPLICATE KEY UPDATE so OC3 mysqli
+ * (MYSQLI_REPORT_ERROR) does not emit a PHP warning on expected replays.
  */
 final class MtUniCreditApiNonceRepository
 {
@@ -25,6 +28,10 @@ final class MtUniCreditApiNonceRepository
 
     /**
      * Atomic claim-once. Returns true only when this request inserted the nonce row.
+     *
+     * MySQL affected_rows with no-op ON DUPLICATE KEY UPDATE:
+     * - insert new row → 1
+     * - duplicate unique key, no value change → 0
      *
      * @param int $storeId
      * @param string $unicid
@@ -57,12 +64,10 @@ final class MtUniCreditApiNonceRepository
                     . " '" . $this->db->escape($usedAt) . "',"
                     . " '" . $this->db->escape($expiresAt) . "'"
                     . ")"
+                    . " ON DUPLICATE KEY UPDATE `nonce_hash` = `nonce_hash`"
             );
         } catch (Exception $exception) {
-            if (self::isDuplicateKeyError($exception)) {
-                return false;
-            }
-
+            // Real DB failures only — expected replays must not raise duplicate-key errors.
             throw new MtUniCreditPersistenceException('Nonce claim failed.', 0, $exception);
         }
 
@@ -123,18 +128,5 @@ final class MtUniCreditApiNonceRepository
     private function tableName()
     {
         return $this->db->getPrefix() . MtUniCreditPersistenceTableNames::API_NONCE;
-    }
-
-    /**
-     * @param Exception $exception
-     * @return bool
-     */
-    private static function isDuplicateKeyError(Exception $exception)
-    {
-        $message = strtolower($exception->getMessage());
-
-        return strpos($message, 'duplicate') !== false
-            || strpos($message, '1062') !== false
-            || strpos($message, 'unique') !== false;
     }
 }

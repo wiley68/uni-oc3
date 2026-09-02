@@ -610,7 +610,9 @@ index.php?route=extension/mt_uni_credit/api/smartucf_debug_log
 2. [ ] DB check: `shop_data` JSON length/hash changed; **must not** contain plaintext `uni_password` or `uni_user`.
 3. [ ] Encrypted SmartUCF credential exists in `oc_setting` (`module_mt_uni_credit_smartucf_password` prefix only if inspecting).
 4. [ ] Invalid snapshot → HTTP 422; prior valid cache unchanged.
-5. [ ] Replay exact signed request → HTTP 401; no duplicate mutation.
+5. [ ] Replay exact signed request → **HTTP 401** clean JSON (`Content-Type: application/json; charset=utf-8`); no duplicate mutation.
+   - Must **not** emit PHP `mysqli::query` Duplicate entry warning (OC3 `MYSQLI_REPORT_ERROR`).
+   - Body must be JSON only: `{"success":false,"message":"Невалидна или изтекла заявка към модула.","error":"invalid_signature"}`.
 6. [ ] Alter body after signing → HTTP 401; no mutation.
 
 ### Bank status
@@ -630,6 +632,7 @@ index.php?route=extension/mt_uni_credit/api/smartucf_debug_log
 
 1. [ ] Application logs after negative tests: no Secret, HMAC, bearer token, or `uni_password`.
 2. [ ] GET on any inbound route → HTTP 405 JSON.
+3. [ ] Exact replay must not produce HTML-wrapped PHP warnings before the JSON body (OC3 mysqli duplicate-key warning regression).
 
 ### Explicit exclusions (Phase 6)
 

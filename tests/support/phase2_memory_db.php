@@ -235,7 +235,9 @@ final class Phase2MemoryDb
      */
     private function insertApiNonce($sql)
     {
-        $fields = $this->parseInsertValues($sql);
+        $hasDuplicateNoop = stripos($sql, 'ON DUPLICATE KEY UPDATE') !== false;
+        $normalized = preg_replace('/\s+ON DUPLICATE KEY UPDATE.+$/is', '', $sql);
+        $fields = $this->parseInsertValues($normalized);
         $storeId = (int) $fields['store_id'];
         $unicid = (string) $fields['unicid'];
         $nonceHash = (string) $fields['nonce_hash'];
@@ -246,6 +248,13 @@ final class Phase2MemoryDb
                 && (string) $row['unicid'] === $unicid
                 && (string) $row['nonce_hash'] === $nonceHash
             ) {
+                if ($hasDuplicateNoop) {
+                    // MySQL no-op ON DUPLICATE KEY UPDATE → affected_rows = 0 (no warning).
+                    $this->affected = 0;
+
+                    return $this->emptyResult();
+                }
+
                 throw new Exception('Duplicate entry \'uniq_mt_uni_credit_api_nonce\' for key 1062');
             }
         }

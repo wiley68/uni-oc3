@@ -25,7 +25,7 @@ require_once __DIR__ . '/fixtures/cp_shop_snapshot.php';
 $failures = array();
 $passes = 0;
 
-function mtuc6_assert($condition, $message)
+function mtuc6_assert(bool $condition, string $message): void
 {
     global $failures, $passes;
     if ($condition) {
@@ -165,6 +165,90 @@ $replay = Phase6TestHarness::dispatch(
     $firstNonceBody
 );
 mtuc6_assert($replay['status'] === 401, 'replay rejected');
+mtuc6_assert(
+    is_array($replay['payload'])
+        && isset($replay['payload']['success'])
+        && $replay['payload']['success'] === false
+        && isset($replay['payload']['error'])
+        && $replay['payload']['error'] === 'invalid_signature',
+    'replay maps to HTTP 401 invalid_signature JSON'
+);
+mtuc6_assert(
+    strpos($replay['body'], '1062') === false
+        && stripos($replay['body'], 'Duplicate') === false
+        && stripos($replay['body'], 'Warning') === false
+        && stripos($replay['body'], '<br') === false,
+    'replay response has no SQL/warning leakage'
+);
+
+// Replay-safe nonce claim: ON DUPLICATE KEY UPDATE (no mysqli duplicate warning).
+$nonceSource = (string) file_get_contents($lib . DIRECTORY_SEPARATOR . 'api_nonce_repository.php');
+mtuc6_assert(
+    strpos($nonceSource, 'ON DUPLICATE KEY UPDATE `nonce_hash` = `nonce_hash`') !== false,
+    'nonce claim uses ON DUPLICATE KEY UPDATE no-op'
+);
+mtuc6_assert(
+    strpos($nonceSource, 'isDuplicateKeyError') === false,
+    'nonce claim does not depend on catching duplicate-key Exception'
+);
+
+$claimDb = new Phase2MemoryDb();
+$claimAdapter = new MtUniCreditDbAdapter($claimDb, 'oc_');
+$claimRepo = new MtUniCreditApiNonceRepository(
+    $claimAdapter,
+    new MtUniCreditPersistenceClock(function () {
+        return Phase6TestHarness::NOW;
+    })
+);
+$claimNonce = str_repeat('f', 64);
+mtuc6_assert($claimRepo->claim($stack['storeId'], $stack['unicid'], $claimNonce) === true, 'first nonce claim returns true');
+mtuc6_assert($claimRepo->claim($stack['storeId'], $stack['unicid'], $claimNonce) === false, 'second identical nonce claim returns false');
+
+$failingDb = new class {
+    /**
+     * @param string $sql
+     * @return never
+     */
+    public function query(string $sql)
+    {
+        throw new Exception('Error: disk full<br />Error No: 1021<br />' . $sql);
+    }
+
+    /**
+     * @param mixed $value
+     * @return string
+     */
+    public function escape($value): string
+    {
+        return (string) $value;
+    }
+
+    public function countAffected(): int
+    {
+        return 0;
+    }
+
+    public function getLastId(): int
+    {
+        return 0;
+    }
+};
+$failingRepo = new MtUniCreditApiNonceRepository(
+    new MtUniCreditDbAdapter($failingDb, 'oc_'),
+    new MtUniCreditPersistenceClock(function () {
+        return Phase6TestHarness::NOW;
+    })
+);
+try {
+    $failingRepo->claim($stack['storeId'], $stack['unicid'], str_repeat('1', 64));
+    mtuc6_assert(false, 'real DB failure still fails loudly');
+} catch (MtUniCreditPersistenceException $exception) {
+    mtuc6_assert(true, 'real DB failure still fails loudly');
+    mtuc6_assert(
+        stripos($exception->getMessage(), 'Nonce claim failed') !== false,
+        'real DB failure uses persistence exception message'
+    );
+}
 
 $stackB = Phase6TestHarness::stack(new Phase2MemoryDb(), Phase6TestHarness::STORE_B);
 Phase4TestHarness::prepareCredentials($stackB['settings'], Phase6TestHarness::STORE_B);
