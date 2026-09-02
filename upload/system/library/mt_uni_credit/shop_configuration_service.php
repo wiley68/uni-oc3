@@ -20,6 +20,9 @@ class MtUniCreditShopConfigurationService
     /** @var MtUniCreditShopConfigurationSnapshotValidator */
     private $snapshotValidator;
 
+    /** @var MtUniCreditShopCachePersistence|null */
+    private $shopCachePersistence;
+
     /** @var int */
     private $storeId;
 
@@ -30,6 +33,7 @@ class MtUniCreditShopConfigurationService
      * @param MtUniCreditCpTokenRepository $tokens
      * @param int $storeId
      * @param MtUniCreditShopConfigurationSnapshotValidator|null $snapshotValidator
+     * @param MtUniCreditShopCachePersistence|null $shopCachePersistence
      */
     public function __construct(
         MtUniCreditCredentialsRepository $credentials,
@@ -37,7 +41,8 @@ class MtUniCreditShopConfigurationService
         MtUniCreditControlPanelClient $client,
         MtUniCreditCpTokenRepository $tokens,
         $storeId,
-        $snapshotValidator = null
+        $snapshotValidator = null,
+        $shopCachePersistence = null
     ) {
         $this->credentials = $credentials;
         $this->cache = $cache;
@@ -47,6 +52,9 @@ class MtUniCreditShopConfigurationService
         $this->snapshotValidator = $snapshotValidator instanceof MtUniCreditShopConfigurationSnapshotValidator
             ? $snapshotValidator
             : new MtUniCreditShopConfigurationSnapshotValidator();
+        $this->shopCachePersistence = $shopCachePersistence instanceof MtUniCreditShopCachePersistence
+            ? $shopCachePersistence
+            : null;
     }
 
     /**
@@ -132,8 +140,18 @@ class MtUniCreditShopConfigurationService
             return false;
         }
 
+        if ($this->shopCachePersistence !== null) {
+            $this->shopCachePersistence->replaceValidatedSnapshot($this->storeId, $unicid, $shopData);
+
+            return true;
+        }
+
         $this->snapshotValidator->validate($shopData, $unicid);
-        $this->cache->replaceValidated($this->storeId, $unicid, $shopData);
+        $this->cache->replaceValidated(
+            $this->storeId,
+            $unicid,
+            MtUniCreditShopSnapshotSanitizer::sanitize($shopData)
+        );
 
         return true;
     }
@@ -152,7 +170,15 @@ class MtUniCreditShopConfigurationService
             }
 
             $this->snapshotValidator->validate($shopData, $unicid);
-            $this->cache->replaceValidated($this->storeId, $unicid, $shopData);
+            if ($this->shopCachePersistence !== null) {
+                $this->shopCachePersistence->replaceValidatedSnapshot($this->storeId, $unicid, $shopData);
+            } else {
+                $this->cache->replaceValidated(
+                    $this->storeId,
+                    $unicid,
+                    MtUniCreditShopSnapshotSanitizer::sanitize($shopData)
+                );
+            }
 
             return $shopData;
         } catch (MtUniCreditShopSnapshotValidationException $exception) {

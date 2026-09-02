@@ -283,7 +283,7 @@ Login is **not** idempotent. Token length 64, type Bearer, TTL **86400** seconds
 **Deferred (not Phase 1 blockers):**
 
 - Exact deployment CP hostname → **`upload/system/library/mt_uni_credit/config/environment.php`** (`control_panel_url`); switch at packaging time, not in Module admin UI (Phase 4 implemented; OC3 installer forbids shop-root `config/`)
-- Final OC3 inbound callback URLs → Phase 6 CP registration
+- Final OC3 inbound callback URLs → Phase 6 CP registration (**implemented locally**; CP registration is remote)
 
 **Phase 4 implementation notes:**
 
@@ -320,7 +320,14 @@ Required / constrained:
 - Optional `unicid` must match the authenticated shop UNICID when present
 - Optional `consents`, `uni_first_vnoska`, `uni_sertificat`
 
-Bearer tokens must **not** be stored inside snapshot JSON.
+Bearer tokens, module Secret, SmartUCF credentials and equivalent sensitive remote fields must **not** be stored inside persisted `shop_data` JSON.
+
+**Phase 6 credential sanitization (CACHE-001a):**
+
+- `uni_password` and `uni_user` are extracted from validated snapshots and persisted encrypted in store-scoped `oc_setting` keys `module_mt_uni_credit_smartucf_password` / `module_mt_uni_credit_smartucf_user` via `MtUniCreditSettingCipher`.
+- Persisted `shop_data` retains calculator/presentation configuration only (schemes, limits, coefficients, filters, public URLs, environment flags, etc.).
+- Shared path: `MtUniCreditShopCachePersistence` serves outbound Phase 4 `/shop` refresh **and** inbound `shop_cache` push.
+- Regression: persisted JSON must not contain plaintext `uni_password` (see `tests/phase6_check.php`).
 
 ### CACHE-002 — Scope and replacement
 
@@ -562,17 +569,27 @@ From `hmac_callback_vector.json` (not a production secret):
 - raw body: `{"unicid":"TEST-UNICID","order_id":"ABC123","status":"approved","status_id":"10"}`
 - expected HMAC: `2f4a55c19a2dd0f2f7f2390a6d720e95dbdff577c096d7ff291ef8f84a53e94f`
 
-### API-001 — Conceptual OC3 inbound routes (D4 deferred to Phase 6)
+### API-001 — OC3 inbound routes (Phase 6 implemented)
 
-POST-only JSON, no SEO aliases. Conceptual only; **not** registered with CP until Phase 6:
+POST-only JSON, no SEO aliases. Register these exact paths with CP:
 
 ```text
-index.php?route=extension/mt_uni_credit/api/shopCache
-index.php?route=extension/mt_uni_credit/api/orderBankStatus
-index.php?route=extension/mt_uni_credit/api/smartUcfDebugLog
+index.php?route=extension/mt_uni_credit/api/shop_cache
+index.php?route=extension/mt_uni_credit/api/order_bank_status
+index.php?route=extension/mt_uni_credit/api/smartucf_debug_log
 ```
 
-Errors: 400 / 401 / 403 / 404 / 405 / 422 / 500 (redacted). Never theme HTML on these endpoints.
+Controller: `upload/catalog/controller/extension/mt_uni_credit/api.php` (`shop_cache`, `order_bank_status`, `smartucf_debug_log` actions).
+
+Responses: JSON `{success, message?, data?, error?}`. Errors: 400 / 401 / 403 / 404 / 405 / 422 / 500 (redacted). Never theme HTML on these endpoints.
+
+**Endpoint semantics:**
+
+| Route                | Purpose                                                                                      |
+| -------------------- | -------------------------------------------------------------------------------------------- |
+| `shop_cache`         | CP push → validate → sanitize credentials → replace `(store_id, unicid)` cache               |
+| `order_bank_status`  | CP bank status upsert; native OC order status unchanged (`oc_order_state_changed: false`)    |
+| `smartucf_debug_log` | CP **read** of latest redacted diagnostic row for owned order (writers deferred to Phase 11) |
 
 ---
 

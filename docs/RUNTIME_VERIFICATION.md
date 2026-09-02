@@ -587,4 +587,52 @@ Double-click / refresh guard:
 - [ ] No Product/Cart calculator UI or Product Buy.
 - [ ] No EGN / Process 2 collection.
 - [ ] No Journal storefront asset injection.
+
+---
+
+## Phase 6 — Inbound authenticated API bridge (local PASS)
+
+Automated gate: `php tests/phase6_check.php` (52 checks, no live network).
+
+### CP route registration (remote)
+
+Register with CP (relative paths, no SEO):
+
+```text
+index.php?route=extension/mt_uni_credit/api/shop_cache
+index.php?route=extension/mt_uni_credit/api/order_bank_status
+index.php?route=extension/mt_uni_credit/api/smartucf_debug_log
+```
+
+### Shop cache push (signed)
+
+1. [ ] Valid signed POST with full `data` snapshot → HTTP 200, cache row updated for exact `(store_id, unicid)`.
+2. [ ] DB check: `shop_data` JSON length/hash changed; **must not** contain plaintext `uni_password` or `uni_user`.
+3. [ ] Encrypted SmartUCF credential exists in `oc_setting` (`module_mt_uni_credit_smartucf_password` prefix only if inspecting).
+4. [ ] Invalid snapshot → HTTP 422; prior valid cache unchanged.
+5. [ ] Replay exact signed request → HTTP 401; no duplicate mutation.
+6. [ ] Alter body after signing → HTTP 401; no mutation.
+
+### Bank status
+
+1. [ ] Signed POST for owned UniCredit order → HTTP 200; `mt_uni_credit_order_bank_status` updated.
+2. [ ] Duplicate same `status_id` + label → idempotent HTTP 200.
+3. [ ] Cross-store order id → HTTP 404.
+4. [ ] Native `oc_order.order_status_id` unchanged.
+
+### Debug log retrieval
+
+1. [ ] Signed POST for order with diagnostic row → HTTP 200 redacted payload.
+2. [ ] Missing log or unauthorized order → HTTP 404 (no oracle).
+3. [ ] Response/logs contain no EGN, tokens, secrets, or passwords.
+
+### Security hygiene
+
+1. [ ] Application logs after negative tests: no Secret, HMAC, bearer token, or `uni_password`.
+2. [ ] GET on any inbound route → HTTP 405 JSON.
+
+### Explicit exclusions (Phase 6)
+
+- [ ] No CP order creation, SmartUCF outbound, Process 1/2, or customer financing UI.
+- [ ] No native order status transition from bank-status callback.
 - [ ] No native order status transition to configured `payment_mt_uni_credit_order_status_id` (financing not completed).

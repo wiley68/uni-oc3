@@ -45,6 +45,7 @@ $requiredFiles = array(
     'upload/system/library/mt_uni_credit/health.php',
     'upload/system/library/mt_uni_credit/local_settings.php',
     'upload/system/library/mt_uni_credit/installer.php',
+    'upload/catalog/controller/extension/mt_uni_credit/api.php',
     'scripts/package.ps1',
 );
 
@@ -53,7 +54,7 @@ foreach ($requiredFiles as $relative) {
 }
 
 $forbiddenPhase1 = array(
-    'upload/catalog/controller/extension/mt_uni_credit/api.php',
+    'upload/catalog/controller/extension/mt_uni_credit/api/shop_cache.php',
 );
 
 foreach ($forbiddenPhase1 as $relative) {

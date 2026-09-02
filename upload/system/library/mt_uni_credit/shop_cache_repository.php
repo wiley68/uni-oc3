@@ -81,6 +81,36 @@ final class MtUniCreditShopCacheRepository
     /**
      * @param int $storeId
      * @param string $unicid
+     * @return string|null
+     */
+    public function findEncodedShopData($storeId, $unicid)
+    {
+        MtUniCreditStoreScope::requireStoreId($storeId);
+        $unicid = trim($unicid);
+        if ($unicid === '') {
+            return null;
+        }
+
+        $table = $this->tableName();
+        $result = $this->db->query(
+            "SELECT `shop_data` FROM `{$table}`"
+                . " WHERE `store_id` = " . (int) $storeId
+                . " AND `unicid` = '" . $this->db->escape($unicid) . "'"
+                . " LIMIT 1"
+        );
+
+        if (!is_object($result) || !isset($result->num_rows) || (int) $result->num_rows !== 1) {
+            return null;
+        }
+
+        return isset($result->row['shop_data']) && is_string($result->row['shop_data'])
+            ? $result->row['shop_data']
+            : null;
+    }
+
+    /**
+     * @param int $storeId
+     * @param string $unicid
      * @param array<string, mixed> $shopData
      * @return void
      */

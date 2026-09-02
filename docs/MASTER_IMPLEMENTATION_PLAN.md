@@ -692,7 +692,7 @@ Phases are intentionally small and sequential. Cursor should receive only one ap
 
 **Acceptance criteria:** CP accepts final paths and all negative tests fail with the correct non-leaking response.
 
-**STOP GATE:** security review and CP callback-path approval.
+**STOP GATE:** security review and CP callback-path approval. **Local implementation: PASS** (`tests/phase6_check.php`); remote CP registration and signed callback evidence still required.
 
 ### Phase 7 — Local order materialization and CP order lifecycle
 

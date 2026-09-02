@@ -11,6 +11,10 @@ final class MtUniCreditPersistenceTableNames
 
     const SHOP_CACHE = 'mt_uni_credit_shop_cache';
 
+    const ORDER_BANK_STATUS = 'mt_uni_credit_order_bank_status';
+
+    const DIAGNOSTIC_DEBUG_LOG = 'mt_uni_credit_diagnostic_debug_log';
+
     /**
      * Phase 2 foundational tables only.
      *
@@ -33,6 +37,31 @@ final class MtUniCreditPersistenceTableNames
     {
         return array(
             self::SHOP_CACHE,
+        );
+    }
+
+    /**
+     * Phase 6 inbound bridge tables.
+     *
+     * @return array<int, string>
+     */
+    public static function phase6Tables()
+    {
+        return array(
+            self::ORDER_BANK_STATUS,
+            self::DIAGNOSTIC_DEBUG_LOG,
+        );
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public static function allPersistenceTables()
+    {
+        return array_merge(
+            self::phase2Tables(),
+            self::phase3Tables(),
+            self::phase6Tables()
         );
     }
 }

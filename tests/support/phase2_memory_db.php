@@ -29,8 +29,23 @@ final class Phase2MemoryDb
     /** @var array<int, array<string, mixed>> */
     private $zoneToGeoZone = array();
 
+    /** @var array<int, array<string, mixed>> */
+    private $orders = array();
+
+    /** @var array<string, array<string, mixed>> */
+    private $orderBankStatus = array();
+
+    /** @var array<int, array<string, mixed>> */
+    private $diagnosticLogs = array();
+
     /** @var int */
     private $nextShopCacheId = 1;
+
+    /** @var int */
+    private $nextBankStatusId = 1;
+
+    /** @var int */
+    private $nextDiagnosticLogId = 1;
 
     /** @var string */
     private $prefix = 'oc_';
@@ -45,10 +60,32 @@ final class Phase2MemoryDb
         $this->operationLocks = array();
         $this->shopCache = array();
         $this->zoneToGeoZone = array();
+        $this->orders = array();
+        $this->orderBankStatus = array();
+        $this->diagnosticLogs = array();
         $this->affected = 0;
         $this->nextNonceId = 1;
         $this->nextLockId = 1;
         $this->nextShopCacheId = 1;
+        $this->nextBankStatusId = 1;
+        $this->nextDiagnosticLogId = 1;
+    }
+
+    /**
+     * @param int $orderId
+     * @param int $storeId
+     * @param string $paymentCode
+     * @param mixed $paymentMethod
+     * @return void
+     */
+    public function seedOrder($orderId, $storeId, $paymentCode = 'mt_uni_credit', $paymentMethod = '')
+    {
+        $this->orders[(int) $orderId] = array(
+            'order_id' => (int) $orderId,
+            'store_id' => (int) $storeId,
+            'payment_code' => (string) $paymentCode,
+            'payment_method' => $paymentMethod,
+        );
     }
 
     /**
@@ -92,6 +129,14 @@ final class Phase2MemoryDb
             return $this->upsertShopCache($sql);
         }
 
+        if (stripos($sql, 'INSERT INTO') === 0 && strpos($sql, 'order_bank_status') !== false) {
+            return $this->upsertOrderBankStatus($sql);
+        }
+
+        if (stripos($sql, 'INSERT INTO') === 0 && strpos($sql, 'diagnostic_debug_log') !== false) {
+            return $this->insertDiagnosticLog($sql);
+        }
+
         if (stripos($sql, 'INSERT INTO') === 0 && strpos($sql, 'setting') !== false) {
             return $this->insertSetting($sql);
         }
@@ -122,6 +167,18 @@ final class Phase2MemoryDb
 
         if (stripos($sql, 'SELECT') === 0 && strpos($sql, 'shop_cache') !== false) {
             return $this->selectShopCache($sql);
+        }
+
+        if (stripos($sql, 'SELECT') === 0 && preg_match('/FROM `[^`]*order`/i', $sql)) {
+            return $this->selectOrder($sql);
+        }
+
+        if (stripos($sql, 'SELECT') === 0 && strpos($sql, 'order_bank_status') !== false) {
+            return $this->selectOrderBankStatus($sql);
+        }
+
+        if (stripos($sql, 'SELECT') === 0 && strpos($sql, 'diagnostic_debug_log') !== false) {
+            return $this->selectDiagnosticLog($sql);
         }
 
         if (stripos($sql, 'SELECT') === 0 && strpos($sql, 'setting') !== false) {
@@ -161,7 +218,7 @@ final class Phase2MemoryDb
      */
     public function getLastId()
     {
-        return max(0, $this->nextNonceId - 1, $this->nextLockId - 1);
+        return max(0, $this->nextNonceId - 1, $this->nextLockId - 1, $this->nextDiagnosticLogId - 1);
     }
 
     /**
@@ -646,6 +703,112 @@ final class Phase2MemoryDb
         }
 
         return $this->emptyResult();
+    }
+
+    /**
+     * @param string $sql
+     * @return object
+     */
+    private function upsertOrderBankStatus($sql)
+    {
+        $normalized = preg_replace('/\s+ON DUPLICATE KEY UPDATE.+$/is', '', $sql);
+        $fields = $this->parseInsertValues($normalized);
+        $storeId = (int) $fields['store_id'];
+        $orderId = (int) $fields['order_id'];
+        $key = $storeId . '|' . $orderId;
+        $existing = isset($this->orderBankStatus[$key]);
+        $this->orderBankStatus[$key] = array(
+            'order_bank_status_id' => $existing ? $this->orderBankStatus[$key]['order_bank_status_id'] : $this->nextBankStatusId++,
+            'store_id' => $storeId,
+            'order_id' => $orderId,
+            'order_reference' => (string) $fields['order_reference'],
+            'status_id' => (string) $fields['status_id'],
+            'status_label' => (string) $fields['status_label'],
+            'updated_at' => (string) $fields['updated_at'],
+        );
+        $this->affected = 1;
+
+        return $this->emptyResult();
+    }
+
+    /**
+     * @param string $sql
+     * @return object
+     */
+    private function insertDiagnosticLog($sql)
+    {
+        $fields = $this->parseInsertValues($sql);
+        $id = $this->nextDiagnosticLogId++;
+        $this->diagnosticLogs[$id] = array(
+            'diagnostic_debug_log_id' => $id,
+            'store_id' => (int) $fields['store_id'],
+            'order_id' => (int) $fields['order_id'],
+            'entry_point' => (string) $fields['entry_point'],
+            'event_code' => (string) $fields['event_code'],
+            'http_status' => isset($fields['http_status']) && strtoupper((string) $fields['http_status']) !== 'NULL'
+                ? (int) $fields['http_status']
+                : null,
+            'summary_json' => (string) $fields['summary_json'],
+            'created_at' => (string) $fields['created_at'],
+        );
+        $this->affected = 1;
+
+        return (object) array('num_rows' => 0, 'row' => array(), 'insert_id' => $id);
+    }
+
+    /**
+     * @param string $sql
+     * @return object
+     */
+    private function selectOrder($sql)
+    {
+        $orderId = (int) $this->extractWhereInt($sql, 'order_id');
+        if (!isset($this->orders[$orderId])) {
+            return $this->emptyResult();
+        }
+
+        return $this->singleRow($this->orders[$orderId]);
+    }
+
+    /**
+     * @param string $sql
+     * @return object
+     */
+    private function selectOrderBankStatus($sql)
+    {
+        $storeId = (int) $this->extractWhereInt($sql, 'store_id');
+        $orderId = (int) $this->extractWhereInt($sql, 'order_id');
+        $key = $storeId . '|' . $orderId;
+        if (!isset($this->orderBankStatus[$key])) {
+            return $this->emptyResult();
+        }
+
+        return $this->singleRow($this->orderBankStatus[$key]);
+    }
+
+    /**
+     * @param string $sql
+     * @return object
+     */
+    private function selectDiagnosticLog($sql)
+    {
+        $storeId = (int) $this->extractWhereInt($sql, 'store_id');
+        $orderId = (int) $this->extractWhereInt($sql, 'order_id');
+        $latest = null;
+        foreach ($this->diagnosticLogs as $row) {
+            if ((int) $row['store_id'] !== $storeId || (int) $row['order_id'] !== $orderId) {
+                continue;
+            }
+            if ($latest === null || (int) $row['diagnostic_debug_log_id'] > (int) $latest['diagnostic_debug_log_id']) {
+                $latest = $row;
+            }
+        }
+
+        if ($latest === null) {
+            return $this->emptyResult();
+        }
+
+        return $this->singleRow($latest);
     }
 
     /**

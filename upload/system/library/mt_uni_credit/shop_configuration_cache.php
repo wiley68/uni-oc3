@@ -11,16 +11,21 @@ final class MtUniCreditShopConfigurationCache
     /** @var MtUniCreditShopConfigurationSnapshotValidator */
     private $validator;
 
+    /** @var MtUniCreditShopCachePersistence|null */
+    private $persistence;
+
     /**
      * @param MtUniCreditShopCacheRepository $cache
      * @param MtUniCreditShopConfigurationSnapshotValidator|null $validator
+     * @param MtUniCreditShopCachePersistence|null $persistence
      */
-    public function __construct(MtUniCreditShopCacheRepository $cache, $validator = null)
+    public function __construct(MtUniCreditShopCacheRepository $cache, $validator = null, $persistence = null)
     {
         $this->cache = $cache;
         $this->validator = $validator instanceof MtUniCreditShopConfigurationSnapshotValidator
             ? $validator
             : new MtUniCreditShopConfigurationSnapshotValidator();
+        $this->persistence = $persistence instanceof MtUniCreditShopCachePersistence ? $persistence : null;
     }
 
     /**
@@ -36,13 +41,25 @@ final class MtUniCreditShopConfigurationCache
             return false;
         }
 
+        if ($this->persistence !== null) {
+            try {
+                $this->persistence->replaceValidatedSnapshot($storeId, $unicid, $shopData);
+            } catch (MtUniCreditShopSnapshotValidationException $exception) {
+                return false;
+            } catch (MtUniCreditPersistenceValidationException $exception) {
+                return false;
+            }
+
+            return true;
+        }
+
         try {
             $this->validator->validate($shopData, $unicid);
         } catch (MtUniCreditShopSnapshotValidationException $exception) {
             return false;
         }
 
-        $this->cache->replaceValidated($storeId, $unicid, $shopData);
+        $this->cache->replaceValidated($storeId, $unicid, MtUniCreditShopSnapshotSanitizer::sanitize($shopData));
 
         return true;
     }

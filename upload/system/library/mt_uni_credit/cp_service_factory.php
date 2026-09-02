@@ -50,12 +50,15 @@ final class MtUniCreditCpServiceFactory
         );
 
         $cache = new MtUniCreditShopCacheRepository($db);
+        $shopCachePersistence = MtUniCreditBootstrap::shopCachePersistenceFromDb($db);
         $shopConfiguration = new MtUniCreditShopConfigurationService(
             $credentials,
             $cache,
             $client,
             $tokens,
-            $storeId
+            $storeId,
+            null,
+            $shopCachePersistence
         );
         $credentialChange = new MtUniCreditCredentialChangeHandler($tokens, $cache, $storeId);
 

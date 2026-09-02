@@ -30,6 +30,9 @@ $lib = $root . DIRECTORY_SEPARATOR . 'upload' . DIRECTORY_SEPARATOR . 'system' .
 if (!defined('DIR_SYSTEM')) {
     define('DIR_SYSTEM', $root . DIRECTORY_SEPARATOR . 'upload' . DIRECTORY_SEPARATOR . 'system' . DIRECTORY_SEPARATOR);
 }
+if (!defined('DB_PASSWORD')) {
+    define('DB_PASSWORD', 'phase4-test-installation-db-password-secret');
+}
 
 require_once $lib . DIRECTORY_SEPARATOR . 'bootstrap.php';
 
@@ -94,7 +97,10 @@ foreach ($goldenResult['case_results'] as $status) {
 echo 'Golden cases: ' . $goldenPassed . '/' . $fixtureCount . ' executed and passed' . PHP_EOL;
 mtuc3_assert($goldenPassed === $fixtureCount, 'golden cases all passed (' . $goldenPassed . '/' . $fixtureCount . ')');
 
-$shop = mtuc3_golden_shop();
+$shop = mtuc3_golden_shop(array(
+    'uni_user' => 'example-user',
+    'uni_password' => 'demo-secret-password',
+));
 
 $validator = new MtUniCreditShopConfigurationSnapshotValidator();
 try {
@@ -118,8 +124,10 @@ $db = new MtUniCreditDbAdapter($memoryDb, 'oc_');
 $cacheRepo = new MtUniCreditShopCacheRepository($db, new MtUniCreditPersistenceClock(function () {
     return 1700000000;
 }));
-$cacheService = new MtUniCreditShopConfigurationCache($cacheRepo);
+$cacheService = MtUniCreditBootstrap::shopConfigurationCacheFromDb($db);
 mtuc3_assert($cacheService->replaceSnapshot(0, 'TEST-UNICID', $shop), 'shop cache replace valid snapshot');
+$encodedShopData = (new MtUniCreditShopCacheRepository($db))->findEncodedShopData(0, 'TEST-UNICID');
+mtuc3_assert(is_string($encodedShopData) && strpos($encodedShopData, 'demo-secret-password') === false, 'sanitized shop_data excludes uni_password plaintext');
 mtuc3_assert($cacheService->getFreshShopData(0, 'TEST-UNICID') !== null, 'shop cache fresh read succeeds');
 mtuc3_assert($cacheService->getFreshShopData(1, 'TEST-UNICID') === null, 'shop cache no cross-store fallback');
 $badReplace = $cacheService->replaceSnapshot(0, 'TEST-UNICID', array('uni_status' => 2));

@@ -2,12 +2,12 @@
   "contract_ids": ["SEC-HMAC-001", "API-001"],
   "methods": "POST only",
   "content_type": "application/json; charset=utf-8",
-  "conceptual_oc3_routes": [
-    "index.php?route=extension/mt_uni_credit/api/shopCache",
-    "index.php?route=extension/mt_uni_credit/api/orderBankStatus",
-    "index.php?route=extension/mt_uni_credit/api/smartUcfDebugLog"
+  "oc3_routes": [
+    "index.php?route=extension/mt_uni_credit/api/shop_cache",
+    "index.php?route=extension/mt_uni_credit/api/order_bank_status",
+    "index.php?route=extension/mt_uni_credit/api/smartucf_debug_log"
   ],
-  "route_status": "deferred_to_phase_6_cp_registration",
+  "route_status": "implemented_phase_6",
   "http_errors": {
     "400": "bad JSON/validation/unsupported status",
     "401": "auth/replay/time",

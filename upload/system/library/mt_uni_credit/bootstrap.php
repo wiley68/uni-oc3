@@ -24,7 +24,20 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'deployment_paths.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'shop_snapshot_validation_exception.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'shop_configuration_snapshot_validator.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'shop_cache_repository.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'shop_snapshot_sanitizer.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'smartucf_credentials_repository.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'shop_cache_persistence.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'shop_configuration_cache.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'inbound_api_exception.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'inbound_api_dispatcher.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'request_authenticator.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'inbound_bank_status_vocabulary.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'payment_identity.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'order_ownership_resolver.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'order_bank_status_repository.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'diagnostic_payload_redactor.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'diagnostic_debug_log_repository.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'inbound_api_runner.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'checkout_live_grand_total.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'checkout_order_cart_parity.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'oc3_cart_context_factory.php';
@@ -104,12 +117,51 @@ final class MtUniCreditBootstrap
     }
 
     /**
+     * @param object $db OpenCart DB registry object
+     * @return MtUniCreditDbAdapter
+     */
+    public static function dbFromRegistry($db)
+    {
+        return new MtUniCreditDbAdapter($db);
+    }
+
+    /**
+     * @param MtUniCreditDbAdapter $db
+     * @return MtUniCreditSmartucfCredentialsRepository
+     */
+    public static function smartucfCredentialsRepositoryFromDb(MtUniCreditDbAdapter $db)
+    {
+        $provider = new MtUniCreditEncryptionKeyProvider();
+        $cipher = new MtUniCreditSettingCipher($provider->resolveDerivedKey());
+        $store = new MtUniCreditSettingStore($db, MtUniCreditConstants::MODULE_SETTINGS_CODE);
+
+        return new MtUniCreditSmartucfCredentialsRepository($store, $cipher);
+    }
+
+    /**
+     * @param MtUniCreditDbAdapter $db
+     * @return MtUniCreditShopCachePersistence
+     */
+    public static function shopCachePersistenceFromDb(MtUniCreditDbAdapter $db)
+    {
+        return new MtUniCreditShopCachePersistence(
+            new MtUniCreditShopCacheRepository($db),
+            new MtUniCreditShopConfigurationSnapshotValidator(),
+            self::smartucfCredentialsRepositoryFromDb($db)
+        );
+    }
+
+    /**
      * @param MtUniCreditDbAdapter $db
      * @return MtUniCreditShopConfigurationCache
      */
     public static function shopConfigurationCacheFromDb(MtUniCreditDbAdapter $db)
     {
-        return new MtUniCreditShopConfigurationCache(new MtUniCreditShopCacheRepository($db));
+        return new MtUniCreditShopConfigurationCache(
+            new MtUniCreditShopCacheRepository($db),
+            null,
+            self::shopCachePersistenceFromDb($db)
+        );
     }
 
     /**

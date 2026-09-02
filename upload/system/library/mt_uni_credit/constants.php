@@ -67,6 +67,10 @@ final class MtUniCreditConstants
 
     const MODULE_SETTING_SECRET = 'module_mt_uni_credit_secret';
 
+    const MODULE_SETTING_SMARTUCF_USER = 'module_mt_uni_credit_smartucf_user';
+
+    const MODULE_SETTING_SMARTUCF_PASSWORD = 'module_mt_uni_credit_smartucf_password';
+
     const BUTTON_ACTION_ADD_TO_CART = 'add_to_cart';
 
     const BUTTON_ACTION_BUY = 'buy';

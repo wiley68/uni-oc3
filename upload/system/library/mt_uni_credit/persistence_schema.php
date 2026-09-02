@@ -75,7 +75,8 @@ final class MtUniCreditPersistenceSchema
     {
         return array_merge(
             self::createPhase2TableStatements($prefix),
-            self::createPhase3TableStatements($prefix)
+            self::createPhase3TableStatements($prefix),
+            self::createPhase6TableStatements($prefix)
         );
     }
 
@@ -138,6 +139,45 @@ final class MtUniCreditPersistenceSchema
                 PRIMARY KEY (`shop_cache_id`),
                 UNIQUE KEY `uniq_mt_uni_credit_shop_cache_store_unicid` (`store_id`, `unicid`),
                 KEY `idx_mt_uni_credit_shop_cache_expires` (`expires_at`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+        );
+    }
+
+    /**
+     * @param string $prefix
+     * @return array<int, string>
+     */
+    public static function createPhase6TableStatements($prefix)
+    {
+        $orderBankStatus = $prefix . MtUniCreditPersistenceTableNames::ORDER_BANK_STATUS;
+        $diagnosticDebugLog = $prefix . MtUniCreditPersistenceTableNames::DIAGNOSTIC_DEBUG_LOG;
+
+        return array(
+            "CREATE TABLE IF NOT EXISTS `{$orderBankStatus}` (
+                `order_bank_status_id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+                `store_id` INT UNSIGNED NOT NULL,
+                `order_id` INT UNSIGNED NOT NULL,
+                `order_reference` VARCHAR(64) NOT NULL,
+                `status_id` VARCHAR(255) NOT NULL,
+                `status_label` VARCHAR(255) NOT NULL,
+                `updated_at` DATETIME NOT NULL,
+                PRIMARY KEY (`order_bank_status_id`),
+                UNIQUE KEY `uniq_mt_uni_credit_order_bank_store_order` (`store_id`, `order_id`),
+                KEY `idx_mt_uni_credit_order_bank_reference` (`order_reference`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+            "CREATE TABLE IF NOT EXISTS `{$diagnosticDebugLog}` (
+                `diagnostic_debug_log_id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+                `store_id` INT UNSIGNED NOT NULL,
+                `order_id` INT UNSIGNED NOT NULL,
+                `entry_point` VARCHAR(16) NOT NULL DEFAULT '',
+                `event_code` VARCHAR(64) NOT NULL DEFAULT '',
+                `http_status` INT NULL,
+                `summary_json` LONGTEXT NULL,
+                `created_at` DATETIME NOT NULL,
+                PRIMARY KEY (`diagnostic_debug_log_id`),
+                KEY `idx_mt_uni_credit_diag_store_order` (`store_id`, `order_id`),
+                KEY `idx_mt_uni_credit_diag_created` (`created_at`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
         );
     }
