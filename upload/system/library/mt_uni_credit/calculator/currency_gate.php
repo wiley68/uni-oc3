@@ -2,6 +2,9 @@
 
 final class MtUniCreditCurrencyGate
 {
+    /** Frozen BGN/EUR display conversion rate (CONTRACTS.md CALC/currency). */
+    const DISPLAY_RATE = 1.95583;
+
     /**
      * @param array<string, mixed> $shop
      * @param string $currencyIso

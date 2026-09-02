@@ -31,7 +31,7 @@ function mtuc3_golden_shop(array $overrides = array())
 /**
  * @return array<string, mixed>
  */
-function mtuc3_schema_filter_shop()
+function mtuc3_schema_filter_shop(array $overrides = array())
 {
     $fixture = mtuc_phase0_load_fixture('calculator_golden.json');
     $shop = mtuc3_golden_shop(array(
@@ -52,7 +52,42 @@ function mtuc3_schema_filter_shop()
         ),
     ));
 
-    return $shop;
+    return array_replace_recursive($shop, $overrides);
+}
+
+/**
+ * @param array<int, array<string, mixed>> $filters
+ * @param array<string, mixed> $overrides
+ * @return array<string, mixed>
+ */
+function mtuc3_typekop1_shop(array $filters, array $overrides = array())
+{
+    return mtuc3_golden_shop(array_replace_recursive(array(
+        'uni_typekop' => 1,
+        'kop' => array(
+            'by_schema' => array(
+                'filters' => $filters,
+            ),
+        ),
+    ), $overrides));
+}
+
+/**
+ * @param int $productId
+ * @param int[] $categoryIds
+ * @param float $cartTotal
+ * @param int $quantity
+ * @param float $lineTotal
+ * @return MtUniCreditCartLine
+ */
+function mtuc3_cart_line($productId, array $categoryIds, $cartTotal, $quantity = 1, $lineTotal = 0.0)
+{
+    return new MtUniCreditCartLine(
+        new MtUniCreditProductContext($productId, $categoryIds, (float) $cartTotal),
+        0,
+        (int) $quantity,
+        $lineTotal > 0 ? (float) $lineTotal : (float) $cartTotal
+    );
 }
 
 /**
