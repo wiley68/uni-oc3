@@ -78,13 +78,22 @@ $expectedEntries = @(
     'upload/admin/controller/extension/payment/mt_uni_credit.php',
     'upload/admin/view/image/payment/uni_logo.svg',
     'upload/admin/view/stylesheet/mt_uni_credit_module.css',
-    'upload/system/library/mt_uni_credit/constants.php'
+    'upload/system/library/mt_uni_credit/constants.php',
+    'upload/system/library/mt_uni_credit/config/environment.php'
+)
+$forbiddenEntries = @(
+    'upload/config/environment.php'
 )
 $zipRead = [System.IO.Compression.ZipFile]::OpenRead($OutputPath)
 try {
     foreach ($entry in $expectedEntries) {
         if ($null -eq $zipRead.GetEntry($entry)) {
             throw "Package missing required entry: $entry"
+        }
+    }
+    foreach ($entry in $forbiddenEntries) {
+        if ($null -ne $zipRead.GetEntry($entry)) {
+            throw "Package must not contain forbidden entry: $entry"
         }
     }
 }

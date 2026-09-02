@@ -282,7 +282,7 @@ Login is **not** idempotent. Token length 64, type Bearer, TTL **86400** seconds
 
 **Deferred (not Phase 1 blockers):**
 
-- Exact deployment CP hostname → **`upload/config/environment.php`** (`control_panel_url`); switch at packaging time, not in Module admin UI (Phase 4 implemented)
+- Exact deployment CP hostname → **`upload/system/library/mt_uni_credit/config/environment.php`** (`control_panel_url`); switch at packaging time, not in Module admin UI (Phase 4 implemented; OC3 installer forbids shop-root `config/`)
 - Final OC3 inbound callback URLs → Phase 6 CP registration
 
 **Phase 4 implementation notes:**
@@ -781,12 +781,12 @@ Fixture: `tests/fixtures/secret_deployment.json`.
 
 Follow completed modules wherever technically possible:
 
-| Material            | Relative path                                  | Notes                                        |
-| ------------------- | ---------------------------------------------- | -------------------------------------------- |
-| SmartUCF passphrase | `secrets/smartucf-key.php`                     | returns `['passphrase' => …]`; never from CP |
-| Certificate PEM     | `keys/avalon_cert.pem`                         | CP-synchronizable                            |
-| Private key PEM     | `keys/avalon_private_key.pem`                  | CP-synchronizable                            |
-| CP host             | `config/environment.php` → `control_panel_url` | packaging-time switch                        |
+| Material            | Relative path                                                               | Notes                                          |
+| ------------------- | --------------------------------------------------------------------------- | ---------------------------------------------- |
+| SmartUCF passphrase | `secrets/smartucf-key.php`                                                  | returns `['passphrase' => …]`; never from CP   |
+| Certificate PEM     | `keys/avalon_cert.pem`                                                      | CP-synchronizable                              |
+| Private key PEM     | `keys/avalon_private_key.pem`                                               | CP-synchronizable                              |
+| CP host             | `system/library/mt_uni_credit/config/environment.php` → `control_panel_url` | packaging-time switch; not shop-root `config/` |
 
 Authoritative modes: cert `0640`, key `0600`, passphrase file `0600`. Health checks: presence, path, owner/group, permissions, PEM SHA-256 — **never** secret contents.
 

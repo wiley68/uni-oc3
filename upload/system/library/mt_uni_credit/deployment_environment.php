@@ -1,9 +1,10 @@
 <?php
 
 /**
- * Reads module-local deployment endpoints from config/environment.php.
+ * Reads module-local deployment endpoints from the extension-owned environment file.
  *
  * Single authoritative Control Panel host source — do not duplicate elsewhere.
+ * Path: system/library/mt_uni_credit/config/environment.php
  */
 final class MtUniCreditDeploymentEnvironment
 {
@@ -36,11 +37,11 @@ final class MtUniCreditDeploymentEnvironment
         $loaded = $this->load();
         $url = isset($loaded[self::CONTROL_PANEL_URL_KEY]) ? $loaded[self::CONTROL_PANEL_URL_KEY] : null;
         if (!is_string($url)) {
-            throw new RuntimeException('Control Panel URL is not configured in config/environment.php.');
+            throw new RuntimeException('Control Panel URL is not configured in system/library/mt_uni_credit/config/environment.php.');
         }
         $url = rtrim(trim($url), '/');
         if ($url === '' || !preg_match('#^https?://#i', $url)) {
-            throw new RuntimeException('Control Panel URL is invalid in config/environment.php.');
+            throw new RuntimeException('Control Panel URL is invalid in system/library/mt_uni_credit/config/environment.php.');
         }
 
         return $url;
@@ -98,12 +99,16 @@ final class MtUniCreditDeploymentEnvironment
     private function load()
     {
         if (!is_file($this->configFilePath) || !is_readable($this->configFilePath)) {
-            throw new RuntimeException('Deployment environment file config/environment.php is missing or unreadable.');
+            throw new RuntimeException(
+                'Deployment environment file system/library/mt_uni_credit/config/environment.php is missing or unreadable.'
+            );
         }
 
         $loaded = include $this->configFilePath;
         if (!is_array($loaded)) {
-            throw new RuntimeException('Deployment environment file config/environment.php must return an array.');
+            throw new RuntimeException(
+                'Deployment environment file system/library/mt_uni_credit/config/environment.php must return an array.'
+            );
         }
 
         return $loaded;

@@ -55,7 +55,10 @@ foreach ($requiredFiles as $relative) {
     mtuc4_assert(is_file($lib . DIRECTORY_SEPARATOR . $relative), 'required file: ' . $relative);
 }
 
-mtuc4_assert(is_file($root . DIRECTORY_SEPARATOR . 'upload' . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'environment.php'), 'upload/config/environment.php present');
+$envConfigPath = $lib . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'environment.php';
+$oldEnvConfigPath = $root . DIRECTORY_SEPARATOR . 'upload' . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'environment.php';
+mtuc4_assert(is_file($envConfigPath), 'extension-owned config/environment.php present');
+mtuc4_assert(!is_file($oldEnvConfigPath), 'old upload/config/environment.php absent');
 
 $authContract = mtuc_phase0_load_fixture('cp_auth_contract.json');
 $apiEndpoints = mtuc_phase0_load_fixture('cp_api_endpoints.json');
@@ -72,8 +75,15 @@ mtuc4_assert(strpos($curlSource, 'CURLOPT_SSL_VERIFYHOST') !== false, 'curl tran
 mtuc4_assert(strpos($curlSource, 'CURLOPT_FOLLOWLOCATION') !== false && strpos($curlSource, 'false') !== false, 'curl transport disables redirects');
 mtuc4_assert(strpos($curlSource, 'CURLOPT_SSL_VERIFYPEER, false') === false, 'curl transport never disables TLS verify');
 
-$deployment = new MtUniCreditDeploymentEnvironment($root . DIRECTORY_SEPARATOR . 'upload' . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'environment.php');
-mtuc4_assert(strpos($deployment->controlPanelApiBaseUrl(), '/api/v1') !== false, 'deployment environment appends /api/v1');
+$deploymentSource = (string) file_get_contents($lib . DIRECTORY_SEPARATOR . 'deployment_environment.php');
+mtuc4_assert(strpos($deploymentSource, 'upload/config/environment.php') === false, 'loader has no old root config path fallback');
+mtuc4_assert(strpos($deploymentSource, 'MtUniCreditExtensionRoot::path()') !== false, 'loader resolves via extension root');
+
+$defaultDeployment = new MtUniCreditDeploymentEnvironment();
+$expectedDefaultPath = MtUniCreditExtensionRoot::path() . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'environment.php';
+mtuc4_assert($defaultDeployment->configFilePath() === $expectedDefaultPath, 'DeploymentEnvironment resolves extension-owned path');
+mtuc4_assert(strpos($defaultDeployment->controlPanelApiBaseUrl(), '/api/v1') !== false, 'deployment environment appends /api/v1');
+mtuc4_assert(strpos($defaultDeployment->controlPanelApiBaseUrl(), 'uni.avalonbg.com') !== false, 'CP host semantics unchanged');
 
 $transport = new Phase4FakeCpHttpTransport();
 $transport->enqueueJson(200, array('success' => true, 'data' => array('ok' => true)));
@@ -363,6 +373,22 @@ mtuc4_assert(strpos($loginRequest['url'], '/auth/login') !== false, 'login endpo
 mtuc4_assert(strpos($loginRequest['url'], 'cp-test.example.com/api/v1') !== false, 'login uses frozen test CP host');
 $storedSecret = $settings->get($storeId, MtUniCreditConstants::MODULE_SETTING_SECRET);
 mtuc4_assert(strpos((string) $storedSecret, Phase4TestHarness::TEST_SECRET) === false, 'secret not persisted plaintext after login');
+
+$packageScript = (string) file_get_contents($root . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'package.ps1');
+mtuc4_assert(strpos($packageScript, 'upload/system/library/mt_uni_credit/config/environment.php') !== false, 'package script expects extension-owned environment.php');
+mtuc4_assert(strpos($packageScript, 'forbiddenEntries') !== false, 'package script forbids old config path');
+mtuc4_assert(strpos($packageScript, "'upload/config/environment.php'") !== false, 'package script lists forbidden upload/config/environment.php');
+
+$packagePath = $root . DIRECTORY_SEPARATOR . 'dist' . DIRECTORY_SEPARATOR . 'CC_OpenCartv.3.x_UNI_v.2.0.2.ocmod.zip';
+if (is_file($packagePath)) {
+    $zip = new ZipArchive();
+    mtuc4_assert($zip->open($packagePath) === true, 'distributable package opens');
+    if ($zip->status === ZipArchive::ER_OK || $zip->numFiles > 0) {
+        mtuc4_assert($zip->locateName('upload/system/library/mt_uni_credit/config/environment.php') !== false, 'package contains extension-owned environment.php');
+        mtuc4_assert($zip->locateName('upload/config/environment.php') === false, 'package lacks old upload/config/environment.php');
+        $zip->close();
+    }
+}
 
 echo PHP_EOL . 'Phase 4 summary: ' . $passes . ' passed, ' . count($failures) . ' failed' . PHP_EOL;
 

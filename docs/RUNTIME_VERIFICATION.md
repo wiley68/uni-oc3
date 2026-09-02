@@ -450,15 +450,16 @@ Local gate: `php tests/phase4_check.php` (fake transport; no live network).
 
 ### CP host configuration (packaging-time)
 
-1. [ ] `upload/config/environment.php` exists on the server after install (from module ZIP).
-2. [ ] `control_panel_url` points to the approved test/production CP host for this deployment.
-3. [ ] No arbitrary CP URL field exists in Module admin UI.
-4. [ ] Outbound API base resolves to `{control_panel_url}/api/v1` only.
+1. [ ] `system/library/mt_uni_credit/config/environment.php` exists on the server after install (from module ZIP).
+2. [ ] Shop-root `config/environment.php` is **absent** (OC3 installer does not allow that destination).
+3. [ ] `control_panel_url` points to the approved test/production CP host for this deployment.
+4. [ ] No arbitrary CP URL field exists in Module admin UI.
+5. [ ] Outbound API base resolves to `{control_panel_url}/api/v1` only.
 
 Sanitized check (no credentials):
 
 ```text
-php -r "require 'config/environment.php'; var_export(array_key_exists('control_panel_url', include 'config/environment.php'));"
+php -r "$p = DIR_SYSTEM . 'library/mt_uni_credit/config/environment.php'; var_export(is_file($p) && array_key_exists('control_panel_url', include $p));"
 ```
 
 ### Connectivity (from OC3 server)
