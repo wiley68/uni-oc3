@@ -41,6 +41,7 @@ $catalogRequired = array(
     'catalog/language/bg-bg/extension/payment/mt_uni_credit.php',
     'catalog/language/en-gb/extension/payment/mt_uni_credit.php',
     'catalog/view/theme/default/template/extension/payment/mt_uni_credit.twig',
+    'catalog/view/theme/default/template/extension/payment/mt_uni_credit_prepared.twig',
 );
 
 foreach ($catalogRequired as $relative) {
@@ -54,6 +55,7 @@ $libraryRequired = array(
     'checkout_financing_eligibility.php',
     'checkout_payment_availability.php',
     'checkout_confirm_preparation.php',
+    'checkout_prepared_boundary.php',
 );
 
 foreach ($libraryRequired as $relative) {
@@ -77,6 +79,16 @@ mtuc5_assert(strpos($modelSource, 'refreshRemote') === false, 'payment model has
 mtuc5_assert(strpos($modelSource, 'function getMethod') !== false, 'payment model implements getMethod');
 mtuc5_assert(strpos($modelSource, 'prepareCheckoutConfirm') !== false, 'payment model implements prepareCheckoutConfirm');
 mtuc5_assert(strpos($controllerSource, "function confirm") !== false, 'payment controller implements confirm');
+mtuc5_assert(strpos($controllerSource, 'function prepared') !== false, 'payment controller implements prepared continuation page');
+mtuc5_assert(strpos($controllerSource, "link('checkout/success'") === false, 'payment confirm does not redirect to checkout/success');
+mtuc5_assert(strpos($controllerSource, 'link("checkout/success"') === false, 'payment confirm does not redirect to checkout/success (double quote)');
+mtuc5_assert(
+    strpos($controllerSource, 'MtUniCreditConstants::CHECKOUT_PREPARED_ROUTE') !== false
+        || strpos($controllerSource, 'extension/payment/mt_uni_credit/prepared') !== false,
+    'payment confirm uses prepared continuation route'
+);
+mtuc5_assert(strpos($controllerSource, 'cart->clear') === false, 'Phase 5 payment path does not clear cart');
+mtuc5_assert(strpos($controllerSource, "unset(\$this->session->data['order_id']") === false, 'Phase 5 payment path preserves session.order_id');
 
 $address = array('country_id' => Phase5TestHarness::COUNTRY_ID, 'zone_id' => Phase5TestHarness::ZONE_ID);
 $cartProducts = Phase5TestHarness::cartProducts();
@@ -159,10 +171,14 @@ $result = $preparation->prepare(array(
     'store_id' => Phase5TestHarness::STORE_A,
     'module_enabled' => true,
     'payment_enabled' => true,
-    'success_url' => 'success',
 ));
 mtuc5_assert(!empty($result['success']), 'confirm preparation succeeds for valid order');
 mtuc5_assert((int) (isset($result['prepared_order_id']) ? $result['prepared_order_id'] : 0) === 42, 'confirm preparation returns prepared order id');
+mtuc5_assert(
+    isset($result['continuation_route']) && $result['continuation_route'] === MtUniCreditConstants::CHECKOUT_PREPARED_ROUTE,
+    'confirm preparation returns prepared continuation route'
+);
+mtuc5_assert(!isset($result['redirect']), 'confirm preparation does not expose checkout success redirect');
 
 $resultMissing = $preparation->prepare(array(
     'payment_code' => MtUniCreditConstants::EXTENSION_CODE,
@@ -179,7 +195,6 @@ $resultMissing = $preparation->prepare(array(
     'store_id' => Phase5TestHarness::STORE_A,
     'module_enabled' => true,
     'payment_enabled' => true,
-    'success_url' => 'success',
 ));
 mtuc5_assert(isset($resultMissing['error']) && $resultMissing['error'] === 'order_missing', 'missing order id rejected');
 
@@ -198,7 +213,6 @@ $resultStore = $preparation->prepare(array(
     'store_id' => Phase5TestHarness::STORE_A,
     'module_enabled' => true,
     'payment_enabled' => true,
-    'success_url' => 'success',
 ));
 mtuc5_assert(isset($resultStore['error']) && $resultStore['error'] === 'order_store_mismatch', 'wrong store rejected');
 
@@ -217,7 +231,6 @@ $resultChanged = $preparation->prepare(array(
     'store_id' => Phase5TestHarness::STORE_A,
     'module_enabled' => true,
     'payment_enabled' => true,
-    'success_url' => 'success',
 ));
 mtuc5_assert(isset($resultChanged['error']) && $resultChanged['error'] === 'order_changed', 'cart/order mismatch rejected');
 
@@ -236,9 +249,26 @@ $resultIdempotent = $preparation->prepare(array(
     'store_id' => Phase5TestHarness::STORE_A,
     'module_enabled' => true,
     'payment_enabled' => true,
-    'success_url' => 'success',
 ));
 mtuc5_assert(!empty($resultIdempotent['success']), 'prepared order id is idempotent');
+mtuc5_assert(
+    isset($resultIdempotent['continuation_route']) && $resultIdempotent['continuation_route'] === MtUniCreditConstants::CHECKOUT_PREPARED_ROUTE,
+    'idempotent confirm returns same continuation route'
+);
+
+$preparedAccess = MtUniCreditCheckoutPreparedBoundary::validateAccess(
+    42,
+    42,
+    Phase5TestHarness::orderRow(42, Phase5TestHarness::STORE_A),
+    Phase5TestHarness::STORE_A
+);
+mtuc5_assert(!empty($preparedAccess['ok']), 'prepared continuation accepts valid prepared session context');
+$missingPrepared = MtUniCreditCheckoutPreparedBoundary::validateAccess(42, 0, Phase5TestHarness::orderRow(42, Phase5TestHarness::STORE_A), Phase5TestHarness::STORE_A);
+mtuc5_assert(isset($missingPrepared['error']) && $missingPrepared['error'] === 'prepared_state_missing', 'prepared continuation rejects missing prepared marker');
+$processedOrder = Phase5TestHarness::orderRow(42, Phase5TestHarness::STORE_A);
+$processedOrder['order_status_id'] = 2;
+$processedPrepared = MtUniCreditCheckoutPreparedBoundary::validateAccess(42, 42, $processedOrder, Phase5TestHarness::STORE_A);
+mtuc5_assert(isset($processedPrepared['error']) && $processedPrepared['error'] === 'order_already_processed', 'prepared continuation rejects processed order');
 
 $locks = new MtUniCreditOperationLockRepository(new MtUniCreditDbAdapter($memoryDb, 'oc_'));
 $ownerA = MtUniCreditLockOwnerTokenGenerator::generate();
@@ -262,4 +292,5 @@ if ($failures) {
 }
 
 echo 'PHASE 5 STOP GATE: PASS — LOCAL' . PHP_EOL;
+echo 'PHASE 5 CHECKOUT LIFECYCLE CLOSURE: PASS — LOCAL' . PHP_EOL;
 exit(0);

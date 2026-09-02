@@ -555,14 +555,15 @@ SELECT COUNT(*) AS order_count FROM `<DB_PREFIX>order`;
 ```
 
 1. [ ] Complete checkout confirm page with UniCredit selected; note `session.order_id` exists **before** payment confirm AJAX.
-2. [ ] Click UniCredit confirm once → redirect toward `checkout/success`.
-3. [ ] Re-run order count — **must not increase** on payment confirm (only one new order from native confirm).
-4. [ ] Latest order row matches session order; `order_status_id` remains **0** (Phase 5 does not call `addOrderHistory`).
+2. [ ] Click UniCredit confirm once → browser lands on **`extension/payment/mt_uni_credit/prepared`**, **not** native `checkout/success`.
+3. [ ] Prepared page shows non-final message (financing prepared, not submitted); cart and checkout session remain intact (`session.order_id` still set).
+4. [ ] Re-run order count — **must not increase** on payment confirm (only one new order from native confirm).
+5. [ ] Latest order row matches session order; `order_status_id` remains **0** (Phase 5 does not call `addOrderHistory`).
 
 Double-click / refresh guard:
 
-1. [ ] Double-click confirm quickly → second request returns safe customer error (no duplicate preparation side effects).
-2. [ ] Refresh success page — no additional orders created.
+1. [ ] Double-click confirm quickly → second request returns safe customer error or same prepared continuation (no duplicate order).
+2. [ ] Refresh prepared page — no additional orders created; still not on native success page.
 
 ### Cart/order parity
 

@@ -25,7 +25,7 @@ final class MtUniCreditCheckoutConfirmPreparation
 
     /**
      * @param array<string, mixed> $input
-     * @return array{success?: bool, redirect?: string, error?: string, prepared_order_id?: int}
+     * @return array{success?: bool, continuation_route?: string, error?: string, prepared_order_id?: int}
      */
     public function prepare(array $input)
     {
@@ -43,7 +43,7 @@ final class MtUniCreditCheckoutConfirmPreparation
         if ($preparedOrderId === $orderId) {
             return array(
                 'success' => true,
-                'redirect' => (string) (isset($input['success_url']) ? $input['success_url'] : ''),
+                'continuation_route' => MtUniCreditConstants::CHECKOUT_PREPARED_ROUTE,
             );
         }
 
@@ -124,7 +124,7 @@ final class MtUniCreditCheckoutConfirmPreparation
 
             return array(
                 'success' => true,
-                'redirect' => (string) (isset($input['success_url']) ? $input['success_url'] : ''),
+                'continuation_route' => MtUniCreditConstants::CHECKOUT_PREPARED_ROUTE,
                 'prepared_order_id' => $orderId,
             );
         } finally {

@@ -31,6 +31,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'oc3_cart_context_factory.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'checkout_financing_eligibility.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'checkout_payment_availability.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'checkout_confirm_preparation.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'checkout_prepared_boundary.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'extension_root.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'cp_http_constants.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'cp_exception.php';

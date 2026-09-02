@@ -39,12 +39,65 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
             if (isset($result['prepared_order_id'])) {
                 $this->session->data[MtUniCreditCheckoutConfirmPreparation::SESSION_PREPARED_ORDER_ID] = (int) $result['prepared_order_id'];
             }
-            $json['redirect'] = $this->url->link('checkout/success', '', true);
+            $continuationRoute = isset($result['continuation_route'])
+                ? (string) $result['continuation_route']
+                : MtUniCreditConstants::CHECKOUT_PREPARED_ROUTE;
+            $json['redirect'] = $this->url->link($continuationRoute, '', true);
         } else {
             $json['error'] = $this->mapConfirmError(isset($result['error']) ? (string) $result['error'] : 'request_failed');
         }
 
         $this->respondJson($json);
+    }
+
+    public function prepared()
+    {
+        $this->load->language('extension/payment/mt_uni_credit');
+
+        $orderId = (int) (isset($this->session->data['order_id']) ? $this->session->data['order_id'] : 0);
+        $preparedOrderId = (int) (isset($this->session->data[MtUniCreditCheckoutConfirmPreparation::SESSION_PREPARED_ORDER_ID])
+            ? $this->session->data[MtUniCreditCheckoutConfirmPreparation::SESSION_PREPARED_ORDER_ID]
+            : 0);
+        $storeId = (int) $this->config->get('config_store_id');
+
+        $this->load->model('checkout/order');
+        $order = $orderId > 0 ? $this->model_checkout_order->getOrder($orderId) : null;
+        $access = MtUniCreditCheckoutPreparedBoundary::validateAccess($orderId, $preparedOrderId, $order, $storeId);
+        if (empty($access['ok'])) {
+            $this->response->redirect($this->url->link('checkout/checkout', '', true));
+            return;
+        }
+
+        $this->document->setTitle($this->language->get('heading_prepared_title'));
+
+        $data = array();
+        $data['breadcrumbs'] = array();
+        $data['breadcrumbs'][] = array(
+            'text' => $this->language->get('text_home'),
+            'href' => $this->url->link('common/home'),
+        );
+        $data['breadcrumbs'][] = array(
+            'text' => $this->language->get('text_checkout'),
+            'href' => $this->url->link('checkout/checkout', '', true),
+        );
+        $data['breadcrumbs'][] = array(
+            'text' => $this->language->get('heading_prepared_title'),
+            'href' => $this->url->link(MtUniCreditConstants::CHECKOUT_PREPARED_ROUTE, '', true),
+        );
+
+        $data['heading_title'] = $this->language->get('heading_prepared_title');
+        $data['text_prepared_not_submitted'] = $this->language->get('text_prepared_not_submitted');
+        $data['text_continue_checkout'] = $this->language->get('text_continue_checkout');
+        $data['continue'] = $this->url->link('checkout/checkout', '', true);
+
+        $data['column_left'] = $this->load->controller('common/column_left');
+        $data['column_right'] = $this->load->controller('common/column_right');
+        $data['content_top'] = $this->load->controller('common/content_top');
+        $data['content_bottom'] = $this->load->controller('common/content_bottom');
+        $data['footer'] = $this->load->controller('common/footer');
+        $data['header'] = $this->load->controller('common/header');
+
+        $this->response->setOutput($this->load->view('extension/payment/mt_uni_credit_prepared', $data));
     }
 
     /**

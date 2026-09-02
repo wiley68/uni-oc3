@@ -46,6 +46,9 @@ final class MtUniCreditConstants
 
     const PAYMENT_ADMIN_ROUTE = 'extension/payment/mt_uni_credit';
 
+    /** Phase 5 checkout preparation continuation (not native checkout completion). */
+    const CHECKOUT_PREPARED_ROUTE = 'extension/payment/mt_uni_credit/prepared';
+
     const MODULE_ADMIN_PERMISSION = 'extension/module/mt_uni_credit';
 
     const PAYMENT_ADMIN_PERMISSION = 'extension/payment/mt_uni_credit';
