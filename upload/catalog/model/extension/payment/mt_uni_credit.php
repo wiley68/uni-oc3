@@ -84,6 +84,84 @@ class ModelExtensionPaymentMtUniCredit extends Model
     }
 
     /**
+     * Phase 7: submit/resume CP order lifecycle for the prepared native order.
+     *
+     * @param int $orderId
+     * @return array<string, mixed>
+     */
+    public function submitCheckoutFinancing($orderId)
+    {
+        $orderId = (int) $orderId;
+        $storeId = $this->resolveStoreId();
+        $this->load->model('checkout/order');
+        $order = $orderId > 0 ? $this->model_checkout_order->getOrder($orderId) : null;
+        $orderProducts = $orderId > 0 ? $this->model_checkout_order->getOrderProducts($orderId) : array();
+
+        $db = MtUniCreditBootstrap::dbFromModel($this);
+        $settings = new MtUniCreditSettingStore($db, MtUniCreditConstants::MODULE_SETTINGS_CODE);
+        $stack = MtUniCreditCpServiceFactory::create(
+            $db,
+            $settings,
+            $storeId,
+            (string) $this->config->get('config_ssl'),
+            (string) $this->config->get('config_url')
+        );
+
+        $categoryLoader = function ($productId) {
+            $table = DB_PREFIX . 'product_to_category';
+            $result = $this->db->query(
+                "SELECT `category_id` FROM `{$table}` WHERE `product_id` = " . (int) $productId
+            );
+            $ids = array();
+            if (is_object($result) && isset($result->rows) && is_array($result->rows)) {
+                foreach ($result->rows as $row) {
+                    $ids[] = (int) $row['category_id'];
+                }
+            }
+
+            return $ids;
+        };
+        $taxCalculator = function ($price, $taxClassId) {
+            if (isset($this->tax) && is_object($this->tax) && method_exists($this->tax, 'calculate')) {
+                return (float) $this->tax->calculate(
+                    (float) $price,
+                    (int) $taxClassId,
+                    $this->config->get('config_tax')
+                );
+            }
+
+            return (float) $price;
+        };
+        $cartFactory = new MtUniCreditOc3CartContextFactory($categoryLoader, $taxCalculator);
+        $currency = (string) (isset($this->session->data['currency']) ? $this->session->data['currency'] : $this->config->get('config_currency'));
+        $cartContext = $cartFactory->create(
+            is_array($this->cart->getProducts()) ? $this->cart->getProducts() : array(),
+            $this->calculateCheckoutGrandTotal()
+        );
+
+        $attempts = new MtUniCreditFinancingAttemptRepository($db);
+        $lifecycle = new MtUniCreditControlPanelOrderLifecycleService(
+            $attempts,
+            new MtUniCreditOperationLockRepository($db),
+            $stack['client']
+        );
+        $service = new MtUniCreditCheckoutFinancingSubmissionService(
+            $attempts,
+            $lifecycle,
+            $stack['credentials'],
+            MtUniCreditBootstrap::shopConfigurationCacheFromDb($db)
+        );
+
+        return $service->submit(array(
+            'store_id' => $storeId,
+            'order_id' => $orderId,
+            'order' => is_array($order) ? $order : null,
+            'order_products' => is_array($orderProducts) ? $orderProducts : array(),
+            'cart_context' => $cartContext,
+        ));
+    }
+
+    /**
      * @return float
      */
     public function calculateCheckoutGrandTotal()

@@ -404,6 +404,8 @@ Floats: `price`, `vnoska`, `gpr`, `parva`. Integers: `vnoski`, `type_client`.
 
 `cp_payload` is immutable after first freeze. A mismatch on retry is a conflict, not an update.
 
+**Phase 7 OC3 ambiguous policy (checkout):** after `cp_outcome_unknown`, the module **does not** automatically re-POST `/orders`. Fresh resend is blocked (`cp_ambiguous_blocked`) until operator/reconciliation. This is stricter than OC4 Phase 10B recovery re-POST of the frozen payload; documented as an intentional OC3 Phase 7 safety closure for the mandatory ambiguous STOP GATE.
+
 PATCH `/api/v1/orders/status` uses the **shop** `order_id` from create (local OC id), not the CP internal PK.
 
 ---

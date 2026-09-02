@@ -710,7 +710,7 @@ Phases are intentionally small and sequential. Cursor should receive only one ap
 
 **Acceptance criteria:** one customer intent creates at most one local order and one semantic CP order; every interruption has a documented recovery outcome.
 
-**STOP GATE:** inspect real sanitized local/CP order pairs before Process 1/2.
+**STOP GATE:** inspect real sanitized local/CP order pairs before Process 1/2. **Local implementation: PASS** (`tests/phase7_check.php`); remote happy-path / duplicate-click evidence still required.
 
 ### Phase 8 — Product and cart storefront flows plus OCMOD/Journal
 

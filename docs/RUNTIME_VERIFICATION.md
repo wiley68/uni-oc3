@@ -639,3 +639,40 @@ index.php?route=extension/mt_uni_credit/api/smartucf_debug_log
 - [ ] No CP order creation, SmartUCF outbound, Process 1/2, or customer financing UI.
 - [ ] No native order status transition from bank-status callback.
 - [ ] No native order status transition to configured `payment_mt_uni_credit_order_status_id` (financing not completed).
+
+---
+
+## Phase 7 — Local financing attempt + CP order lifecycle (local PASS)
+
+Automated gate: `php tests/phase7_check.php` (70 checks, no live network).
+
+### Happy path
+
+1. [ ] Native UniCredit checkout creates OC order (`order_status_id = 0`), payment confirm redirects to prepared.
+2. [ ] Prepared page submits CP `POST /api/v1/orders` exactly once.
+3. [ ] Exactly one row in `{prefix}mt_uni_credit_financing_attempt` for `(store_id, order_id)`.
+4. [ ] `control_panel_order_id` persisted; `state = cp_created`; `cp_payload` frozen.
+5. [ ] Refresh/revisit prepared → success local replay; **no** second CP order.
+6. [ ] On first CP success, native order history may advance to configured `payment_mt_uni_credit_order_status_id` (Checkout only).
+
+### Duplicate click / concurrency
+
+1. [ ] Parallel prepared submits → operation lock allows one owner; at most one remote POST.
+
+### Definitive rejection
+
+1. [ ] If test CP can return 422 for a controlled invalid payload → `cp_failed_retryable`, not ambiguous.
+
+### Ambiguous outcome
+
+1. [ ] Prefer local fake-transport coverage (`phase7_check.php`) for timeout/connection after send.
+2. [ ] Do **not** force production timeouts unless operator-approved.
+3. [ ] Expected local policy: `cp_outcome_unknown` blocks further `POST /orders`.
+
+### DB inspection (sanitized)
+
+Inspect only: attempt `state`, `store_id`, `order_id`, `control_panel_order_id`, fingerprint prefix/hash, timestamps. Do not dump customer payloads/secrets.
+
+### Explicit exclusions (Phase 7)
+
+- [ ] No Product/Cart UI, OCMOD, SmartUCF, Process 1/2, EGN, mail, or final Thank You financing UX.

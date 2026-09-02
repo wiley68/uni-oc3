@@ -38,6 +38,9 @@ final class Phase2MemoryDb
     /** @var array<int, array<string, mixed>> */
     private $diagnosticLogs = array();
 
+    /** @var array<int, array<string, mixed>> */
+    private $financingAttempts = array();
+
     /** @var int */
     private $nextShopCacheId = 1;
 
@@ -46,6 +49,9 @@ final class Phase2MemoryDb
 
     /** @var int */
     private $nextDiagnosticLogId = 1;
+
+    /** @var int */
+    private $nextFinancingAttemptId = 1;
 
     /** @var string */
     private $prefix = 'oc_';
@@ -63,12 +69,14 @@ final class Phase2MemoryDb
         $this->orders = array();
         $this->orderBankStatus = array();
         $this->diagnosticLogs = array();
+        $this->financingAttempts = array();
         $this->affected = 0;
         $this->nextNonceId = 1;
         $this->nextLockId = 1;
         $this->nextShopCacheId = 1;
         $this->nextBankStatusId = 1;
         $this->nextDiagnosticLogId = 1;
+        $this->nextFinancingAttemptId = 1;
     }
 
     /**
@@ -137,12 +145,20 @@ final class Phase2MemoryDb
             return $this->insertDiagnosticLog($sql);
         }
 
+        if (stripos($sql, 'INSERT INTO') === 0 && strpos($sql, 'financing_attempt') !== false) {
+            return $this->insertFinancingAttempt($sql);
+        }
+
         if (stripos($sql, 'INSERT INTO') === 0 && strpos($sql, 'setting') !== false) {
             return $this->insertSetting($sql);
         }
 
         if (stripos($sql, 'UPDATE') === 0 && strpos($sql, 'operation_lock') !== false) {
             return $this->updateOperationLock($sql);
+        }
+
+        if (stripos($sql, 'UPDATE') === 0 && strpos($sql, 'financing_attempt') !== false) {
+            return $this->updateFinancingAttempt($sql);
         }
 
         if (stripos($sql, 'UPDATE') === 0 && strpos($sql, 'setting') !== false) {
@@ -179,6 +195,10 @@ final class Phase2MemoryDb
 
         if (stripos($sql, 'SELECT') === 0 && strpos($sql, 'diagnostic_debug_log') !== false) {
             return $this->selectDiagnosticLog($sql);
+        }
+
+        if (stripos($sql, 'SELECT') === 0 && strpos($sql, 'financing_attempt') !== false) {
+            return $this->selectFinancingAttempt($sql);
         }
 
         if (stripos($sql, 'SELECT') === 0 && strpos($sql, 'setting') !== false) {
@@ -218,7 +238,13 @@ final class Phase2MemoryDb
      */
     public function getLastId()
     {
-        return max(0, $this->nextNonceId - 1, $this->nextLockId - 1, $this->nextDiagnosticLogId - 1);
+        return max(
+            0,
+            $this->nextNonceId - 1,
+            $this->nextLockId - 1,
+            $this->nextDiagnosticLogId - 1,
+            $this->nextFinancingAttemptId - 1
+        );
     }
 
     /**
@@ -818,6 +844,129 @@ final class Phase2MemoryDb
         }
 
         return $this->singleRow($latest);
+    }
+
+    /**
+     * @param string $sql
+     * @return object
+     */
+    private function insertFinancingAttempt($sql)
+    {
+        $fields = $this->parseInsertValues($sql);
+        $storeId = (int) $fields['store_id'];
+        $orderId = isset($fields['order_id']) ? (int) $fields['order_id'] : 0;
+        foreach ($this->financingAttempts as $row) {
+            if ((int) $row['store_id'] === $storeId && (int) $row['order_id'] === $orderId && $orderId > 0) {
+                throw new Exception('Duplicate entry \'uniq_mt_uni_credit_store_order\' for key 1062');
+            }
+        }
+
+        $id = $this->nextFinancingAttemptId++;
+        $this->financingAttempts[$id] = array(
+            'attempt_id' => $id,
+            'store_id' => $storeId,
+            'entry_point' => (string) $fields['entry_point'],
+            'operation_key_hash' => (string) $fields['operation_key_hash'],
+            'selection_hash' => (string) $fields['selection_hash'],
+            'request_fingerprint' => isset($fields['request_fingerprint']) ? (string) $fields['request_fingerprint'] : '',
+            'state' => (string) $fields['state'],
+            'order_id' => $orderId,
+            'unicid' => isset($fields['unicid']) ? (string) $fields['unicid'] : '',
+            'control_panel_order_id' => null,
+            'cp_payload' => null,
+            'last_error_class' => null,
+            'created_at' => (string) $fields['created_at'],
+            'updated_at' => (string) $fields['updated_at'],
+        );
+        $this->affected = 1;
+
+        return $this->emptyResult();
+    }
+
+    /**
+     * @param string $sql
+     * @return object
+     */
+    private function updateFinancingAttempt($sql)
+    {
+        $attemptId = (int) $this->extractWhereInt($sql, 'attempt_id');
+        if ($attemptId <= 0 || !isset($this->financingAttempts[$attemptId])) {
+            return $this->emptyResult();
+        }
+
+        $row = $this->financingAttempts[$attemptId];
+
+        if (preg_match("/AND `state` IN \\(([^)]+)\\)/", $sql, $stateMatch)) {
+            $allowed = array();
+            if (preg_match_all("/'([^']+)'/", $stateMatch[1], $parts)) {
+                $allowed = $parts[1];
+            }
+            if (!in_array((string) $row['state'], $allowed, true)) {
+                return $this->emptyResult();
+            }
+        }
+
+        if (strpos($sql, 'AND (`cp_payload` IS NULL OR `cp_payload` = \'\')') !== false) {
+            if ($row['cp_payload'] !== null && $row['cp_payload'] !== '') {
+                return $this->emptyResult();
+            }
+        }
+
+        if (strpos($sql, 'AND (`control_panel_order_id` IS NULL OR `control_panel_order_id` = 0)') !== false) {
+            if (!empty($row['control_panel_order_id'])) {
+                return $this->emptyResult();
+            }
+        }
+
+        foreach (array('state', 'updated_at', 'cp_payload', 'request_fingerprint', 'last_error_class') as $column) {
+            $value = $this->extractSetValue($sql, $column);
+            if ($value !== '') {
+                if ($column === 'last_error_class' && stripos($sql, '`last_error_class` = NULL') !== false) {
+                    $row[$column] = null;
+                } else {
+                    $row[$column] = $value;
+                }
+            }
+        }
+
+        if (stripos($sql, '`last_error_class` = NULL') !== false) {
+            $row['last_error_class'] = null;
+        }
+
+        if (preg_match('/`control_panel_order_id`\\s*=\\s*(\\d+)/', $sql, $cpMatch)) {
+            $row['control_panel_order_id'] = (int) $cpMatch[1];
+        }
+
+        $this->financingAttempts[$attemptId] = $row;
+        $this->affected = 1;
+
+        return $this->emptyResult();
+    }
+
+    /**
+     * @param string $sql
+     * @return object
+     */
+    private function selectFinancingAttempt($sql)
+    {
+        if (preg_match('/`attempt_id`\\s*=\\s*(\\d+)/', $sql, $idMatch)) {
+            $id = (int) $idMatch[1];
+            if (!isset($this->financingAttempts[$id])) {
+                return $this->emptyResult();
+            }
+
+            return $this->singleRow($this->financingAttempts[$id]);
+        }
+
+        $storeId = (int) $this->extractWhereInt($sql, 'store_id');
+        $orderId = (int) $this->extractWhereInt($sql, 'order_id');
+        foreach ($this->financingAttempts as $row) {
+            if ((int) $row['store_id'] === $storeId && (int) $row['order_id'] === $orderId) {
+                return $this->singleRow($row);
+            }
+        }
+
+        return $this->emptyResult();
     }
 
     /**

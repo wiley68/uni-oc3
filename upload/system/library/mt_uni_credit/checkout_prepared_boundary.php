@@ -1,7 +1,10 @@
 <?php
 
 /**
- * Phase 5 prepared-state access guard — read-only continuation boundary for Phase 7+.
+ * Phase 5/7 prepared-state access guard.
+ *
+ * After CP success the native order may leave status 0; revisits are allowed when a
+ * financing attempt already exists for the exact store/order.
  */
 final class MtUniCreditCheckoutPreparedBoundary
 {
@@ -10,9 +13,10 @@ final class MtUniCreditCheckoutPreparedBoundary
      * @param int $preparedOrderId
      * @param array<string, mixed>|null $order
      * @param int $storeId
+     * @param array<string, mixed>|null $attempt
      * @return array{ok?: bool, error?: string}
      */
-    public static function validateAccess($orderId, $preparedOrderId, $order, $storeId)
+    public static function validateAccess($orderId, $preparedOrderId, $order, $storeId, $attempt = null)
     {
         $orderId = (int) $orderId;
         $preparedOrderId = (int) $preparedOrderId;
@@ -32,8 +36,11 @@ final class MtUniCreditCheckoutPreparedBoundary
             return array('error' => 'order_store_mismatch');
         }
 
-        if ((int) (isset($order['order_status_id']) ? $order['order_status_id'] : -1) !== 0) {
-            return array('error' => 'order_already_processed');
+        $orderStatusId = (int) (isset($order['order_status_id']) ? $order['order_status_id'] : -1);
+        if ($orderStatusId !== 0) {
+            if (!is_array($attempt) || (int) (isset($attempt['order_id']) ? $attempt['order_id'] : 0) !== $orderId) {
+                return array('error' => 'order_already_processed');
+            }
         }
 
         return array('ok' => true);

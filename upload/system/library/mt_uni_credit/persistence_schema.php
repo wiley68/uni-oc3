@@ -76,7 +76,8 @@ final class MtUniCreditPersistenceSchema
         return array_merge(
             self::createPhase2TableStatements($prefix),
             self::createPhase3TableStatements($prefix),
-            self::createPhase6TableStatements($prefix)
+            self::createPhase6TableStatements($prefix),
+            self::createPhase7TableStatements($prefix)
         );
     }
 
@@ -178,6 +179,38 @@ final class MtUniCreditPersistenceSchema
                 PRIMARY KEY (`diagnostic_debug_log_id`),
                 KEY `idx_mt_uni_credit_diag_store_order` (`store_id`, `order_id`),
                 KEY `idx_mt_uni_credit_diag_created` (`created_at`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+        );
+    }
+
+    /**
+     * @param string $prefix
+     * @return array<int, string>
+     */
+    public static function createPhase7TableStatements($prefix)
+    {
+        $financingAttempt = $prefix . MtUniCreditPersistenceTableNames::FINANCING_ATTEMPT;
+
+        return array(
+            "CREATE TABLE IF NOT EXISTS `{$financingAttempt}` (
+                `attempt_id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+                `store_id` INT UNSIGNED NOT NULL,
+                `entry_point` VARCHAR(16) NOT NULL,
+                `operation_key_hash` CHAR(64) NOT NULL,
+                `selection_hash` CHAR(64) NOT NULL,
+                `request_fingerprint` CHAR(64) NOT NULL DEFAULT '',
+                `state` VARCHAR(32) NOT NULL,
+                `order_id` INT UNSIGNED NULL,
+                `unicid` VARCHAR(64) NOT NULL DEFAULT '',
+                `control_panel_order_id` BIGINT UNSIGNED NULL,
+                `cp_payload` LONGTEXT NULL,
+                `last_error_class` VARCHAR(64) NULL,
+                `created_at` DATETIME NOT NULL,
+                `updated_at` DATETIME NOT NULL,
+                PRIMARY KEY (`attempt_id`),
+                UNIQUE KEY `uniq_mt_uni_credit_store_order` (`store_id`, `order_id`),
+                KEY `idx_mt_uni_credit_attempt_operation` (`store_id`, `entry_point`, `operation_key_hash`, `state`),
+                KEY `idx_mt_uni_credit_attempt_state_updated` (`state`, `updated_at`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
         );
     }

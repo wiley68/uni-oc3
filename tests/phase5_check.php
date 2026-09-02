@@ -73,7 +73,12 @@ $controllerSource = (string) file_get_contents($root . DIRECTORY_SEPARATOR . 'up
 $modelSource = (string) file_get_contents($root . DIRECTORY_SEPARATOR . 'upload' . DIRECTORY_SEPARATOR . 'catalog' . DIRECTORY_SEPARATOR . 'model' . DIRECTORY_SEPARATOR . 'extension' . DIRECTORY_SEPARATOR . 'payment' . DIRECTORY_SEPARATOR . 'mt_uni_credit.php');
 mtuc5_assert(strpos($controllerSource, 'addOrder(') === false, 'payment controller never calls addOrder');
 mtuc5_assert(strpos($modelSource, 'addOrder(') === false, 'payment model never calls addOrder');
-mtuc5_assert(strpos($controllerSource, 'addOrderHistory(') === false, 'Phase 5 confirm does not mutate native order status');
+mtuc5_assert(
+    strpos($controllerSource, 'function confirm') !== false
+        && preg_match('/function confirm\\s*\\([\\s\\S]*?function prepared/s', $controllerSource, $confirmBlock)
+        && strpos($confirmBlock[0], 'addOrderHistory(') === false,
+    'Phase 5 confirm does not mutate native order status'
+);
 mtuc5_assert(strpos($modelSource, 'ControlPanelClient') === false, 'payment model has no CP client usage');
 mtuc5_assert(strpos($modelSource, 'refreshRemote') === false, 'payment model has no CP refresh');
 mtuc5_assert(strpos($modelSource, 'function getMethod') !== false, 'payment model implements getMethod');

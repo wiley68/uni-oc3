@@ -141,6 +141,19 @@ final class MtUniCreditControlPanelClient
     }
 
     /**
+     * @return array<string, mixed>
+     */
+    public function createOrder(array $order)
+    {
+        $response = $this->authenticatedRequest('POST', '/orders', $order);
+        if (!isset($response['data']) || !is_array($response['data'])) {
+            throw new MtUniCreditCpInvalidPayloadException('The Control Panel order response has no valid data object.');
+        }
+
+        return $response;
+    }
+
+    /**
      * @param string $method
      * @param string $path
      * @param array<string, mixed>|null $payload

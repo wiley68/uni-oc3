@@ -61,11 +61,34 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
         $storeId = (int) $this->config->get('config_store_id');
 
         $this->load->model('checkout/order');
+        $this->load->model('extension/payment/mt_uni_credit');
         $order = $orderId > 0 ? $this->model_checkout_order->getOrder($orderId) : null;
-        $access = MtUniCreditCheckoutPreparedBoundary::validateAccess($orderId, $preparedOrderId, $order, $storeId);
+
+        $attempt = null;
+        if ($orderId > 0) {
+            $db = MtUniCreditBootstrap::dbFromRegistry($this->db);
+            $attempt = (new MtUniCreditFinancingAttemptRepository($db))->findByStoreOrder($storeId, $orderId);
+        }
+
+        $access = MtUniCreditCheckoutPreparedBoundary::validateAccess(
+            $orderId,
+            $preparedOrderId,
+            $order,
+            $storeId,
+            $attempt
+        );
         if (empty($access['ok'])) {
             $this->response->redirect($this->url->link('checkout/checkout', '', true));
             return;
+        }
+
+        $result = $this->model_extension_payment_mt_uni_credit->submitCheckoutFinancing($orderId);
+
+        if (!empty($result['success']) && !empty($result['apply_native_order_status'])) {
+            $statusId = (int) $this->config->get(MtUniCreditConstants::PAYMENT_SETTING_ORDER_STATUS_ID);
+            if ($statusId > 0 && method_exists($this->model_checkout_order, 'addOrderHistory')) {
+                $this->model_checkout_order->addOrderHistory($orderId, $statusId);
+            }
         }
 
         $this->document->setTitle($this->language->get('heading_prepared_title'));
@@ -86,9 +109,16 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
         );
 
         $data['heading_title'] = $this->language->get('heading_prepared_title');
-        $data['text_prepared_not_submitted'] = $this->language->get('text_prepared_not_submitted');
+        $data['success'] = !empty($result['success']);
+        $data['ambiguous'] = !empty($result['ambiguous_blocked']);
+        $data['message'] = isset($result['message'])
+            ? (string) $result['message']
+            : $this->language->get('text_prepared_not_submitted');
         $data['text_continue_checkout'] = $this->language->get('text_continue_checkout');
-        $data['continue'] = $this->url->link('checkout/checkout', '', true);
+        $data['text_continue_shopping'] = $this->language->get('text_continue_shopping');
+        $data['continue'] = !empty($result['success'])
+            ? $this->url->link('common/home', '', true)
+            : $this->url->link('checkout/checkout', '', true);
 
         $data['column_left'] = $this->load->controller('common/column_left');
         $data['column_right'] = $this->load->controller('common/column_right');

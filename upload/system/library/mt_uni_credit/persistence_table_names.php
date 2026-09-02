@@ -15,6 +15,8 @@ final class MtUniCreditPersistenceTableNames
 
     const DIAGNOSTIC_DEBUG_LOG = 'mt_uni_credit_diagnostic_debug_log';
 
+    const FINANCING_ATTEMPT = 'mt_uni_credit_financing_attempt';
+
     /**
      * Phase 2 foundational tables only.
      *
@@ -54,6 +56,18 @@ final class MtUniCreditPersistenceTableNames
     }
 
     /**
+     * Phase 7 financing attempt table.
+     *
+     * @return array<int, string>
+     */
+    public static function phase7Tables()
+    {
+        return array(
+            self::FINANCING_ATTEMPT,
+        );
+    }
+
+    /**
      * @return array<int, string>
      */
     public static function allPersistenceTables()
@@ -61,7 +75,8 @@ final class MtUniCreditPersistenceTableNames
         return array_merge(
             self::phase2Tables(),
             self::phase3Tables(),
-            self::phase6Tables()
+            self::phase6Tables(),
+            self::phase7Tables()
         );
     }
 }

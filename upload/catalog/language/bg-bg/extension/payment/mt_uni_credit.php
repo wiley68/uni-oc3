@@ -7,6 +7,7 @@ $_['button_confirm'] = 'Потвърди поръчката';
 $_['heading_prepared_title'] = 'Подготовка за финансиране';
 $_['text_prepared_not_submitted'] = 'Заявката за финансиране е подготвена, но все още не е изпратена.';
 $_['text_continue_checkout'] = 'Към checkout';
+$_['text_continue_shopping'] = 'Към началото';
 $_['text_home'] = 'Начало';
 $_['text_checkout'] = 'Поръчка';
 
