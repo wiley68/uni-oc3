@@ -660,17 +660,17 @@ Phases are intentionally small and sequential. Cursor should receive only one ap
 
 ### Phase 5 — Payment method and standard checkout preparation
 
-**Objective:** expose UniCredit correctly in native OC3 checkout and render scheme selection, stopping before CP creation.
+**Objective:** expose UniCredit correctly in native OC3 checkout and prepare confirm handoff, stopping before CP creation or scheme-selection UX.
 
-**Expected files/components:** catalog payment model/controller/template/languages; eligibility/order adapters; submission issuer; minimal checkout JS/CSS.
+**Expected files/components:** catalog payment model/controller/template/languages; checkout eligibility/cart-context adapters; confirm preparation service; minimal checkout template (no financing form).
 
-**Tasks:** implement `getMethod`; derive totals; reuse native `session.order_id`; validate cart/order parity; issue token and validate selection; define visible pending policy; no remote side effect.
+**Tasks:** implement `getMethod`; derive totals from native OC3 total extensions; reuse native `session.order_id`; validate cart/order parity; operation-lock idempotent confirm preparation; leave native order status at 0; no remote side effect.
 
 **Dependencies:** Phases 3–4.
 
-**Tests:** eligibility combinations, guest/logged/no-shipping, order-total authority, posted identity ignored, duplicate token, no second `addOrder()`.
+**Tests:** `tests/phase5_check.php` — eligibility combinations, store scope, order-total authority, no second `addOrder()`, lock/idempotency, OC3 lifecycle characterization.
 
-**Runtime/manual verification:** native checkout on default theme through confirm preparation; inspect order/session/status and asset loading.
+**Runtime/manual verification:** native checkout on default theme through confirm preparation; inspect order/session/status; confirm no CP traffic.
 
 **Acceptance criteria:** payment appears only when eligible and preparation binds exactly one native order with no CP/bank call.
 

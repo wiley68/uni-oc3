@@ -515,3 +515,75 @@ OpenCart 3 Module extension settings use `config_store_id` from the active admin
 - [ ] No storefront Product/Cart/Checkout code added.
 - [ ] No CP order create/update, inbound callbacks, or SmartUCF traffic.
 - [ ] **Изтегли журнал операции** remains Phase 1 sanitized placeholder export.
+
+---
+
+## Phase 5 — Payment method and standard checkout preparation
+
+Baseline: commit `2f9e6ca2c222379e0c3f9696d0995d3fbb2e5a01` + Phase 5 local implementation.
+
+Prerequisites: Phase 4 remote verification passed; fresh shop cache for target store; module **Enabled**; payment **Enabled**; valid UNICID + readable Secret; cart total within bank min/max; at least one eligible scheme; supported currency (BGN per default fixture).
+
+### Checkout visibility (positive)
+
+1. [ ] Add eligible product(s) to cart; proceed through native checkout to **Payment Method**.
+2. [ ] **УниКредит покупки на Кредит** appears in the payment list when all prerequisites hold.
+3. [ ] Select UniCredit and continue to **Confirm order** — payment panel shows minimal instruction + confirm button (no EGN, no scheme modal, no calculator UI).
+
+### Checkout visibility (negative)
+
+1. [ ] Disable module (`module_mt_uni_credit_status`) → UniCredit disappears from payment methods (refresh payment step).
+2. [ ] Re-enable module; disable payment (`payment_mt_uni_credit_status`) → disappears.
+3. [ ] Let shop cache expire or delete cache row → disappears (no auto CP refresh from checkout).
+4. [ ] Cart total below `uni_minstojnost` or above `uni_maxstojnost` → disappears.
+5. [ ] Unsupported session currency (when shop snapshot does not allow it) → disappears.
+6. [ ] Geo zone restriction: set `payment_mt_uni_credit_geo_zone_id` to a zone that excludes shipping address → disappears.
+
+### Native order reuse (critical)
+
+Characterized OC3 flow (`reference-oc3-core` `catalog/controller/checkout/confirm.php`):
+
+```text
+checkout/confirm → addOrder() → session.order_id → payment extension confirm
+```
+
+Before clicking UniCredit confirm:
+
+```sql
+SELECT COUNT(*) AS order_count FROM `<DB_PREFIX>order`;
+-- note count and latest order_id
+```
+
+1. [ ] Complete checkout confirm page with UniCredit selected; note `session.order_id` exists **before** payment confirm AJAX.
+2. [ ] Click UniCredit confirm once → redirect toward `checkout/success`.
+3. [ ] Re-run order count — **must not increase** on payment confirm (only one new order from native confirm).
+4. [ ] Latest order row matches session order; `order_status_id` remains **0** (Phase 5 does not call `addOrderHistory`).
+
+Double-click / refresh guard:
+
+1. [ ] Double-click confirm quickly → second request returns safe customer error (no duplicate preparation side effects).
+2. [ ] Refresh success page — no additional orders created.
+
+### Cart/order parity
+
+1. [ ] After native confirm creates order, change cart quantity in another tab **before** payment confirm → confirm fails with non-technical error; order count unchanged.
+
+### Store scope
+
+1. [ ] Multistore: verify payment availability uses exact `config_store_id` cache/credentials (no store 0 fallback for store N).
+2. [ ] Order `store_id` mismatch (if reproducible in test harness) → confirm rejected safely.
+
+### Logs and network
+
+1. [ ] No PHP fatal during payment method load or confirm.
+2. [ ] Server/access logs show **no** outbound CP `/api/v1` traffic during checkout payment selection or confirm.
+3. [ ] No CP login, `/shop`, or order endpoints from catalog routes.
+
+### Explicit exclusions (Phase 5)
+
+- [ ] No CP order creation or SmartUCF redirect.
+- [ ] No inbound callback/API handling.
+- [ ] No Product/Cart calculator UI or Product Buy.
+- [ ] No EGN / Process 2 collection.
+- [ ] No Journal storefront asset injection.
+- [ ] No native order status transition to configured `payment_mt_uni_credit_order_status_id` (financing not completed).

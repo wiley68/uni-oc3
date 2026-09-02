@@ -179,11 +179,9 @@ mtuc_assert(
 mtuc_assert(strpos($contracts, 'D4 CP/SmartUCF env + OC3 callbacks | **CLOSED FOR PHASE 0**') !== false, 'CONTRACTS.md D4 closed');
 mtuc_assert(strpos($contracts, 'Phase 0 STOP GATE:** **PASS**') !== false, 'CONTRACTS.md STOP GATE PASS');
 
-$forbiddenTree = array(
-    MTUC_PHASE0_ROOT . DIRECTORY_SEPARATOR . 'upload' . DIRECTORY_SEPARATOR . 'catalog' . DIRECTORY_SEPARATOR . 'controller' . DIRECTORY_SEPARATOR . 'extension' . DIRECTORY_SEPARATOR . 'payment' . DIRECTORY_SEPARATOR . 'mt_uni_credit.php',
-);
+$forbiddenTree = array();
 foreach ($forbiddenTree as $path) {
-    mtuc_assert(!is_file($path), 'Phase 0/1 must not create storefront payment controller: ' . str_replace(MTUC_PHASE0_ROOT . DIRECTORY_SEPARATOR, '', $path));
+    mtuc_assert(!is_file($path), 'Phase 0/1 must not create forbidden path: ' . str_replace(MTUC_PHASE0_ROOT . DIRECTORY_SEPARATOR, '', $path));
 }
 $installXml = MTUC_PHASE0_ROOT . DIRECTORY_SEPARATOR . 'install.xml';
 $phase1Admin = MTUC_PHASE0_ROOT . DIRECTORY_SEPARATOR . 'upload' . DIRECTORY_SEPARATOR . 'admin' . DIRECTORY_SEPARATOR . 'controller' . DIRECTORY_SEPARATOR . 'extension' . DIRECTORY_SEPARATOR . 'payment' . DIRECTORY_SEPARATOR . 'mt_uni_credit.php';

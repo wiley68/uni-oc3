@@ -25,6 +25,12 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'shop_snapshot_validation_exception
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'shop_configuration_snapshot_validator.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'shop_cache_repository.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'shop_configuration_cache.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'checkout_live_grand_total.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'checkout_order_cart_parity.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'oc3_cart_context_factory.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'checkout_financing_eligibility.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'checkout_payment_availability.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'checkout_confirm_preparation.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'extension_root.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'cp_http_constants.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'cp_exception.php';

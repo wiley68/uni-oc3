@@ -53,8 +53,6 @@ foreach ($requiredFiles as $relative) {
 }
 
 $forbiddenPhase1 = array(
-    'upload/catalog/controller/extension/payment/mt_uni_credit.php',
-    'upload/catalog/model/extension/payment/mt_uni_credit.php',
     'upload/catalog/controller/extension/mt_uni_credit/api.php',
 );
 

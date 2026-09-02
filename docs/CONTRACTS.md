@@ -698,7 +698,16 @@ Going back and forth on native OC3 confirm can create additional status-0 drafts
 
 `getMethod` returns `code`, `title`, `terms`, `sort_order` or empty.
 
----
+### OC3-CHECKOUT-004 — Phase 5 confirm preparation (implemented)
+
+Phase 5 catalog payment (`extension/payment/mt_uni_credit`) implements:
+
+- **`getMethod($address, $total)`** — local-only eligibility via fresh shop cache, credentials, geo zone, currency gate, calculator bounds/scheme intersection; `$total` is the native totals pipeline value passed by OC3 (model also exposes `calculateCheckoutGrandTotal()` using the same extension/total chain for confirm revalidation).
+- **`confirm()`** — reads `session.order_id`, loads order via `model_checkout_order->getOrder()`, validates store scope, status **0**, cart/order parity, and re-eligibility; acquires Phase 2 checkout operation lock for idempotency; sets `session.mt_uni_credit_checkout_prepared_order_id`; redirects to `checkout/success`.
+- **Must not** call `addOrder()`, `addOrderHistory()`, any CP client, or SmartUCF in Phase 5.
+- **Native order status:** unchanged at **0** — configured `payment_mt_uni_credit_order_status_id` is reserved for post-financing phases, not applied during preparation-only confirm.
+
+Customer-facing title (BG): **УниКредит покупки на Кредит**.
 
 ## N. OCMOD integration policy
 

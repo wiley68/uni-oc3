@@ -26,6 +26,9 @@ final class Phase2MemoryDb
     /** @var array<string, array<string, mixed>> */
     private $shopCache = array();
 
+    /** @var array<int, array<string, mixed>> */
+    private $zoneToGeoZone = array();
+
     /** @var int */
     private $nextShopCacheId = 1;
 
@@ -41,6 +44,7 @@ final class Phase2MemoryDb
         $this->apiNonces = array();
         $this->operationLocks = array();
         $this->shopCache = array();
+        $this->zoneToGeoZone = array();
         $this->affected = 0;
         $this->nextNonceId = 1;
         $this->nextLockId = 1;
@@ -122,6 +126,10 @@ final class Phase2MemoryDb
 
         if (stripos($sql, 'SELECT') === 0 && strpos($sql, 'setting') !== false) {
             return $this->selectSetting($sql);
+        }
+
+        if (stripos($sql, 'SELECT') === 0 && strpos($sql, 'zone_to_geo_zone') !== false) {
+            return $this->selectZoneToGeoZone($sql);
         }
 
         if (stripos($sql, 'SELECT') === 0 && strpos($sql, 'operation_lock') !== false) {
@@ -533,14 +541,14 @@ final class Phase2MemoryDb
         }
 
         $row = $this->shopCache[$key];
-        if (strpos($sql, 'expires_at >') !== false) {
-            $cutoff = $this->extractQuoted($sql, 'expires_at > \'', '\'');
-            if ($cutoff === '') {
-                $cutoff = $this->extractQuoted($sql, 'expires_at` > \'', '\'');
-            }
-            if ((string) $row['expires_at'] <= $cutoff) {
-                return $this->emptyResult();
-            }
+        $cutoff = '';
+        if (preg_match("/`expires_at`\\s*>\\s*'([^']+)'/", $sql, $matches)) {
+            $cutoff = (string) $matches[1];
+        } elseif (preg_match("/expires_at\\s*>\\s*'([^']+)'/", $sql, $matches)) {
+            $cutoff = (string) $matches[1];
+        }
+        if ($cutoff !== '' && (string) $row['expires_at'] <= $cutoff) {
+            return $this->emptyResult();
         }
 
         if (
@@ -602,6 +610,42 @@ final class Phase2MemoryDb
     private function shopCacheKey($storeId, $unicid)
     {
         return (int) $storeId . '|' . (string) $unicid;
+    }
+
+    /**
+     * @param int $geoZoneId
+     * @param int $countryId
+     * @param int $zoneId
+     * @return void
+     */
+    public function seedGeoZone($geoZoneId, $countryId, $zoneId)
+    {
+        $this->zoneToGeoZone[] = array(
+            'geo_zone_id' => (int) $geoZoneId,
+            'country_id' => (int) $countryId,
+            'zone_id' => (int) $zoneId,
+        );
+    }
+
+    /**
+     * @param string $sql
+     * @return object
+     */
+    private function selectZoneToGeoZone($sql)
+    {
+        $geoZoneId = (int) $this->extractWhereInt($sql, 'geo_zone_id');
+        $countryId = (int) $this->extractWhereInt($sql, 'country_id');
+        $zoneId = (int) $this->extractWhereInt($sql, 'zone_id');
+        foreach ($this->zoneToGeoZone as $row) {
+            if ((int) $row['geo_zone_id'] !== $geoZoneId || (int) $row['country_id'] !== $countryId) {
+                continue;
+            }
+            if ((int) $row['zone_id'] === $zoneId || (int) $row['zone_id'] === 0) {
+                return $this->singleRow($row);
+            }
+        }
+
+        return $this->emptyResult();
     }
 
     /**
