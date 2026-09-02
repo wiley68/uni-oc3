@@ -254,14 +254,48 @@ $cssPath = $catalog . DIRECTORY_SEPARATOR . 'view' . DIRECTORY_SEPARATOR . 'them
 $css = (string) file_get_contents($cssPath);
 mtuc8_assert(!preg_match('/(^|\\n)\\s*\\.btn\\s*\\{/', $css), 'CSS does not style bare .btn {');
 
-// OCMOD anchors
+// OCMOD anchors — frozen Product template strategy
 $installXml = (string) file_get_contents($root . DIRECTORY_SEPARATOR . 'install.xml');
 mtuc8_assert(strpos($installXml, 'mt_uni_credit:product') !== false, 'OCMOD product marker');
 mtuc8_assert(strpos($installXml, 'mt_uni_credit:cart') !== false, 'OCMOD cart marker');
 mtuc8_assert(strpos($installXml, '$data[\'products\'] = array();') !== false, 'OCMOD product controller anchor');
 mtuc8_assert(strpos($installXml, '{{ content_bottom }}</div>') !== false, 'OCMOD cart template anchor');
-mtuc8_assert(strpos($installXml, 'error="skip"') !== false, 'OCMOD theme error=skip');
+mtuc8_assert(
+    strpos($installXml, 'catalog/view/theme/*/template/product/product.twig" error="abort"') !== false,
+    'OCMOD product twig file uses error=abort'
+);
+mtuc8_assert(
+    preg_match(
+        '/product\/product\.twig"\s+error="abort">[\s\S]*?<search><!\[CDATA\[\s*\{% if minimum > 1 %\}\s*\]\]><\/search>/',
+        $installXml
+    ) === 1,
+    'OCMOD product search is exactly {% if minimum > 1 %}'
+);
+mtuc8_assert(
+    preg_match(
+        '/product\/product\.twig"\s+error="abort">[\s\S]*?<add position="before">/',
+        $installXml
+    ) === 1,
+    'OCMOD product add position is before'
+);
+mtuc8_assert(
+    strpos($installXml, 'text_minimum') === false
+        && strpos($installXml, '{% endif %}</div>') === false,
+    'OCMOD previous brittle multi-line product anchor is gone'
+);
+mtuc8_assert(
+    strpos($installXml, 'checkout/cart.twig" error="skip"') !== false,
+    'OCMOD cart theme still uses error=skip'
+);
 mtuc8_assert(!preg_match('/<search[^>]*>[^<]*\\.\\*/', $installXml), 'OCMOD no broad .* regex search');
+
+$referenceProductTwig = 'c:\\Projects\\reference-oc3-core\\catalog\\view\\theme\\default\\template\\product\\product.twig';
+mtuc8_assert(is_file($referenceProductTwig), 'reference OC3 default product.twig present');
+$refTwig = (string) file_get_contents($referenceProductTwig);
+$anchor = '{% if minimum > 1 %}';
+mtuc8_assert(strpos($refTwig, $anchor) !== false, 'reference product.twig contains frozen minimum anchor');
+mtuc8_assert(substr_count($refTwig, $anchor) === 1, 'reference product.twig minimum anchor matches exactly once');
+
 
 // Phase 7 regression: prepared without submitCheckoutFinancing
 $paymentController = (string) file_get_contents(

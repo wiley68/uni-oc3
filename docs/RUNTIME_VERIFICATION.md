@@ -705,11 +705,24 @@ Automated gate: `php tests/phase8_check.php` (no live network).
 
 ### OCMOD / themes
 
-1. [ ] Refresh modifications; product + cart anchors match on default theme.
+1. [ ] Refresh Modifications; product + cart anchors match on default theme.
 2. [ ] Journal 3: product widget visible with caches on/off; no duplicate handlers (`data-mtuc-bound`).
-3. [ ] Theme wildcards use `error="skip"`; missing optional theme files do not abort refresh.
+3. [ ] **Product** theme wildcard uses frozen `error="abort"` on `product/product.twig` with search `{% if minimum > 1 %}` / `position="before"`. Missing anchor must abort refresh (do not silently skip).
+4. [ ] **Cart** theme wildcard may keep `error="skip"`.
+5. [ ] If Modifications refresh aborts because a theme lacks `{% if minimum > 1 %}`, record that theme as unsupported until a dedicated compatible Product anchor is added.
+
+### Product OCMOD verification (mandatory remote)
+
+1. [ ] Refresh Modifications — succeeds on default OC3 theme.
+2. [ ] Open an eligible Product page.
+3. [ ] UniCredit Product widget is visible (`#mt-uni-credit-product-root`).
+4. [ ] Page contains **exactly one** Product widget (markers `<!-- mt_uni_credit:product -->` once).
+5. [ ] Native quantity / Add-to-Cart section still works.
+6. [ ] PHP / OpenCart logs remain clean.
+7. [ ] Compiled/modified Product Twig conceptually places widget **immediately before** `{% if minimum > 1 %}`.
 
 ### Explicit exclusions (Phase 8)
 
 - [ ] No SmartUCF / Process 1/2 / EGN / email / Thank You / homepage ads (Phase 9+).
 - [ ] Product Buy payment preselect OCMOD skipped (soft session preference only).
+- [ ] This Product OCMOD anchor closure does not change Cart calculation/lifecycle or Checkout Phase 7.

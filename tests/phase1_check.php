@@ -77,7 +77,11 @@ mtuc1_assert(strpos($installXmlText, 'mt_uni_credit:product') !== false, 'instal
 mtuc1_assert(strpos($installXmlText, 'mt_uni_credit:cart') !== false, 'install.xml has cart marker');
 mtuc1_assert(strpos($installXmlText, '$data[\'products\'] = array();') !== false, 'install.xml product controller anchor');
 mtuc1_assert(strpos($installXmlText, '{{ content_bottom }}</div>') !== false, 'install.xml cart template anchor');
-mtuc1_assert(strpos($installXmlText, 'error="skip"') !== false, 'install.xml theme files use error=skip');
+mtuc1_assert(strpos($installXmlText, 'error="skip"') !== false, 'install.xml cart theme file uses error=skip');
+mtuc1_assert(
+    strpos($installXmlText, 'catalog/view/theme/*/template/product/product.twig" error="abort"') !== false,
+    'install.xml product theme file uses frozen error=abort'
+);
 mtuc1_assert(!preg_match('/<search[^>]*>[^<]*\\.\\*/', $installXmlText), 'install.xml has no broad .* regex in search');
 
 $constantsPath = $root . DIRECTORY_SEPARATOR . 'upload/system/library/mt_uni_credit/constants.php';

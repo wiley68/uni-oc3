@@ -18,22 +18,20 @@
     </file>
 
     <!--
-      Product template: place widget AFTER quantity form-group closing so markers are stable.
-      Widget HTML still sits inside #form-product on many themes; JS moves the dialog to document.body
-      (nested-form avoidance — same pattern as JET prependTo body).
+      Product template: frozen anchor `{% if minimum > 1 %}` (before).
+      Product injection is mandatory → error="abort" (do not silently skip).
+      Widget may sit inside #form-product; JS moves the dialog to document.body.
     -->
-    <file path="catalog/view/theme/*/template/product/product.twig" error="skip">
+    <file path="catalog/view/theme/*/template/product/product.twig" error="abort">
         <operation>
             <search><![CDATA[
-            {% if minimum > 1 %}
-            <div class="alert alert-info"><i class="fa fa-info-circle"></i> {{ text_minimum }}</div>
-            {% endif %}</div>
-]]></search>
-            <add position="after"><![CDATA[
+{% if minimum > 1 %}
+        ]]></search>
+            <add position="before"><![CDATA[
             <!-- mt_uni_credit:product -->
             {{ mt_uni_credit_product_widget }}
             <!-- /mt_uni_credit:product -->
-]]></add>
+        ]]></add>
         </operation>
     </file>
 
