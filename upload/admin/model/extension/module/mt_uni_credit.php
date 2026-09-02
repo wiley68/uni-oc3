@@ -5,12 +5,14 @@ require_once DIR_SYSTEM . 'library/mt_uni_credit/bootstrap.php';
 class ModelExtensionModuleMtUniCredit extends Model
 {
     /**
-     * Module extension install owns module-wide defaults only.
+     * Module extension install owns module-wide defaults and Phase 2 schema.
      *
      * @return void
      */
     public function install()
     {
+        MtUniCreditBootstrap::installPersistenceSchema($this);
+
         MtUniCreditInstaller::ensureDefaults(
             $this,
             MtUniCreditConstants::MODULE_SETTINGS_CODE,
@@ -23,7 +25,7 @@ class ModelExtensionModuleMtUniCredit extends Model
     }
 
     /**
-     * Remove module settings only. Payment settings and financing evidence remain untouched.
+     * Remove module settings only. Payment settings and durable extension tables remain untouched.
      *
      * @return void
      */
@@ -84,8 +86,6 @@ class ModelExtensionModuleMtUniCredit extends Model
             if ($secret !== '') {
                 if (strlen($secret) > 64) {
                     $errors['secret'] = 'secret_max_length';
-                } else {
-                    $errors['secret'] = 'secret_phase2_required';
                 }
             } elseif (!$this->isSecretConfigured()) {
                 $errors['secret'] = 'secret_required';
@@ -101,6 +101,21 @@ class ModelExtensionModuleMtUniCredit extends Model
      */
     public function saveSettings(array $post)
     {
+        $storeId = $this->resolveStoreId();
+        $credentials = null;
+
+        if (array_key_exists(MtUniCreditConstants::MODULE_SETTING_SECRET, $post)) {
+            $secret = trim((string) $post[MtUniCreditConstants::MODULE_SETTING_SECRET]);
+            if ($secret !== '') {
+                try {
+                    $credentials = MtUniCreditBootstrap::credentialsRepositoryFromModel($this);
+                    $credentials->saveSecret($storeId, $secret);
+                } catch (RuntimeException $exception) {
+                    throw new MtUniCreditSecretPersistException('error_secret_encrypt_failed');
+                }
+            }
+        }
+
         $payload = array();
 
         foreach (MtUniCreditConstants::phase1ModulePersistedSettingKeys() as $key) {
@@ -144,13 +159,33 @@ class ModelExtensionModuleMtUniCredit extends Model
      */
     public function isSecretConfigured()
     {
-        if (!isset($this->config) || !is_object($this->config) || !method_exists($this->config, 'get')) {
+        if (!isset($this->db)) {
+            if (isset($this->config) && is_object($this->config) && method_exists($this->config, 'get')) {
+                $stored = $this->config->get(MtUniCreditConstants::MODULE_SETTING_SECRET);
+
+                return is_string($stored) && MtUniCreditSettingCipher::hasEncryptedPrefix($stored);
+            }
+
             return false;
         }
 
-        $stored = $this->config->get(MtUniCreditConstants::MODULE_SETTING_SECRET);
+        try {
+            return MtUniCreditBootstrap::credentialsRepositoryFromModel($this)->hasSecret($this->resolveStoreId());
+        } catch (RuntimeException $exception) {
+            return false;
+        }
+    }
 
-        return is_string($stored) && trim($stored) !== '';
+    /**
+     * @return int
+     */
+    private function resolveStoreId()
+    {
+        if (isset($this->config) && is_object($this->config) && method_exists($this->config, 'get')) {
+            return (int) $this->config->get('config_store_id');
+        }
+
+        return 0;
     }
 
     /**
@@ -160,8 +195,18 @@ class ModelExtensionModuleMtUniCredit extends Model
      */
     public function getHealthReport()
     {
+        $secretConfigured = false;
+        if (isset($this->db)) {
+            try {
+                $secretConfigured = MtUniCreditBootstrap::credentialsRepositoryFromModel($this)
+                    ->hasSecret($this->resolveStoreId());
+            } catch (RuntimeException $exception) {
+                $secretConfigured = false;
+            }
+        }
+
         return MtUniCreditHealth::evaluate(array(
-            'secret_configured' => $this->isSecretConfigured(),
+            'secret_configured' => $secretConfigured,
             'unicid' => (string) $this->config->get(MtUniCreditConstants::MODULE_SETTING_UNICID),
             'protected_root' => MtUniCreditBootstrap::resolveProtectedRoot(),
         ));

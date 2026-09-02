@@ -1,0 +1,11 @@
+{
+  "source": "reference-uni-oc4 ModuleEncryptionKeyProvider",
+  "algorithm": "sha256",
+  "info": "mt_uni_credit/settings-encryption/v1",
+  "key_length_bytes": 32,
+  "secret_input": "phase4-test-installation-db-password-secret",
+  "expected_derived_key_hex": "552284bea6df7cdb25ae1b503ea55953a86073d97e460d618eaf185e1b9372ac",
+  "encrypted_prefix": "enc:v1:",
+  "iv_length_bytes": 12,
+  "tag_length_bytes": 16
+}

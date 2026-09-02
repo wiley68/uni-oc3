@@ -43,20 +43,20 @@ These are source characterizations, not live shop measurements.
 
 ### What this workspace cannot prove (deferred by phase)
 
-| Item                                                         | Blocks Phase 1? | Phase            |
-| ------------------------------------------------------------ | --------------- | ---------------- |
-| Exact OC version of the remote test shop                     | no              | runtime matrix   |
-| PHP 7.3.33 on that host (ENVIRONMENT.md claim)               | no              | runtime matrix   |
-| OpenSSL `aes-256-gcm`, `hash_hkdf`, cURL/TLS on host         | no              | runtime matrix   |
-| DB engine/version, SQL mode, charset, prefix                 | no              | Phase 2 install  |
-| Installed theme, Journal version, checkout extension         | no              | Phase 8+         |
-| OCMOD collision set                                          | no              | OCMOD phase gate |
-| Exact deployment CP hostname                                 | no              | **Phase 4**      |
-| Final OC3 inbound callback URLs registered with CP           | no              | **Phase 6**      |
-| Physical protected root for secrets/keys, owner, permissions | no              | deployment (D3)  |
-| HKDF/AES-GCM semantic parity with OC4 implementation         | no              | **Phase 2**      |
-| Outbound DNS/TLS to approved test CP host                    | no              | Phase 4          |
-| Mail engine, cron, NTP                                       | no              | Phase 10 / ops   |
+| Item                                                         | Blocks Phase 1? | Phase                                                           |
+| ------------------------------------------------------------ | --------------- | --------------------------------------------------------------- |
+| Exact OC version of the remote test shop                     | no              | runtime matrix                                                  |
+| PHP 7.3.33 on that host (ENVIRONMENT.md claim)               | no              | runtime matrix                                                  |
+| OpenSSL `aes-256-gcm`, `hash_hkdf`, cURL/TLS on host         | no              | runtime matrix                                                  |
+| DB engine/version, SQL mode, charset, prefix                 | no              | Phase 2 install                                                 |
+| Installed theme, Journal version, checkout extension         | no              | Phase 8+                                                        |
+| OCMOD collision set                                          | no              | OCMOD phase gate                                                |
+| Exact deployment CP hostname                                 | no              | **Phase 4**                                                     |
+| Final OC3 inbound callback URLs registered with CP           | no              | **Phase 6**                                                     |
+| Physical protected root for secrets/keys, owner, permissions | no              | deployment (D3)                                                 |
+| HKDF/AES-GCM semantic parity with OC4 implementation         | no              | **Phase 2 local PASS**; remote crypto extensions still required |
+| Outbound DNS/TLS to approved test CP host                    | no              | Phase 4                                                         |
+| Mail engine, cron, NTP                                       | no              | Phase 10 / ops                                                  |
 
 ---
 
@@ -324,4 +324,67 @@ SELECT store_id, `code`, `key`, LEFT(`value`, 20) AS value_prefix FROM <DB_PREFI
 SELECT modification_id, name, code, version, status FROM <DB_PREFIX>modification WHERE code = 'mt_uni_credit';
 ```
 
-Never paste full `module_mt_uni_credit_secret` values — Phase 1 must not persist plaintext secrets anyway.
+Never paste full `module_mt_uni_credit_secret` values — report only prefix (`enc:v1:`), masked length, and whether decrypt/read succeeds.
+
+---
+
+## Phase 2 remote checklist (persistence + encrypted secrets)
+
+Local checks: `php tests/phase0_check.php`, `php tests/phase1_check.php`, `php tests/phase2_check.php`.
+
+### PHP crypto extensions
+
+```bash
+php -r "echo 'openssl=' . (extension_loaded('openssl') ? 'yes' : 'no') . PHP_EOL;"
+php -r "echo 'gcm=' . (in_array('aes-256-gcm', openssl_get_cipher_methods(), true) ? 'yes' : 'no') . PHP_EOL;"
+php -r "echo 'hash_hkdf=' . (function_exists('hash_hkdf') ? 'yes' : 'no') . PHP_EOL;"
+php -r "echo 'hash_hmac=' . (function_exists('hash_hmac') ? 'yes' : 'no') . PHP_EOL;"
+php -r "echo 'random_bytes=' . (function_exists('random_bytes') ? 'yes' : 'no') . PHP_EOL;"
+```
+
+Expected: all **yes** on PHP 7.3+ test host.
+
+### Database schema (after Module or Payment install)
+
+Run install twice; second run must not error.
+
+```sql
+SHOW TABLES LIKE '<DB_PREFIX>mt_uni_credit_%';
+SHOW CREATE TABLE `<DB_PREFIX>mt_uni_credit_api_nonce`;
+SHOW CREATE TABLE `<DB_PREFIX>mt_uni_credit_operation_lock`;
+```
+
+Expected Phase 2 tables only:
+
+- `<DB_PREFIX>mt_uni_credit_api_nonce` — replay/nonces (`UNIQUE(store_id, unicid, nonce_hash)`, expiry index)
+- `<DB_PREFIX>mt_uni_credit_operation_lock` — atomic locks (`UNIQUE(store_id, entry_point, operation_key_hash)`, expiry index)
+
+Record engine, charset/collation (prefer InnoDB + utf8mb4; note if fallback required).
+
+**Uninstall policy:** Module/Payment uninstall removes extension **settings** only. Phase 2 tables are **preserved** (future financing evidence). No `DROP TABLE` on ordinary uninstall.
+
+### Admin Secret (Module settings)
+
+1. [ ] First save with UNICID + Secret succeeds.
+2. [ ] DB value for `module_mt_uni_credit_secret` starts with `enc:v1:` (report prefix + length only).
+3. [ ] Reopen Module admin: Secret password field is **empty**; UI indicates secret is configured.
+4. [ ] Save with blank Secret preserves prior encrypted value (prefix unchanged).
+5. [ ] Save with new Secret changes encrypted value (prefix stays `enc:v1:`, body differs).
+6. [ ] Corrupt encrypted value (test shop only) fails closed in admin/health without exposing plaintext.
+
+Sanitized SQL example:
+
+```sql
+SELECT store_id, `key`, LEFT(`value`, 12) AS value_prefix, LENGTH(`value`) AS value_len
+FROM <DB_PREFIX>setting
+WHERE `key` = 'module_mt_uni_credit_secret';
+```
+
+Never paste full ciphertext or plaintext Secret in tickets.
+
+### Concurrency (optional on shared test DB)
+
+- Duplicate nonce insert for same `(store_id, unicid, nonce_hash)` must reject replay atomically.
+- Active operation lock must reject second acquire until TTL stale recovery.
+
+These are fully covered offline in `tests/phase2_check.php`; remote verification confirms MySQL/MariaDB behaviour matches.

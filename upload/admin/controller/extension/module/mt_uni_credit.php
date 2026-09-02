@@ -18,15 +18,21 @@ class ControllerExtensionModuleMtUniCredit extends Controller
         $this->load->model('extension/module/mt_uni_credit');
 
         if (($this->request->server['REQUEST_METHOD'] === 'POST') && $this->validate()) {
-            $this->model_extension_module_mt_uni_credit->saveSettings($this->request->post);
+            try {
+                $this->model_extension_module_mt_uni_credit->saveSettings($this->request->post);
+            } catch (MtUniCreditSecretPersistException $exception) {
+                $this->error['warning'] = $this->language->get($exception->getLanguageKey());
+            }
 
-            $this->session->data['success'] = $this->language->get('text_success');
+            if (!$this->error) {
+                $this->session->data['success'] = $this->language->get('text_success');
 
-            $this->response->redirect($this->url->link(
-                'extension/module/mt_uni_credit',
-                'user_token=' . $this->session->data['user_token'],
-                true
-            ));
+                $this->response->redirect($this->url->link(
+                    'extension/module/mt_uni_credit',
+                    'user_token=' . $this->session->data['user_token'],
+                    true
+                ));
+            }
         }
 
         $data = array();
@@ -243,6 +249,7 @@ class ControllerExtensionModuleMtUniCredit extends Controller
         }
 
         $data['has_secret'] = $this->model_extension_module_mt_uni_credit->isSecretConfigured();
+        $data[MtUniCreditConstants::MODULE_SETTING_SECRET] = '';
         $data['product_button_actions'] = array(
             array(
                 'value' => MtUniCreditConstants::BUTTON_ACTION_ADD_TO_CART,

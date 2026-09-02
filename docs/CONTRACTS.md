@@ -721,6 +721,19 @@ Proven `reference-jet-oc3` pattern (product widget):
 
 Cart in JET uses `Document::addStyle/addScript`; product uses inline tags. UniCredit should keep inline fallback harmless on all themes and must not detect Journal by brittle class/file probes.
 
+**Phase 2 frozen rules (storefront phases only; not implemented in Phase 2):**
+
+4. Storefront assets for injected Product/Cart fragments may be referenced from the fragment Twig itself where controller-level `addStyle()` / `addScript()` is unreliable under Journal.
+5. Distributable assets remain separate CSS/JS files under the default-theme fallback path (`catalog/view/theme/default/template/extension/<module>/…`).
+6. `filemtime()` cache busting must be guarded (skip or omit when the file is absent; never emit PHP warnings).
+7. Storefront JS must **not** assume `window.jQuery` exists when the script file is evaluated.
+8. jQuery-dependent initialization must wait safely for `window.jQuery`.
+9. Waiting must be bounded, not infinite (explicit timeout/retry cap).
+10. Initialization and event binding must be idempotent because Journal may rebuild/reinject fragments.
+11. No Journal-specific business logic may leak into domain/business services.
+12. Standard OC3 themes must continue using the same implementation (no Journal-only fork).
+13. Delayed-jQuery handling applies only to storefront assets that need it, not globally to every JS file.
+
 ### OC3-ROUTE-001 — Nested catalog API routes
 
 On 3.0.3.9, `Action` resolves `extension/mt_uni_credit/api/shopCache` to file `catalog/controller/extension/mt_uni_credit/api.php`, class `ControllerExtensionMtUniCreditApi`, method `shopCache`. Confirm the same on 3.0.3.6 and 3.0.3.8 before freezing controller split vs shared API controller.
@@ -778,7 +791,23 @@ Authoritative modes: cert `0640`, key `0600`, passphrase file `0600`. Health che
 - Settings encryption key (contract from OC4): HKDF-SHA256(`DB_PASSWORD`, 32 bytes, info `mt_uni_credit/settings-encryption/v1`) → AES-256-GCM `enc:v1:`. Fail closed if key material cannot be resolved. **No plaintext fallback. No predictable metadata fallback.**
 - SmartUCF passphrase: `secrets/smartucf-key.php` only.
 
-Phase 2 must semantically verify the exact OC4 `ModuleEncryptionKeyProvider` / `ModuleSettingCipher` implementation against this contract before production use. Phase 0 inferred the mechanism from OC4 reference sources, not live runtime.
+**Phase 2 semantic verification (verified against `reference-uni-oc4`):**
+
+| Parameter                 | Verified value                                                                                                |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| HKDF hash                 | `sha256` via `hash_hkdf()`                                                                                    |
+| Input key material        | `DB_PASSWORD` constant (non-empty)                                                                            |
+| Salt                      | none (PHP default empty salt)                                                                                 |
+| Info/context              | `mt_uni_credit/settings-encryption/v1`                                                                        |
+| Derived key length        | 32 bytes                                                                                                      |
+| Cipher                    | AES-256-GCM (`openssl_encrypt` / `openssl_decrypt`, `OPENSSL_RAW_DATA`)                                       |
+| IV/nonce length           | 12 bytes (`random_bytes`)                                                                                     |
+| Authentication tag length | 16 bytes                                                                                                      |
+| Ciphertext encoding       | raw bytes concatenated with IV+tag, then base64                                                               |
+| Storage envelope          | `enc:v1:` + base64(`iv[12]` + `tag[16]` + `ciphertext`)                                                       |
+| Decryption failure        | fail closed (`RuntimeException`); no plaintext fallback; corrupt envelope returns null at repository boundary |
+
+Fixture: `tests/fixtures/crypto_hkdf_vector.json`. Phase 0 inferred the mechanism from OC4 reference sources; Phase 2 implementation matches OC4 semantics.
 
 ### DEPLOY-003 — OC3 path translation (D3 closed for Phase 0)
 
@@ -804,12 +833,12 @@ Phase 0 does **not** create: admin/catalog payment implementation, product/cart 
 
 ## Decision log (Phase 0 STOP GATE)
 
-| ID                                 | Status                 | Outcome                                                                                                                                             |
-| ---------------------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| D1 PHP floor                       | **CLOSED**             | Module minimum **PHP 7.3.0+** across practical OC3 matrix; not a universal OC 3.0.3.6 core requirement                                              |
-| D2 Module version                  | **CLOSED**             | Code `mt_uni_credit`, type `payment`, version **`2.0.2`** for module and CP payload identity                                                        |
-| D3 Secrets/certs                   | **CLOSED FOR PHASE 0** | OC4 filenames frozen; HKDF+AES-256-GCM contract preserved; Phase 2 semantic verification; physical root/permissions deferred; no plaintext fallback |
-| D4 CP/SmartUCF env + OC3 callbacks | **CLOSED FOR PHASE 0** | `/api/v1` and SmartUCF allowlist frozen; deployment CP hostname → Phase 4; final inbound callback URLs → Phase 6                                    |
+| ID                                 | Status                        | Outcome                                                                                                                                          |
+| ---------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| D1 PHP floor                       | **CLOSED**                    | Module minimum **PHP 7.3.0+** across practical OC3 matrix; not a universal OC 3.0.3.6 core requirement                                           |
+| D2 Module version                  | **CLOSED**                    | Code `mt_uni_credit`, type `payment`, version **`2.0.2`** for module and CP payload identity                                                     |
+| D3 Secrets/certs                   | **CLOSED (Phase 2 verified)** | OC4 filenames frozen; HKDF+AES-256-GCM semantic parity verified locally; physical root/permissions deferred to deployment; no plaintext fallback |
+| D4 CP/SmartUCF env + OC3 callbacks | **CLOSED FOR PHASE 0**        | `/api/v1` and SmartUCF allowlist frozen; deployment CP hostname → Phase 4; final inbound callback URLs → Phase 6                                 |
 
 D5–D12 remain as in the Master Plan (several already approved there: D5 targets, D6 OCMOD, D9 preserve tables). D8/D11 stay open for later phases.
 

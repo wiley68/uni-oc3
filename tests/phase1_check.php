@@ -129,7 +129,7 @@ $moduleModelPath = $root . DIRECTORY_SEPARATOR . 'upload/admin/model/extension/m
 $moduleModel = file_get_contents($moduleModelPath);
 mtuc1_assert(strpos($moduleModel, 'class ModelExtensionModuleMtUniCredit') !== false, 'module model class naming');
 mtuc1_assert(strpos($moduleModel, 'MODULE_SETTINGS_CODE') !== false, 'module install uses module settings code');
-mtuc1_assert(strpos($moduleModel, 'secret_phase2_required') !== false, 'module rejects plaintext secret persistence');
+mtuc1_assert(strpos($moduleModel, 'credentialsRepositoryFromModel') !== false, 'module uses encrypted credentials repository');
 mtuc1_assert(strpos($moduleModel, 'getHealthReport') !== false, 'module model owns health');
 
 mtuc1_assert(strpos($moduleModel, 'unicid_required') !== false, 'module validates UNICID required');
@@ -262,7 +262,7 @@ $postSecretPersist = array(
     MtUniCreditConstants::MODULE_SETTING_SECRET => 'must-not-persist',
 );
 $errors = $validationModel->validateSettings($postSecretPersist);
-mtuc1_assert(isset($errors['secret']), 'module validate rejects secret submission in Phase 1');
+mtuc1_assert(!isset($errors['secret']), 'module validate accepts secret submission for encrypted persistence');
 
 $postMissingUnicid = array(
     MtUniCreditConstants::MODULE_SETTING_UNICID => '',

@@ -11,6 +11,8 @@ class ModelExtensionPaymentMtUniCredit extends Model
      */
     public function install()
     {
+        MtUniCreditBootstrap::installPersistenceSchema($this);
+
         $defaults = MtUniCreditConstants::defaultPaymentSettings();
         $defaults[MtUniCreditConstants::PAYMENT_SETTING_ORDER_STATUS_ID] = MtUniCreditInstaller::resolveProcessingOrderStatusId($this);
 

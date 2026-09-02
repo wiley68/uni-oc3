@@ -54,8 +54,7 @@
             <div class="col-sm-10">
               <input type="password" name="module_mt_uni_credit_secret" value="" placeholder="{{ entry_secret }}" id="input-secret" class="form-control" maxlength="64" autocomplete="new-password"{% if not has_secret %} required="required"{% endif %} />
               {% if error_secret %}<div class="text-danger">{{ error_secret }}</div>{% endif %}
-              <p class="help-block">{{ help_secret }}{% if has_secret %} {{ text_secret_keep_current }}{% endif %}</p>
-              <p class="help-block">{{ text_secret_phase2 }}</p>
+              <p class="help-block">{{ help_secret }}{% if has_secret %} {{ text_secret_keep_current }} {{ text_secret_configured }}{% endif %}</p>
             </div>
           </div>
           <div class="form-group">

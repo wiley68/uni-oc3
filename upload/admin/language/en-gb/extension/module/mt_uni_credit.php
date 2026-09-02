@@ -9,7 +9,7 @@ $_['text_edit'] = 'Module settings';
 $_['text_product_button_add_to_cart'] = 'Add to cart';
 $_['text_product_button_buy'] = 'Buy';
 $_['text_secret_keep_current'] = 'Leave blank to keep the current secret.';
-$_['text_secret_phase2'] = 'Secure secret storage is not available in Phase 1. Secret persistence requires Phase 2 encryption.';
+$_['text_secret_configured'] = 'A secret is already configured and stored encrypted.';
 $_['text_bank_data_phase1_unavailable'] = 'Bank data refresh becomes available in a later phase. Phase 1 does not perform CP requests.';
 
 $_['entry_status'] = 'Status';
@@ -38,7 +38,7 @@ $_['error_unicid_required'] = 'UNICID is required.';
 $_['error_unicid_max_length'] = 'UNICID must not exceed 36 characters.';
 $_['error_secret_required'] = 'Shop secret code is required.';
 $_['error_secret_max_length'] = 'Shop secret code must not exceed 64 characters.';
-$_['error_secret_phase2_required'] = 'Secret cannot be saved in Phase 1. Secure storage arrives in Phase 2.';
+$_['error_secret_encrypt_failed'] = 'The secret could not be saved securely. The previous secret was preserved.';
 $_['error_invalid_product_button_action'] = 'Invalid buy button action.';
 $_['error_invalid_button_top_spacing'] = 'Space above the button must be an integer between 0 and 200.';
 $_['error_journal_download_failed'] = 'The operations journal could not be downloaded.';
