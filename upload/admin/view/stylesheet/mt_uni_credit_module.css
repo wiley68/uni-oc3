@@ -58,3 +58,8 @@
 .mt-uni-credit-module .mt-uni-toggle__input:focus + .mt-uni-toggle__track {
   box-shadow: 0 0 0 2px rgba(51, 122, 183, 0.35);
 }
+
+.mt-uni-credit-module .mt-uni-required {
+  color: inherit;
+  font-weight: normal;
+}

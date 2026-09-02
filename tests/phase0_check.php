@@ -171,7 +171,11 @@ foreach ($requiredIds as $cid) {
 }
 mtuc_assert(strpos($contracts, 'D1 PHP floor                       | **CLOSED**') !== false, 'CONTRACTS.md D1 closed');
 mtuc_assert(strpos($contracts, 'D2 Module version                  | **CLOSED**') !== false, 'CONTRACTS.md D2 closed');
-mtuc_assert(strpos($contracts, 'D3 Secrets/certs                   | **CLOSED FOR PHASE 0**') !== false, 'CONTRACTS.md D3 closed');
+mtuc_assert(
+    strpos($contracts, 'D3 Secrets/certs                   | **CLOSED (Phase 2 verified)**') !== false
+        || strpos($contracts, 'D3 Secrets/certs                   | **CLOSED FOR PHASE 0**') !== false,
+    'CONTRACTS.md D3 closed'
+);
 mtuc_assert(strpos($contracts, 'D4 CP/SmartUCF env + OC3 callbacks | **CLOSED FOR PHASE 0**') !== false, 'CONTRACTS.md D4 closed');
 mtuc_assert(strpos($contracts, 'Phase 0 STOP GATE:** **PASS**') !== false, 'CONTRACTS.md STOP GATE PASS');
 

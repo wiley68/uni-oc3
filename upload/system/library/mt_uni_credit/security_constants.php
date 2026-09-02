@@ -18,4 +18,6 @@ final class MtUniCreditSecurityConstants
     const HASH_HEX_LENGTH = 64;
 
     const CLEANUP_DEFAULT_BATCH_SIZE = 100;
+
+    const SHOP_CACHE_TTL_SECONDS = 86400;
 }

@@ -23,6 +23,12 @@ final class Phase2MemoryDb
     /** @var int */
     private $nextLockId = 1;
 
+    /** @var array<string, array<string, mixed>> */
+    private $shopCache = array();
+
+    /** @var int */
+    private $nextShopCacheId = 1;
+
     /** @var string */
     private $prefix = 'oc_';
 
@@ -34,9 +40,11 @@ final class Phase2MemoryDb
         $this->settings = array();
         $this->apiNonces = array();
         $this->operationLocks = array();
+        $this->shopCache = array();
         $this->affected = 0;
         $this->nextNonceId = 1;
         $this->nextLockId = 1;
+        $this->nextShopCacheId = 1;
     }
 
     /**
@@ -76,6 +84,10 @@ final class Phase2MemoryDb
             return $this->insertIgnoreOperationLock($sql);
         }
 
+        if (stripos($sql, 'INSERT INTO') === 0 && strpos($sql, 'shop_cache') !== false) {
+            return $this->upsertShopCache($sql);
+        }
+
         if (stripos($sql, 'INSERT INTO') === 0 && strpos($sql, 'setting') !== false) {
             return $this->insertSetting($sql);
         }
@@ -94,6 +106,14 @@ final class Phase2MemoryDb
 
         if (stripos($sql, 'DELETE FROM') === 0 && strpos($sql, 'api_nonce') !== false) {
             return $this->deleteApiNonces($sql);
+        }
+
+        if (stripos($sql, 'DELETE FROM') === 0 && strpos($sql, 'shop_cache') !== false) {
+            return $this->deleteShopCache($sql);
+        }
+
+        if (stripos($sql, 'SELECT') === 0 && strpos($sql, 'shop_cache') !== false) {
+            return $this->selectShopCache($sql);
         }
 
         if (stripos($sql, 'SELECT') === 0 && strpos($sql, 'setting') !== false) {
@@ -374,7 +394,9 @@ final class Phase2MemoryDb
 
         $columns = array_map('trim', explode(',', str_replace('`', '', $matches[1])));
         $values = array();
-        preg_match_all("/'(?:\\\\'|[^'])*'|[^,]+/", $matches[2], $valueMatches);
+        // Quoted SQL literals must win over the unquoted branch; otherwise JSON starting
+        // with '{"..."}' is split at the first comma by [^,]+.
+        preg_match_all("/'(?:\\\\'|[^'])*'|\\d+|[^',\\s][^,]*/", $matches[2], $valueMatches);
         foreach ($valueMatches[0] as $raw) {
             $raw = trim($raw);
             if ($raw !== '' && $raw[0] === "'") {
@@ -446,6 +468,118 @@ final class Phase2MemoryDb
         }
 
         return stripcslashes(substr($sql, $pos, $endPos - $pos));
+    }
+
+    /**
+     * @param string $sql
+     * @return object
+     */
+    private function upsertShopCache($sql)
+    {
+        $normalized = preg_replace('/\s+ON DUPLICATE KEY UPDATE.+$/is', '', $sql);
+        $fields = $this->parseInsertValues($normalized);
+        $storeId = (int) $fields['store_id'];
+        $unicid = (string) $fields['unicid'];
+        $key = $this->shopCacheKey($storeId, $unicid);
+        $existing = isset($this->shopCache[$key]);
+        $this->shopCache[$key] = array(
+            'shop_cache_id' => $existing ? $this->shopCache[$key]['shop_cache_id'] : $this->nextShopCacheId++,
+            'store_id' => $storeId,
+            'unicid' => $unicid,
+            'shop_data' => (string) $fields['shop_data'],
+            'fetched_at' => (string) $fields['fetched_at'],
+            'expires_at' => (string) $fields['expires_at'],
+            'created_at' => $existing ? $this->shopCache[$key]['created_at'] : (string) $fields['created_at'],
+            'updated_at' => (string) $fields['updated_at'],
+        );
+        $this->affected = 1;
+
+        return $this->emptyResult();
+    }
+
+    /**
+     * @param string $sql
+     * @return object
+     */
+    private function selectShopCache($sql)
+    {
+        $storeId = (int) $this->extractWhereInt($sql, 'store_id');
+        $unicid = $this->extractWhereQuoted($sql, 'unicid');
+        $key = $this->shopCacheKey($storeId, $unicid);
+        if (!isset($this->shopCache[$key])) {
+            return $this->emptyResult();
+        }
+
+        $row = $this->shopCache[$key];
+        if (strpos($sql, 'expires_at >') !== false) {
+            $cutoff = $this->extractQuoted($sql, 'expires_at > \'', '\'');
+            if ($cutoff === '') {
+                $cutoff = $this->extractQuoted($sql, 'expires_at` > \'', '\'');
+            }
+            if ((string) $row['expires_at'] <= $cutoff) {
+                return $this->emptyResult();
+            }
+        }
+
+        if (
+            strpos($sql, '`shop_data`') === false
+            && (strpos($sql, 'fetched_at`, `expires_at') !== false || strpos($sql, '`fetched_at`, `expires_at`') !== false)
+        ) {
+            return $this->singleRow(array(
+                'fetched_at' => $row['fetched_at'],
+                'expires_at' => $row['expires_at'],
+            ));
+        }
+
+        return $this->singleRow(array(
+            'shop_data' => $row['shop_data'],
+            'fetched_at' => $row['fetched_at'],
+            'expires_at' => $row['expires_at'],
+        ));
+    }
+
+    /**
+     * @param string $sql
+     * @return object
+     */
+    private function deleteShopCache($sql)
+    {
+        $storeId = (int) $this->extractWhereInt($sql, 'store_id');
+        if (strpos($sql, 'expires_at <= ') !== false) {
+            $cutoff = $this->extractQuoted($sql, 'expires_at <= \'', '\'');
+            if ($cutoff === '') {
+                $cutoff = $this->extractQuoted($sql, 'expires_at` <= \'', '\'');
+            }
+            $deleted = 0;
+            foreach ($this->shopCache as $key => $row) {
+                if ((string) $row['expires_at'] <= $cutoff) {
+                    unset($this->shopCache[$key]);
+                    $deleted++;
+                }
+            }
+            $this->affected = $deleted;
+
+            return $this->emptyResult();
+        }
+
+        $unicid = $this->extractWhereQuoted($sql, 'unicid');
+        $key = $this->shopCacheKey($storeId, $unicid);
+        if (isset($this->shopCache[$key])) {
+            unset($this->shopCache[$key]);
+            $this->affected = 1;
+        }
+
+        return $this->emptyResult();
+    }
+
+    /**
+     * @param int $storeId
+     * @param string $unicid
+     * @return string
+     */
+    private function shopCacheKey($storeId, $unicid)
+    {
+        return (int) $storeId . '|' . (string) $unicid;
     }
 
     /**

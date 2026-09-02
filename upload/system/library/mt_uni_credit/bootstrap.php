@@ -21,6 +21,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'operation_lock_repository.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'request_signature_protocol.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'request_signature_verifier.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'deployment_paths.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'shop_snapshot_validation_exception.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'shop_configuration_snapshot_validator.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'shop_cache_repository.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'shop_configuration_cache.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'calculator' . DIRECTORY_SEPARATOR . 'bootstrap.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'health.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'installer.php';
 
@@ -75,7 +80,16 @@ final class MtUniCreditBootstrap
      */
     public static function installPersistenceSchema($model)
     {
-        MtUniCreditPersistenceSchema::install(self::dbFromModel($model));
+        MtUniCreditPersistenceSchema::installAll(self::dbFromModel($model));
+    }
+
+    /**
+     * @param MtUniCreditDbAdapter $db
+     * @return MtUniCreditShopConfigurationCache
+     */
+    public static function shopConfigurationCacheFromDb(MtUniCreditDbAdapter $db)
+    {
+        return new MtUniCreditShopConfigurationCache(new MtUniCreditShopCacheRepository($db));
     }
 
     /**

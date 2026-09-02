@@ -388,3 +388,56 @@ Never paste full ciphertext or plaintext Secret in tickets.
 - Active operation lock must reject second acquire until TTL stale recovery.
 
 These are fully covered offline in `tests/phase2_check.php`; remote verification confirms MySQL/MariaDB behaviour matches.
+
+---
+
+## Phase 3 remote checklist (shop cache + calculator domain)
+
+Local checks: `php tests/phase0_check.php`, `php tests/phase1_check.php`, `php tests/phase2_check.php`, `php tests/phase3_check.php`.
+
+Phase 3 adds **offline** shop snapshot validation/cache and the calculator domain only. No storefront UI, no CP/SmartUCF network, no order creation.
+
+### Database schema (after Module or Payment install)
+
+Run install twice; second run must not error. Phase 2 tables must remain intact.
+
+```sql
+SHOW TABLES LIKE '<DB_PREFIX>mt_uni_credit_%';
+SHOW CREATE TABLE `<DB_PREFIX>mt_uni_credit_shop_cache`\G
+```
+
+Expected Phase 3 table:
+
+- `<DB_PREFIX>mt_uni_credit_shop_cache` — validated CP shop snapshot per `(store_id, unicid)` (`UNIQUE(store_id, unicid)`, expiry index)
+
+**Uninstall policy:** unchanged — extension uninstall removes **settings only**; Phase 2/3 tables are preserved.
+
+### Shop cache smoke (sanitized fixture)
+
+Optional CLI on test shop (insert sanitized fixture only; no CP):
+
+1. [ ] Module install creates `mt_uni_credit_shop_cache` with expected charset/indexes.
+2. [ ] Validated snapshot replace for `(store_id, unicid)` persists JSON and timestamps (`fetched_at`, `expires_at`).
+3. [ ] Fresh read succeeds while `expires_at` is in the future.
+4. [ ] Store `N` does **not** fall back to store `0`.
+5. [ ] Invalid snapshot replace does **not** overwrite known-good cache.
+6. [ ] Reinstall does not `DROP` existing cache rows.
+
+Sanitized SQL example:
+
+```sql
+SELECT store_id, unicid, LEFT(shop_data, 40) AS shop_data_prefix, LENGTH(shop_data) AS shop_data_len,
+       fetched_at, expires_at
+FROM `<DB_PREFIX>mt_uni_credit_shop_cache`
+ORDER BY store_id, unicid;
+```
+
+Never paste full `shop_data` if it contains operational bank configuration you treat as sensitive.
+
+### Calculator domain
+
+1. [ ] No Product/Cart/checkout controllers or storefront assets added in Phase 3.
+2. [ ] **Обнови данните от банката** remains a non-network placeholder (real CP refresh is Phase 4).
+3. [ ] Module admin: UNICID/Secret labels and help text use standard colour; red styling only on validation errors.
+
+Golden parity is verified locally via `tests/phase3_check.php` and `tests/fixtures/calculator_golden.json`. Optional deployed-runtime helper (if provided later): evaluate golden fixture through PHP CLI and print sanitized financial outputs only — no DB mutation beyond safe test records.

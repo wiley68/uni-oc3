@@ -9,6 +9,8 @@ final class MtUniCreditPersistenceTableNames
 
     const OPERATION_LOCK = 'mt_uni_credit_operation_lock';
 
+    const SHOP_CACHE = 'mt_uni_credit_shop_cache';
+
     /**
      * Phase 2 foundational tables only.
      *
@@ -19,6 +21,18 @@ final class MtUniCreditPersistenceTableNames
         return array(
             self::API_NONCE,
             self::OPERATION_LOCK,
+        );
+    }
+
+    /**
+     * Phase 3 shop configuration cache table.
+     *
+     * @return array<int, string>
+     */
+    public static function phase3Tables()
+    {
+        return array(
+            self::SHOP_CACHE,
         );
     }
 }

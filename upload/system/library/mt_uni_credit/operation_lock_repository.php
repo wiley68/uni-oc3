@@ -13,15 +13,14 @@ final class MtUniCreditOperationLockRepository
 
     /**
      * @param MtUniCreditDbAdapter $db
+     * @param MtUniCreditPersistenceClock|null $clock
      */
-    public function __construct(MtUniCreditDbAdapter $db)
+    public function __construct(MtUniCreditDbAdapter $db, $clock = null)
     {
         $this->db = $db;
-        if (func_num_args() > 1 && func_get_arg(1) instanceof MtUniCreditPersistenceClock) {
-            $this->clock = func_get_arg(1);
-        } else {
-            $this->clock = new MtUniCreditPersistenceClock();
-        }
+        $this->clock = $clock instanceof MtUniCreditPersistenceClock
+            ? $clock
+            : new MtUniCreditPersistenceClock();
     }
 
     /**
