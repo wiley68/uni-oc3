@@ -437,7 +437,80 @@ Never paste full `shop_data` if it contains operational bank configuration you t
 ### Calculator domain
 
 1. [ ] No Product/Cart/checkout controllers or storefront assets added in Phase 3.
-2. [ ] **Обнови данните от банката** remains a non-network placeholder (real CP refresh is Phase 4).
+2. [ ] **Обнови данните от банката** was a Phase 3 placeholder; real CP refresh is verified in Phase 4 below.
 3. [ ] Module admin: UNICID/Secret labels and help text use standard colour; red styling only on validation errors.
 
 Golden parity is verified locally via `tests/phase3_check.php` and `tests/fixtures/calculator_golden.json`. Optional deployed-runtime helper (if provided later): evaluate golden fixture through PHP CLI and print sanitized financial outputs only — no DB mutation beyond safe test records.
+
+---
+
+## Phase 4 — Outbound Control Panel client (remote verification)
+
+Local gate: `php tests/phase4_check.php` (fake transport; no live network).
+
+### CP host configuration (packaging-time)
+
+1. [ ] `upload/config/environment.php` exists on the server after install (from module ZIP).
+2. [ ] `control_panel_url` points to the approved test/production CP host for this deployment.
+3. [ ] No arbitrary CP URL field exists in Module admin UI.
+4. [ ] Outbound API base resolves to `{control_panel_url}/api/v1` only.
+
+Sanitized check (no credentials):
+
+```text
+php -r "require 'config/environment.php'; var_export(array_key_exists('control_panel_url', include 'config/environment.php'));"
+```
+
+### Connectivity (from OC3 server)
+
+1. [ ] DNS resolves the approved CP host from the shop server.
+2. [ ] HTTPS/TLS handshake succeeds with system CA verification (`curl -I --max-time 15 https://<cp-host>/api/v1/...` — use a safe path or OPTIONS if available; do not send credentials).
+3. [ ] No redirect to an unexpected host (`curl -I --max-redirs 0`).
+
+### Auth and shop refresh (admin)
+
+Prerequisites: valid UNICID + Secret saved for the target store scope; catalog URL configured (`config_ssl` / `config_url` or `HTTPS_CATALOG` / `HTTP_CATALOG`).
+
+1. [ ] Open Module admin → **Обнови данните от банката** (POST only).
+2. [ ] Success flash shows refresh confirmation, `fetched_at`, and scheme count.
+3. [ ] No access token, Secret, or raw CP JSON appears in page HTML or admin logs.
+4. [ ] Sanitized log lines may include classifications such as `bank_data_refreshed` or `authentication_failed` only.
+
+### Shop cache after refresh
+
+```sql
+SELECT store_id, unicid, fetched_at, expires_at, LENGTH(shop_data) AS shop_data_len
+FROM `<DB_PREFIX>mt_uni_credit_shop_cache`
+WHERE store_id = <current_store_id>
+ORDER BY fetched_at DESC
+LIMIT 5;
+```
+
+1. [ ] Row updated for exact `(store_id, unicid)` matching configured credentials.
+2. [ ] `fetched_at` / `expires_at` reflect the refresh time.
+
+Token persistence (encrypted settings — no plaintext):
+
+```sql
+SELECT store_id, `key`, LENGTH(`value`) AS value_len, LEFT(`value`, 7) AS value_prefix
+FROM `<DB_PREFIX>setting`
+WHERE `key` LIKE 'module_mt_uni_credit_cp_%'
+  AND store_id = <current_store_id>;
+```
+
+1. [ ] Token settings use `enc:v1:` prefix when present; never log or paste full values.
+
+### Failure test (test environment only)
+
+1. [ ] Temporarily save an invalid Secret → refresh fails with safe admin error; prior cache row unchanged.
+2. [ ] Restore correct Secret → refresh succeeds again.
+
+### Multistore note (OC3 admin)
+
+OpenCart 3 Module extension settings use `config_store_id` from the active admin store context. The default admin route edits **store 0** unless the operator switches store context via native multistore UI. Each store’s UNICID/Secret/tokens/cache are isolated by `store_id`; there is no fallback from store N to store 0.
+
+### Explicit exclusions (Phase 4)
+
+- [ ] No storefront Product/Cart/Checkout code added.
+- [ ] No CP order create/update, inbound callbacks, or SmartUCF traffic.
+- [ ] **Изтегли журнал операции** remains Phase 1 sanitized placeholder export.

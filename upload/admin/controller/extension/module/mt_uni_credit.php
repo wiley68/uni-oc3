@@ -65,7 +65,34 @@ class ControllerExtensionModuleMtUniCredit extends Controller
             return;
         }
 
-        $this->session->data['error'] = $this->language->get('text_bank_data_phase1_unavailable');
+        $this->load->model('extension/module/mt_uni_credit');
+        $result = $this->model_extension_module_mt_uni_credit->refreshBankData();
+
+        if (isset($result['success'])) {
+            $message = $this->language->get('text_bank_data_refreshed');
+            if (!empty($result['fetched_at'])) {
+                $message .= ' ' . sprintf(
+                    $this->language->get('text_bank_data_refreshed_at'),
+                    (string) $result['fetched_at']
+                );
+            }
+            if (isset($result['scheme_count']) && is_int($result['scheme_count'])) {
+                $message .= ' ' . sprintf(
+                    $this->language->get('text_bank_data_scheme_count'),
+                    $result['scheme_count']
+                );
+            }
+            $this->session->data['success'] = trim($message);
+        } elseif (isset($result['error'])) {
+            $errorKey = 'error_bank_' . $result['error'];
+            $label = $this->language->get($errorKey);
+            $this->session->data['error'] = ($label !== $errorKey)
+                ? $label
+                : $this->language->get('error_bank_request_failed');
+        } else {
+            $this->session->data['error'] = $this->language->get('error_bank_request_failed');
+        }
+
         $this->response->redirect($redirect);
     }
 

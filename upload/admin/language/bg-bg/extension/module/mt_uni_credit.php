@@ -10,7 +10,9 @@ $_['text_product_button_add_to_cart'] = 'Добави в количката';
 $_['text_product_button_buy'] = 'Купи';
 $_['text_secret_keep_current'] = 'Оставете празно, за да запазите текущия секрет.';
 $_['text_secret_configured'] = 'Секретът е конфигуриран и съхранен криптирано.';
-$_['text_bank_data_phase1_unavailable'] = 'Обновяването на банковите данни ще бъде налично в по-късна фаза. Фаза 1 не извършва CP заявки.';
+$_['text_bank_data_refreshed'] = 'Данните от банката са обновени успешно.';
+$_['text_bank_data_refreshed_at'] = 'Време на обновяване: %s.';
+$_['text_bank_data_scheme_count'] = 'Схеми в кеша: %d.';
 
 $_['entry_status'] = 'Статус';
 $_['entry_unicid'] = 'Уникален идентификационен код на магазина Ви';
@@ -42,3 +44,12 @@ $_['error_secret_encrypt_failed'] = 'Секретът не може да бъд�
 $_['error_invalid_product_button_action'] = 'Невалидно действие за бутона купи.';
 $_['error_invalid_button_top_spacing'] = 'Свободното място над бутона трябва да е цяло число между 0 и 200.';
 $_['error_journal_download_failed'] = 'Журналът с операции не може да бъде изтеглен.';
+
+$_['error_bank_unicid_missing'] = 'Липсва UNICID.';
+$_['error_bank_secret_missing'] = 'Липсва Secret.';
+$_['error_bank_secret_unreadable'] = 'Съхраненият Secret не може да бъде прочетен. Въведете го отново и запишете.';
+$_['error_bank_shop_url_missing'] = 'Липсва URL на магазина за връзка с Control Panel.';
+$_['error_bank_authentication_failed'] = 'Неуспешно удостоверяване към Control Panel.';
+$_['error_bank_shop_snapshot_invalid'] = 'Получени са невалидни банкови данни.';
+$_['error_bank_transient_failure'] = 'Control Panel временно не отговаря.';
+$_['error_bank_request_failed'] = 'Банковите данни не могат да бъдат обновени поради техническа грешка.';

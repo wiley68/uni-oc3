@@ -102,14 +102,16 @@ class ModelExtensionModuleMtUniCredit extends Model
     public function saveSettings(array $post)
     {
         $storeId = $this->resolveStoreId();
-        $credentials = null;
+        $services = $this->createCpServices();
+        $previousUnicid = $services['credentials']->getUnicid($storeId);
+        $secretChanged = false;
 
         if (array_key_exists(MtUniCreditConstants::MODULE_SETTING_SECRET, $post)) {
             $secret = trim((string) $post[MtUniCreditConstants::MODULE_SETTING_SECRET]);
             if ($secret !== '') {
                 try {
-                    $credentials = MtUniCreditBootstrap::credentialsRepositoryFromModel($this);
-                    $credentials->saveSecret($storeId, $secret);
+                    $services['credentials']->saveSecret($storeId, $secret);
+                    $secretChanged = true;
                 } catch (RuntimeException $exception) {
                     throw new MtUniCreditSecretPersistException('error_secret_encrypt_failed');
                 }
@@ -143,15 +145,158 @@ class ModelExtensionModuleMtUniCredit extends Model
 
         if ($payload) {
             $this->load->model('setting/setting');
-            $existing = $this->model_setting_setting->getSetting(MtUniCreditConstants::MODULE_SETTINGS_CODE);
+            $existing = $this->model_setting_setting->getSetting(MtUniCreditConstants::MODULE_SETTINGS_CODE, $storeId);
+            if (!is_array($existing)) {
+                $existing = array();
+            }
+
             $merged = array_merge($existing, $payload);
 
             if (!empty($existing[MtUniCreditConstants::MODULE_SETTING_SECRET])) {
                 $merged[MtUniCreditConstants::MODULE_SETTING_SECRET] = $existing[MtUniCreditConstants::MODULE_SETTING_SECRET];
             }
 
-            $this->model_setting_setting->editSetting(MtUniCreditConstants::MODULE_SETTINGS_CODE, $merged);
+            $this->model_setting_setting->editSetting(
+                MtUniCreditConstants::MODULE_SETTINGS_CODE,
+                $merged,
+                $storeId
+            );
         }
+
+        $newUnicid = trim((string) (isset($payload[MtUniCreditConstants::MODULE_SETTING_UNICID])
+            ? $payload[MtUniCreditConstants::MODULE_SETTING_UNICID]
+            : $previousUnicid));
+        if ($newUnicid !== $previousUnicid || $secretChanged) {
+            $services['credentialChange']->onCredentialsChanged($previousUnicid, $newUnicid);
+        }
+    }
+
+    /**
+     * Operator-facing bank data refresh — credentials validated, CP auth transparent.
+     *
+     * @return array<string, mixed>
+     */
+    public function refreshBankData()
+    {
+        $storeId = $this->resolveStoreId();
+
+        try {
+            list($sslUrl, $plainUrl) = $this->resolveCatalogUrls();
+            $shopName = (new MtUniCreditCanonicalShopUrlProvider())->resolve($sslUrl, $plainUrl);
+            if ($shopName === '') {
+                $this->writeRefreshLog('shop_url_missing');
+
+                return array('error' => 'shop_url_missing');
+            }
+
+            $services = $this->createCpServices();
+            $credentials = $services['credentials'];
+
+            if ($credentials->getUnicid($storeId) === '') {
+                $this->writeRefreshLog('unicid_missing');
+
+                return array('error' => 'unicid_missing');
+            }
+            if (!$credentials->hasSecret($storeId)) {
+                $this->writeRefreshLog('secret_missing');
+
+                return array('error' => 'secret_missing');
+            }
+            if (!$credentials->isSecretReadable($storeId)) {
+                $this->writeRefreshLog('secret_unreadable');
+
+                return array('error' => 'secret_unreadable');
+            }
+
+            $shop = $services['shopConfiguration']->refreshRemote();
+            $meta = $services['shopConfiguration']->getMetadata();
+            $schemeCount = 0;
+            if (isset($shop['coeff_list']) && is_array($shop['coeff_list'])) {
+                $schemeCount = count($shop['coeff_list']);
+            }
+
+            $this->writeRefreshLog('bank_data_refreshed');
+
+            return array(
+                'success' => 'bank_data_refreshed',
+                'fetched_at' => isset($meta['fetched_at']) ? (string) $meta['fetched_at'] : null,
+                'scheme_count' => $schemeCount,
+                'cache_fresh' => (bool) (isset($meta['is_fresh']) ? $meta['is_fresh'] : true),
+            );
+        } catch (MtUniCreditCpAuthenticationException $exception) {
+            $this->writeRefreshLog('authentication_failed');
+
+            return array('error' => 'authentication_failed');
+        } catch (MtUniCreditShopSnapshotValidationException $exception) {
+            $this->writeRefreshLog('shop_snapshot_invalid');
+
+            return array('error' => 'shop_snapshot_invalid');
+        } catch (MtUniCreditCpException $exception) {
+            $code = $exception->isTransient() ? 'transient_failure' : 'request_failed';
+            $this->writeRefreshLog($code);
+
+            return array('error' => $code);
+        } catch (Exception $exception) {
+            $this->writeRefreshLog('request_failed');
+
+            return array('error' => 'request_failed');
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function createCpServices()
+    {
+        $storeId = $this->resolveStoreId();
+        $db = MtUniCreditBootstrap::dbFromModel($this);
+        $settings = new MtUniCreditSettingStore($db, MtUniCreditConstants::MODULE_SETTINGS_CODE);
+        list($sslUrl, $plainUrl) = $this->resolveCatalogUrls();
+
+        return MtUniCreditCpServiceFactory::create(
+            $db,
+            $settings,
+            $storeId,
+            $sslUrl,
+            $plainUrl
+        );
+    }
+
+    /**
+     * OpenCart default store often has empty config_ssl/config_url in oc_setting.
+     * Fall back to admin HTTP(S)_CATALOG constants so CP login `name` is never blank.
+     *
+     * @return array{0: string, 1: string}
+     */
+    private function resolveCatalogUrls()
+    {
+        $sslUrl = trim((string) $this->config->get('config_ssl'));
+        $plainUrl = trim((string) $this->config->get('config_url'));
+
+        if ($sslUrl === '' && defined('HTTPS_CATALOG')) {
+            $sslUrl = (string) HTTPS_CATALOG;
+        }
+        if ($plainUrl === '' && defined('HTTP_CATALOG')) {
+            $plainUrl = (string) HTTP_CATALOG;
+        }
+        if ($sslUrl === '' && $plainUrl !== '') {
+            $sslUrl = $plainUrl;
+        }
+
+        return array($sslUrl, $plainUrl);
+    }
+
+    /**
+     * @param string $classification
+     * @return void
+     */
+    private function writeRefreshLog($classification)
+    {
+        if (!isset($this->log) || !is_object($this->log) || !method_exists($this->log, 'write')) {
+            return;
+        }
+
+        $this->log->write('mt_uni_credit.refreshBankData classification=' . $classification);
     }
 
     /**

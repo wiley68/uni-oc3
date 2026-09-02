@@ -182,7 +182,8 @@ mtuc1_assert(strpos($moduleTwig, 'min="0"') !== false && strpos($moduleTwig, 'ma
 
 mtuc1_assert(strpos($moduleController, 'function refreshBankData') !== false, 'module controller defines refreshBankData');
 mtuc1_assert(strpos($moduleController, 'function downloadJournal') !== false, 'module controller defines downloadJournal');
-mtuc1_assert(strpos($moduleController, 'text_bank_data_phase1_unavailable') !== false, 'refresh bank data uses Phase 1 unavailable message');
+mtuc1_assert(strpos($moduleController, 'refreshBankData') !== false && strpos($moduleController, 'model_extension_module_mt_uni_credit->refreshBankData()') !== false, 'refresh bank data delegates to model');
+mtuc1_assert(strpos($moduleController, 'text_bank_data_refreshed') !== false, 'refresh bank data maps success flash');
 mtuc1_assert(strpos($moduleController, 'assignHealth') === false, 'module controller does not assign visible health panel');
 mtuc1_assert(strpos($moduleController, 'MODULE_SETTING_ENVIRONMENT') === false, 'module controller does not reference environment setting');
 

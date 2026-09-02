@@ -112,6 +112,10 @@ final class Phase2MemoryDb
             return $this->deleteShopCache($sql);
         }
 
+        if (stripos($sql, 'DELETE FROM') === 0 && strpos($sql, 'setting') !== false) {
+            return $this->deleteSetting($sql);
+        }
+
         if (stripos($sql, 'SELECT') === 0 && strpos($sql, 'shop_cache') !== false) {
             return $this->selectShopCache($sql);
         }
@@ -335,6 +339,24 @@ final class Phase2MemoryDb
             return $this->emptyResult();
         }
         $this->settings[$storeId][$key] = $value;
+        $this->affected = 1;
+
+        return $this->emptyResult();
+    }
+
+    /**
+     * @param string $sql
+     * @return object
+     */
+    private function deleteSetting($sql)
+    {
+        $storeId = (int) $this->extractWhereInt($sql, 'store_id');
+        $key = $this->extractWhereQuoted($sql, 'key');
+        if (!isset($this->settings[$storeId][$key])) {
+            return $this->emptyResult();
+        }
+
+        unset($this->settings[$storeId][$key]);
         $this->affected = 1;
 
         return $this->emptyResult();

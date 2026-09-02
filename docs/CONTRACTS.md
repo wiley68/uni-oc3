@@ -282,8 +282,13 @@ Login is **not** idempotent. Token length 64, type Bearer, TTL **86400** seconds
 
 **Deferred (not Phase 1 blockers):**
 
-- Exact deployment CP hostname → Phase 4 outbound configuration
+- Exact deployment CP hostname → **`upload/config/environment.php`** (`control_panel_url`); switch at packaging time, not in Module admin UI (Phase 4 implemented)
 - Final OC3 inbound callback URLs → Phase 6 CP registration
+
+**Phase 4 implementation notes:**
+
+- CP bearer tokens persist encrypted in `oc_setting` keys `module_mt_uni_credit_cp_access_token`, `_cp_token_type`, `_cp_token_expires_at` (store-scoped). No new Phase 4 DB table.
+- Admin **Обнови данните от банката** performs transparent login + `GET /shop` + validated cache replace.
 
 Do not invent deployment hostnames or registered callback URLs in Phase 0.
 
