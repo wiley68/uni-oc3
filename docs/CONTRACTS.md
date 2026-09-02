@@ -768,6 +768,36 @@ Cart in JET uses `Document::addStyle/addScript`; product uses inline tags. UniCr
 12. Standard OC3 themes must continue using the same implementation (no Journal-only fork).
 13. Delayed-jQuery handling applies only to storefront assets that need it, not globally to every JS file.
 
+### Phase 8 — Product / Cart / OCMOD / Journal (implemented)
+
+**Quantity / amount parity**
+
+- Product financing amount = display unit with tax × quantity (server-authoritative via `MtUniCreditOc3ProductLineResolver`; never trust DOM price).
+- Cart financing amount = live merchandise total (`$this->cart->getTotal()`) with Phase 3 `MtUniCreditCartSchemeResolver` intersection (`type|kop|months`, lowest filter id).
+
+**Buy vs Submit**
+
+- Secondary product actions `add_to_cart` / `buy` never materialize an OC order.
+  - `add_to_cart` → native `#button-cart`.
+  - `buy` → stash `MtUniCreditProductBuyPreference` (TTL 1800s) + native cart add + redirect checkout.
+- Primary Apply/Submit materializes **one** local OC order via `model_checkout_order->addOrder`, then shared Phase 7 `MtUniCreditControlPanelOrderLifecycleService` (entry_point `product`|`cart`). Cart submit preserves the live cart (`cart_unchanged`).
+
+**Storefront transport**
+
+- Fresh shop cache only; never CP refresh from storefront; fail soft (hide UI / empty widget).
+- CSRF: session `mt_uni_credit_storefront_csrf` (32-byte hex, `hash_equals`).
+- Assets under `catalog/view/theme/default/template/extension/mt_uni_credit/` with guarded `filemtime`.
+- Journal: fragment-local link/script; bounded jQuery wait `50ms × 200`; idempotent `data-mtuc-bound`; namespaced delegated events `.mtuc`.
+- Modal form is moved to `document.body` by JS to avoid nested-form issues when the widget sits inside `#form-product`.
+
+**OCMOD (`install.xml`)**
+
+- Product controller: after `$data['products'] = array();` → load `extension/mt_uni_credit/product/widget`.
+- Product template (theme wildcard, `error="skip"`): after quantity group closing → `{{ mt_uni_credit_product_widget }}` with markers `<!-- mt_uni_credit:product -->`.
+- Cart controller: after `setTitle(heading_title)` → load cart widget.
+- Cart template (theme wildcard, `error="skip"`): before `{{ content_bottom }}</div>` → cart widget + markers.
+- Product Buy payment-method OCMOD: **skipped** (no safe stable anchor across OC3.0.3.x); preference stash only (soft handoff).
+
 ### OC3-ROUTE-001 — Nested catalog API routes
 
 On 3.0.3.9, `Action` resolves `extension/mt_uni_credit/api/shopCache` to file `catalog/controller/extension/mt_uni_credit/api.php`, class `ControllerExtensionMtUniCreditApi`, method `shopCache`. Confirm the same on 3.0.3.6 and 3.0.3.8 before freezing controller split vs shared API controller.

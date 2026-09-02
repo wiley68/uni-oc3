@@ -678,3 +678,38 @@ Inspect only: attempt `state`, `store_id`, `order_id`, `control_panel_order_id`,
 ### Explicit exclusions (Phase 7)
 
 - [ ] No Product/Cart UI, OCMOD, SmartUCF, Process 1/2, EGN, mail, or final Thank You financing UX.
+
+---
+
+## Phase 8 — Product/Cart storefront + OCMOD/Journal (local PASS)
+
+Automated gate: `php tests/phase8_check.php` (no live network).
+
+### Product page
+
+1. [ ] Eligible product (fresh shop cache, supported currency, amount in range) shows `#mt-uni-credit-product-root` with offer buttons.
+2. [ ] Changing quantity/options recalculates via AJAX; financed amount is server-authoritative (`unitWithTax × qty`), not DOM price.
+3. [ ] Modal opens; scheme select updates displays from presenter JSON (no JS calculator math).
+4. [ ] Secondary **Add to cart** triggers native `#button-cart` only — no order created.
+5. [ ] Secondary **Buy** stashes preference + adds to cart + redirects checkout — no order fabricated on Buy.
+6. [ ] Primary Apply → customer form → Submit materializes **one** OC order (`addOrder`) then shared Phase 7 CP lifecycle; cart is not cleared.
+7. [ ] Fresh shop cache only; stale/missing cache hides UI (fail soft).
+8. [ ] Assets load via fragment-local `<link>`/`<script>` with guarded `filemtime` (Journal-compatible).
+
+### Cart page
+
+1. [ ] Eligible cart shows `#mt-uni-credit-cart-root` with `data-hide-secondary=1`.
+2. [ ] Financed amount = live `$this->cart->getTotal()` with CartSchemeResolver intersection.
+3. [ ] Submit preserves live cart (`cart_unchanged`); fingerprint mismatch fails soft.
+4. [ ] Double submit / refresh does not create a second local order for the same operation key.
+
+### OCMOD / themes
+
+1. [ ] Refresh modifications; product + cart anchors match on default theme.
+2. [ ] Journal 3: product widget visible with caches on/off; no duplicate handlers (`data-mtuc-bound`).
+3. [ ] Theme wildcards use `error="skip"`; missing optional theme files do not abort refresh.
+
+### Explicit exclusions (Phase 8)
+
+- [ ] No SmartUCF / Process 1/2 / EGN / email / Thank You / homepage ads (Phase 9+).
+- [ ] Product Buy payment preselect OCMOD skipped (soft session preference only).

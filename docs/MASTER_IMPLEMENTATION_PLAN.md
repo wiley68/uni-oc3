@@ -714,6 +714,8 @@ Phases are intentionally small and sequential. Cursor should receive only one ap
 
 ### Phase 8 — Product and cart storefront flows plus OCMOD/Journal
 
+**Status:** local implementation done (`php tests/phase8_check.php` PASS). STOP GATE (screenshots / compiled OCMOD diff) pending developer approval.
+
 **Objective:** deliver product/cart calculators and submission using shared lifecycle with broad theme compatibility.
 
 **Expected files/components:** module controller/model/views/assets; product/cart services; Product Buy preference; small deterministic `install.xml` operations for required controller/template injections.

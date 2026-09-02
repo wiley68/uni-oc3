@@ -71,7 +71,14 @@ $versionNode = $dom->getElementsByTagName('version')->item(0);
 mtuc1_assert($codeNode && $codeNode->textContent === $identity['code'], 'install.xml code matches fixture');
 mtuc1_assert($versionNode && $versionNode->textContent === $identity['version'], 'install.xml version matches fixture');
 $fileNodes = $dom->getElementsByTagName('file');
-mtuc1_assert($fileNodes->length === 0, 'Phase 1 install.xml has no OCMOD file operations');
+mtuc1_assert($fileNodes->length >= 4, 'Phase 8 install.xml has product+cart OCMOD file operations');
+$installXmlText = (string) $installXml;
+mtuc1_assert(strpos($installXmlText, 'mt_uni_credit:product') !== false, 'install.xml has product marker');
+mtuc1_assert(strpos($installXmlText, 'mt_uni_credit:cart') !== false, 'install.xml has cart marker');
+mtuc1_assert(strpos($installXmlText, '$data[\'products\'] = array();') !== false, 'install.xml product controller anchor');
+mtuc1_assert(strpos($installXmlText, '{{ content_bottom }}</div>') !== false, 'install.xml cart template anchor');
+mtuc1_assert(strpos($installXmlText, 'error="skip"') !== false, 'install.xml theme files use error=skip');
+mtuc1_assert(!preg_match('/<search[^>]*>[^<]*\\.\\*/', $installXmlText), 'install.xml has no broad .* regex in search');
 
 $constantsPath = $root . DIRECTORY_SEPARATOR . 'upload/system/library/mt_uni_credit/constants.php';
 require_once $constantsPath;

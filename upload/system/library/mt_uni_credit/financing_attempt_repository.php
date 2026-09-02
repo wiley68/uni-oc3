@@ -32,7 +32,7 @@ final class MtUniCreditFinancingAttemptRepository
     }
 
     /**
-     * Find or create the single attempt for (store_id, order_id).
+     * Find or create the single attempt for (store_id, order_id) using CHECKOUT entry point.
      *
      * @param int $storeId
      * @param int $orderId
@@ -50,11 +50,44 @@ final class MtUniCreditFinancingAttemptRepository
         $selectionHash,
         $requestFingerprint
     ) {
+        return $this->findOrCreateAttempt(
+            $storeId,
+            $orderId,
+            $unicid,
+            $operationKeyHash,
+            $selectionHash,
+            $requestFingerprint,
+            MtUniCreditOperationEntryPoint::CHECKOUT
+        );
+    }
+
+    /**
+     * Find or create the single attempt for (store_id, order_id).
+     *
+     * @param int $storeId
+     * @param int $orderId
+     * @param string $unicid
+     * @param string $operationKeyHash
+     * @param string $selectionHash
+     * @param string $requestFingerprint
+     * @param string $entryPoint
+     * @return array<string, mixed>
+     */
+    public function findOrCreateAttempt(
+        $storeId,
+        $orderId,
+        $unicid,
+        $operationKeyHash,
+        $selectionHash,
+        $requestFingerprint,
+        $entryPoint
+    ) {
         MtUniCreditStoreScope::requireStoreId($storeId);
         $orderId = (int) $orderId;
         $unicid = trim($unicid);
-        if ($orderId <= 0 || $unicid === '') {
-            throw new MtUniCreditPersistenceValidationException('Checkout attempt requires store, order and UNICID.');
+        $entryPoint = (string) $entryPoint;
+        if ($orderId <= 0 || $unicid === '' || !MtUniCreditOperationEntryPoint::isValid($entryPoint)) {
+            throw new MtUniCreditPersistenceValidationException('Financing attempt requires store, order, UNICID and entry point.');
         }
 
         $existing = $this->findByStoreOrder($storeId, $orderId);
@@ -71,7 +104,7 @@ final class MtUniCreditFinancingAttemptRepository
                     . " `state`, `order_id`, `unicid`, `created_at`, `updated_at`)"
                     . " VALUES ("
                     . (int) $storeId . ","
-                    . " '" . $this->db->escape(MtUniCreditOperationEntryPoint::CHECKOUT) . "',"
+                    . " '" . $this->db->escape($entryPoint) . "',"
                     . " '" . $this->db->escape($operationKeyHash) . "',"
                     . " '" . $this->db->escape($selectionHash) . "',"
                     . " '" . $this->db->escape($requestFingerprint) . "',"

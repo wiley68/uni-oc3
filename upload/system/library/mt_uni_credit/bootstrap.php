@@ -54,6 +54,16 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'checkout_financing_eligibility.php
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'checkout_payment_availability.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'checkout_confirm_preparation.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'checkout_prepared_boundary.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'storefront_asset_urls.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'storefront_csrf.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'product_line.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'oc3_product_line_resolver.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'storefront_operation_identity.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'storefront_calculator_presenter.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'product_buy_preference.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'storefront_order_draft_builder.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'storefront_financing_submission_service.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'storefront_runtime.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'extension_root.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'cp_http_constants.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'cp_exception.php';

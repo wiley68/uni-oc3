@@ -59,7 +59,26 @@ final class MtUniCreditOperationLockRepository
             return true;
         }
 
+        // Re-entrant: same owner already holds a non-expired lock (e.g. storefront + lifecycle).
         $nowSql = $this->db->escape($this->clock->formatUtc($now));
+        $held = $this->db->query(
+            "SELECT `owner_token` FROM `{$table}`"
+                . " WHERE `store_id` = " . (int) $storeId
+                . " AND `entry_point` = '" . $this->db->escape($entryPoint) . "'"
+                . " AND `operation_key_hash` = '" . $this->db->escape($operationKeyHash) . "'"
+                . " AND `expires_at` > '" . $nowSql . "'"
+                . " LIMIT 1"
+        );
+        if (
+            is_object($held)
+            && isset($held->num_rows)
+            && (int) $held->num_rows === 1
+            && isset($held->row['owner_token'])
+            && hash_equals((string) $held->row['owner_token'], $ownerToken)
+        ) {
+            return true;
+        }
+
         $this->db->query(
             "UPDATE `{$table}` SET"
                 . " `owner_token` = '" . $this->db->escape($ownerToken) . "',"

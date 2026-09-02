@@ -79,8 +79,12 @@ $expectedEntries = @(
     'upload/admin/view/image/payment/uni_logo.svg',
     'upload/admin/view/stylesheet/mt_uni_credit_module.css',
     'upload/catalog/controller/extension/payment/mt_uni_credit.php',
+    'upload/catalog/controller/extension/mt_uni_credit/product.php',
+    'upload/catalog/controller/extension/mt_uni_credit/cart.php',
     'upload/catalog/model/extension/payment/mt_uni_credit.php',
     'upload/catalog/view/theme/default/template/extension/payment/mt_uni_credit.twig',
+    'upload/catalog/view/theme/default/template/extension/mt_uni_credit/storefront.js',
+    'upload/catalog/view/theme/default/template/extension/mt_uni_credit/storefront.css',
     'upload/system/library/mt_uni_credit/constants.php',
     'upload/system/library/mt_uni_credit/config/environment.php'
 )

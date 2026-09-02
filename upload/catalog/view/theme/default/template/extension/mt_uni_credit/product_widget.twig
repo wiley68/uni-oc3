@@ -1,0 +1,43 @@
+{% set calc = calculator %}
+<div id="mt-uni-credit-product-root"
+     class="mt-uni-credit-storefront{% if calc.dark_button %} mt-uni-credit-storefront--dark{% endif %}"
+     data-entry-point="product"
+     data-product-id="{{ product_id }}"
+     data-button-action="{{ button_action }}"
+     data-hide-secondary="0"
+     data-csrf="{{ csrf }}"
+     data-route-calculate="{{ route_calculate }}"
+     data-route-submit="{{ route_submit }}"
+     data-route-stash="{{ route_stash }}"
+     data-checkout-url="{{ checkout_url }}"
+     {% if top_spacing > 0 %}data-mtuc-top-spacing="{{ top_spacing }}"{% endif %}
+     data-mtuc-button-width="{{ calc.button_width }}"
+     data-mtuc-button-height="{{ calc.button_height }}">
+  <div class="mt-uni-credit-storefront__calculator" aria-live="polite">
+    {% if calc.heading %}
+      <p class="mt-uni-credit-storefront__heading">{{ calc.heading }}</p>
+    {% else %}
+      <p class="mt-uni-credit-storefront__heading">{{ heading }}</p>
+    {% endif %}
+    <div class="mt-uni-credit-storefront__buttons">
+      {% for offer_type, offer in calc.offers %}
+        <button type="button"
+                class="mt-uni-credit-storefront__button mt-uni-credit-storefront__button--{{ offer_type }}"
+                data-mtuc-offer="{{ offer_type }}"
+                data-preferred-key="{{ offer.preferred_scheme_key }}">
+          <span class="mt-uni-credit-storefront__button-title">{{ heading }}</span>
+          <span class="mt-uni-credit-storefront__button-price" data-mtuc-preferred-price>{{ offer.installment_label }}</span>
+        </button>
+      {% endfor %}
+    </div>
+    <div class="mt-uni-credit-storefront__entry-error" data-mtuc-entry-error role="alert" hidden></div>
+  </div>
+  {{ modal }}
+</div>
+<script type="application/json" data-mtuc-bootstrap>{{ {calculator: calc, entry_point: 'product'}|json_encode }}</script>
+{% if asset_css %}
+<link rel="stylesheet" href="{{ asset_css }}" />
+{% endif %}
+{% if asset_js %}
+<script src="{{ asset_js }}"></script>
+{% endif %}

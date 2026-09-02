@@ -5,4 +5,65 @@
     <version>2.0.2</version>
     <author>Авалон ООД</author>
     <link>https://avalonbg.com</link>
+
+    <!-- Product controller: inject widget HTML via module controller (business logic stays in module). -->
+    <file path="catalog/controller/product/product.php">
+        <operation>
+            <search><![CDATA[$data['products'] = array();]]></search>
+            <add position="after"><![CDATA[
+        // mt_uni_credit:product
+        $data['mt_uni_credit_product_widget'] = $this->load->controller('extension/mt_uni_credit/product/widget');
+            ]]></add>
+        </operation>
+    </file>
+
+    <!--
+      Product template: place widget AFTER quantity form-group closing so markers are stable.
+      Widget HTML still sits inside #form-product on many themes; JS moves the dialog to document.body
+      (nested-form avoidance — same pattern as JET prependTo body).
+    -->
+    <file path="catalog/view/theme/*/template/product/product.twig" error="skip">
+        <operation>
+            <search><![CDATA[
+            {% if minimum > 1 %}
+            <div class="alert alert-info"><i class="fa fa-info-circle"></i> {{ text_minimum }}</div>
+            {% endif %}</div>
+]]></search>
+            <add position="after"><![CDATA[
+            <!-- mt_uni_credit:product -->
+            {{ mt_uni_credit_product_widget }}
+            <!-- /mt_uni_credit:product -->
+]]></add>
+        </operation>
+    </file>
+
+    <!-- Cart controller -->
+    <file path="catalog/controller/checkout/cart.php">
+        <operation>
+            <search><![CDATA[$this->document->setTitle($this->language->get('heading_title'));]]></search>
+            <add position="after"><![CDATA[
+        // mt_uni_credit:cart
+        $data['mt_uni_credit_cart_widget'] = $this->load->controller('extension/mt_uni_credit/cart/widget');
+            ]]></add>
+        </operation>
+    </file>
+
+    <!-- Cart template -->
+    <file path="catalog/view/theme/*/template/checkout/cart.twig" error="skip">
+        <operation>
+            <search><![CDATA[{{ content_bottom }}</div>]]></search>
+            <add position="before"><![CDATA[
+      <!-- mt_uni_credit:cart -->
+      {{ mt_uni_credit_cart_widget }}
+      <!-- /mt_uni_credit:cart -->
+]]></add>
+        </operation>
+    </file>
+
+    <!--
+      Product Buy payment preselect: skipped — no safe stable OCMOD anchor found in
+      catalog/controller/checkout/payment_method.php across OC3.0.3.x without risking
+      broad churn. Preference is stashed in session (MtUniCreditProductBuyPreference);
+      soft handoff only — UniCredit remains selectable via getMethod when eligible.
+    -->
 </modification>

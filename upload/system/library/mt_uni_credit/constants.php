@@ -51,6 +51,14 @@ final class MtUniCreditConstants
 
     const CHECKOUT_SUBMIT_ROUTE = 'extension/payment/mt_uni_credit/submit';
 
+    const PRODUCT_ROUTE = 'extension/mt_uni_credit/product';
+
+    const CART_ROUTE = 'extension/mt_uni_credit/cart';
+
+    const STOREFRONT_ASSET_CSS_RELATIVE = 'catalog/view/theme/default/template/extension/mt_uni_credit/storefront.css';
+
+    const STOREFRONT_ASSET_JS_RELATIVE = 'catalog/view/theme/default/template/extension/mt_uni_credit/storefront.js';
+
     const MODULE_ADMIN_PERMISSION = 'extension/module/mt_uni_credit';
 
     const PAYMENT_ADMIN_PERMISSION = 'extension/payment/mt_uni_credit';

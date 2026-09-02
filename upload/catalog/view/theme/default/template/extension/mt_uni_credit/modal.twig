@@ -1,0 +1,100 @@
+{% set modal_id = entry_point == 'cart' ? 'mt-uni-credit-cart-modal' : 'mt-uni-credit-product-modal' %}
+{% set form_id = entry_point == 'cart' ? 'mt-uni-credit-cart-form' : 'mt-uni-credit-product-form' %}
+<div id="{{ modal_id }}"
+     class="mt-uni-credit-storefront__modal"
+     role="dialog"
+     aria-modal="true"
+     aria-hidden="true"
+     hidden>
+  <div class="mt-uni-credit-storefront__overlay" data-mtuc-dismiss aria-hidden="true"></div>
+  <div class="mt-uni-credit-storefront__dialog" tabindex="-1">
+    <div class="mt-uni-credit-storefront__step mt-uni-credit-storefront__step--active" data-mtuc-step="1">
+      <h2 class="mt-uni-credit-storefront__title">{{ heading }}</h2>
+      <div class="mt-uni-credit-storefront__popup-row">
+        <div class="mt-uni-credit-storefront__label">Цена</div>
+        <div class="mt-uni-credit-storefront__value" data-mtuc-display="price"></div>
+      </div>
+      <div class="mt-uni-credit-storefront__popup-row">
+        <label class="mt-uni-credit-storefront__label">Схема</label>
+        <select class="mt-uni-credit-storefront__select" data-mtuc-schemes></select>
+      </div>
+      <div class="mt-uni-credit-storefront__popup-row" data-mtuc-first-row{% if not calculator.show_first_installment %} hidden{% endif %}>
+        <label class="mt-uni-credit-storefront__label">Първа вноска</label>
+        <input class="mt-uni-credit-storefront__input" data-mtuc-first type="text" inputmode="numeric" value="0" readonly>
+      </div>
+      <div class="mt-uni-credit-storefront__popup-row">
+        <div class="mt-uni-credit-storefront__label">Месечна вноска</div>
+        <div class="mt-uni-credit-storefront__value" data-mtuc-display="monthly"></div>
+      </div>
+      <div class="mt-uni-credit-storefront__popup-row">
+        <div class="mt-uni-credit-storefront__label">Общо</div>
+        <div class="mt-uni-credit-storefront__value" data-mtuc-display="total"></div>
+      </div>
+      <div class="mt-uni-credit-storefront__popup-error" data-mtuc-popup-error role="alert"></div>
+      <div class="mt-uni-credit-storefront__actions">
+        <button type="button" class="mt-uni-credit-storefront__action mt-uni-credit-storefront__action--secondary" data-mtuc-dismiss>{{ text_cancel }}</button>
+        {% if not hide_secondary %}
+        <button type="button" class="mt-uni-credit-storefront__action mt-uni-credit-storefront__action--secondary" data-mtuc-secondary>{{ text_secondary }}</button>
+        {% endif %}
+        <button type="button" class="mt-uni-credit-storefront__action mt-uni-credit-storefront__action--primary" data-mtuc-apply>{{ text_apply }}</button>
+      </div>
+    </div>
+
+    <div class="mt-uni-credit-storefront__step" data-mtuc-step="2" hidden>
+      <h2 class="mt-uni-credit-storefront__title">{{ heading }}</h2>
+      <form id="{{ form_id }}" data-mtuc-form novalidate>
+        <div class="mt-uni-credit-storefront__field">
+          <label>Име</label>
+          <input name="firstname" type="text" value="{{ customer.firstname }}" required autocomplete="given-name">
+        </div>
+        <div class="mt-uni-credit-storefront__field">
+          <label>Фамилия</label>
+          <input name="lastname" type="text" value="{{ customer.lastname }}" required autocomplete="family-name">
+        </div>
+        <div class="mt-uni-credit-storefront__field">
+          <label>Адрес</label>
+          <input name="address_1" type="text" value="{{ customer.address_1 }}" required autocomplete="street-address">
+        </div>
+        <div class="mt-uni-credit-storefront__field">
+          <label>Град</label>
+          <input name="city" type="text" value="{{ customer.city }}" required autocomplete="address-level2">
+        </div>
+        <div class="mt-uni-credit-storefront__field">
+          <label>Пощенски код</label>
+          <input name="postcode" type="text" value="{{ customer.postcode }}" autocomplete="postal-code">
+        </div>
+        <div class="mt-uni-credit-storefront__field">
+          <label>Държава ID</label>
+          <input name="country_id" type="number" value="{{ customer.country_id }}" required>
+        </div>
+        <div class="mt-uni-credit-storefront__field">
+          <label>Област ID</label>
+          <input name="zone_id" type="number" value="{{ customer.zone_id }}" required>
+        </div>
+        <div class="mt-uni-credit-storefront__field">
+          <label>Телефон</label>
+          <input name="telephone" type="tel" value="{{ customer.telephone }}" required autocomplete="tel">
+        </div>
+        <div class="mt-uni-credit-storefront__field">
+          <label>Имейл</label>
+          <input name="email" type="email" value="{{ customer.email }}" required autocomplete="email">
+        </div>
+        <div class="mt-uni-credit-storefront__consent">
+          <label>
+            <input type="checkbox" name="consent" value="1" data-mtuc-consent required>
+            {{ text_consent }}
+          </label>
+        </div>
+        <div class="mt-uni-credit-storefront__submit-error" data-mtuc-submit-error role="alert"></div>
+        <div class="mt-uni-credit-storefront__actions">
+          <button type="button" class="mt-uni-credit-storefront__action mt-uni-credit-storefront__action--secondary" data-mtuc-back>{{ text_back }}</button>
+          <button type="button" class="mt-uni-credit-storefront__action mt-uni-credit-storefront__action--primary" data-mtuc-submit>{{ text_submit }}</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="mt-uni-credit-storefront__processing" data-mtuc-processing hidden>
+      <span>{{ text_processing }}</span>
+    </div>
+  </div>
+</div>

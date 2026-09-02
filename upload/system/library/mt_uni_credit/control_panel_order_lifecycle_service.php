@@ -75,9 +75,14 @@ final class MtUniCreditControlPanelOrderLifecycleService
             );
         }
 
+        $entryPoint = isset($attempt['entry_point']) ? (string) $attempt['entry_point'] : '';
+        if (!MtUniCreditOperationEntryPoint::isValid($entryPoint)) {
+            $entryPoint = MtUniCreditOperationEntryPoint::CHECKOUT;
+        }
+
         if (!$this->locks->acquire(
             $storeId,
-            MtUniCreditOperationEntryPoint::CHECKOUT,
+            $entryPoint,
             $operationKeyHash,
             $lockOwnerToken
         )) {
@@ -92,7 +97,7 @@ final class MtUniCreditControlPanelOrderLifecycleService
         } finally {
             $this->locks->release(
                 $storeId,
-                MtUniCreditOperationEntryPoint::CHECKOUT,
+                $entryPoint,
                 $operationKeyHash,
                 $lockOwnerToken
             );
