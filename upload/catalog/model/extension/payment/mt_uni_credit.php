@@ -145,7 +145,7 @@ class ModelExtensionPaymentMtUniCredit extends Model
             new MtUniCreditOperationLockRepository($db),
             $stack['client'],
             null,
-            MtUniCreditProcess1ServiceFactory::coordinator($db),
+            MtUniCreditProcess1ServiceFactory::coordinator($db, null, null, $stack['client']),
             MtUniCreditProcess1ServiceFactory::bankStatuses($db)
         );
         $service = new MtUniCreditCheckoutFinancingSubmissionService(

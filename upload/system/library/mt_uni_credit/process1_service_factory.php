@@ -9,16 +9,21 @@ final class MtUniCreditProcess1ServiceFactory
      * @param MtUniCreditDbAdapter $db
      * @param object|null $smartUcfClient Optional client double (must expose createSession)
      * @param MtUniCreditPersistenceClock|null $clock
+     * @param MtUniCreditControlPanelClient|null $controlPanelClient
      * @return MtUniCreditSmartUcfSessionCoordinator
      */
-    public static function coordinator(MtUniCreditDbAdapter $db, $smartUcfClient = null, $clock = null)
+    public static function coordinator(MtUniCreditDbAdapter $db, $smartUcfClient = null, $clock = null, $controlPanelClient = null)
     {
         $lifecycle = new MtUniCreditSmartUcfLifecycleRepository($db, $clock);
         $client = $smartUcfClient !== null
             ? $smartUcfClient
             : new MtUniCreditSmartUcfSessionClient();
+        $sync = null;
+        if ($controlPanelClient instanceof MtUniCreditControlPanelClient) {
+            $sync = new MtUniCreditCertificateSynchronizer($controlPanelClient);
+        }
 
-        return new MtUniCreditSmartUcfSessionCoordinator($lifecycle, $client);
+        return new MtUniCreditSmartUcfSessionCoordinator($lifecycle, $client, null, null, null, null, null, $sync);
     }
 
     /**

@@ -14,6 +14,16 @@ $lib = $root . DIRECTORY_SEPARATOR . 'upload' . DIRECTORY_SEPARATOR . 'system' .
 if (!defined('DIR_SYSTEM')) {
     define('DIR_SYSTEM', $root . DIRECTORY_SEPARATOR . 'upload' . DIRECTORY_SEPARATOR . 'system' . DIRECTORY_SEPARATOR);
 }
+if (!defined('DIR_STORAGE')) {
+    $storage = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'mtuc-phase9-storage';
+    if (!is_dir($storage)) {
+        @mkdir($storage, 0770, true);
+    }
+    if (!is_dir($storage . DIRECTORY_SEPARATOR . 'mt_uni_credit')) {
+        @mkdir($storage . DIRECTORY_SEPARATOR . 'mt_uni_credit', 0770, true);
+    }
+    define('DIR_STORAGE', rtrim($storage, '/\\') . DIRECTORY_SEPARATOR);
+}
 if (!defined('DB_PASSWORD')) {
     define('DB_PASSWORD', 'phase4-test-installation-db-password-secret');
 }
@@ -54,6 +64,61 @@ function mtuc9_read_source($path)
     return implode('', $lines);
 }
 
+function mtuc9_cert_fixtures()
+{
+    $dir = __DIR__ . DIRECTORY_SEPARATOR . 'fixtures' . DIRECTORY_SEPARATOR . 'certificates';
+
+    return array(
+        'cert' => mtuc9_read_source($dir . DIRECTORY_SEPARATOR . 'matching_cert.pem'),
+        'key' => mtuc9_read_source($dir . DIRECTORY_SEPARATOR . 'matching_key.pem'),
+        'other_key' => mtuc9_read_source($dir . DIRECTORY_SEPARATOR . 'other_key.pem'),
+        'invalid_cert' => mtuc9_read_source($dir . DIRECTORY_SEPARATOR . 'invalid_cert.pem'),
+    );
+}
+
+function mtuc9_queue_ssl_metadata(Phase4FakeCpHttpTransport $transport, $certPem, $keyPem)
+{
+    $transport->enqueueJson(200, array(
+        'success' => true,
+        'data' => array(
+            'available' => true,
+            'ssl_revision' => 'revision-1',
+            'certificate_sha256' => hash('sha256', (string) $certPem),
+            'private_key_sha256' => hash('sha256', (string) $keyPem),
+        ),
+    ));
+}
+
+function mtuc9_queue_ssl_bundle(Phase4FakeCpHttpTransport $transport, $certPem, $keyPem)
+{
+    $transport->enqueueJson(200, array(
+        'success' => true,
+        'data' => array(
+            'available' => true,
+            'ssl_revision' => 'revision-1',
+            'certificate_sha256' => hash('sha256', (string) $certPem),
+            'private_key_sha256' => hash('sha256', (string) $keyPem),
+            'certificate_pem' => (string) $certPem,
+            'private_key_pem' => (string) $keyPem,
+        ),
+    ));
+}
+
+function mtuc9_count_ssl_bundle_gets(Phase4FakeCpHttpTransport $transport)
+{
+    $count = 0;
+    foreach ($transport->requests as $request) {
+        if (
+            strtoupper((string) $request['method']) === 'GET'
+            && substr((string) $request['url'], -23) === '/ssl/certificate/bundle'
+        ) {
+            $count++;
+        }
+    }
+
+    return $count;
+}
+
 $required = array(
     'smart_ucf_endpoint_policy.php',
     'smart_ucf_session_exception.php',
@@ -67,6 +132,10 @@ $required = array(
     'smart_ucf_session_coordinator.php',
     'certificate_local_paths.php',
     'certificate_pair_validator.php',
+    'certificate_sync_exception.php',
+    'certificate_consumer_lease.php',
+    'certificate_local_store.php',
+    'certificate_synchronizer.php',
     'mtls_private_key_passphrase_provider.php',
     'process1_service_factory.php',
     'bank_status.php',
@@ -385,39 +454,171 @@ mtuc9_assert(
 );
 
 // ---------------------------------------------------------------------------
-// Certificate missing when uni_sertificat=1 → no SmartUCF HTTP; no bank_sent_process1
+// Certificate synchronization contract (OC4 parity adapted for OC3)
 // ---------------------------------------------------------------------------
-$transportCert = new Phase4FakeCpHttpTransport();
-Phase9TestHarness::enqueueCpCreateSuccess($transportCert);
-$stackCert = Phase9TestHarness::stack(
-    $transportCert,
+$fixtures = mtuc9_cert_fixtures();
+
+// A. Empty keys directory => metadata + bundle => pair downloaded, SmartUCF proceeds.
+$transportCertA = new Phase4FakeCpHttpTransport();
+Phase9TestHarness::enqueueCpCreateSuccess($transportCertA);
+mtuc9_queue_ssl_metadata($transportCertA, $fixtures['cert'], $fixtures['key']);
+mtuc9_queue_ssl_bundle($transportCertA, $fixtures['cert'], $fixtures['key']);
+$stackCertA = Phase9TestHarness::stack(
+    $transportCertA,
     null,
     null,
     Phase5TestHarness::STORE_A,
     array('uni_sertificat' => 1)
 );
-$orderCert = 9601;
-Phase9TestHarness::seedBankOrder($stackCert['memoryDb'], $orderCert, $stackCert['storeId']);
-$resultCert = $stackCert['submission']->submit(Phase9TestHarness::submitInput($orderCert, $stackCert['storeId']));
-mtuc9_assert(empty($resultCert['success']), 'missing cert: overall failure');
-mtuc9_assert((int) $resultCert['control_panel_order_id'] === 555001, 'missing cert: CP id preserved');
-mtuc9_assert(Phase9TestHarness::smartUcfCallCount($stackCert['smartUcfProbe']) === 0, 'missing cert: no SmartUCF HTTP call');
+$protectedRootA = MtUniCreditBootstrap::resolveProtectedRoot();
+$protectedRootA = is_string($protectedRootA) && $protectedRootA !== ''
+    ? $protectedRootA
+    : (rtrim(DIR_STORAGE, '/\\') . DIRECTORY_SEPARATOR . 'mt_uni_credit');
+$keysRootA = $protectedRootA . DIRECTORY_SEPARATOR . 'keys';
+if (!is_dir($keysRootA)) {
+    @mkdir($keysRootA, 0770, true);
+}
+$pathsA = new MtUniCreditCertificateLocalPaths(function () use ($protectedRootA) {
+    return $protectedRootA;
+});
+@unlink($pathsA->certificatePath());
+@unlink($pathsA->privateKeyPath());
+$secretsDirA = dirname($pathsA->passphrasePath());
+if (!is_dir($secretsDirA)) {
+    @mkdir($secretsDirA, 0770, true);
+}
+@file_put_contents($pathsA->passphrasePath(), "<?php\nreturn array('passphrase' => 'phase2-fixture-secret');\n");
+@chmod($pathsA->passphrasePath(), 0600);
+$orderCertA = 9601;
+Phase9TestHarness::seedBankOrder($stackCertA['memoryDb'], $orderCertA, $stackCertA['storeId']);
+$resultCertA = $stackCertA['submission']->submit(Phase9TestHarness::submitInput($orderCertA, $stackCertA['storeId']));
+mtuc9_assert(!empty($resultCertA['success']), 'cert sync A: submit succeeds with empty keys');
+mtuc9_assert((int) $resultCertA['control_panel_order_id'] === 555001, 'cert sync A: CP id preserved');
+mtuc9_assert(Phase9TestHarness::smartUcfCallCount($stackCertA['smartUcfProbe']) === 1, 'cert sync A: SmartUCF called');
+mtuc9_assert(is_file($pathsA->certificatePath()) && is_file($pathsA->privateKeyPath()), 'cert sync A: files downloaded');
 mtuc9_assert(
-    Phase9TestHarness::bankStatusId($stackCert, $orderCert) !== MtUniCreditBankStatus::SENT_PROCESS1,
-    'missing cert: no bank_sent_process1'
+    hash_equals(hash('sha256', mtuc9_read_source($pathsA->certificatePath())), hash('sha256', $fixtures['cert'])),
+    'cert sync A: certificate checksum matches metadata'
 );
 mtuc9_assert(
-    Phase9TestHarness::bankStatusId($stackCert, $orderCert) !== MtUniCreditBankStatus::SEND_FAILED_SMARTUCF,
-    'missing cert: no bank_send_failed_smartucf (pre-send)'
+    hash_equals(hash('sha256', mtuc9_read_source($pathsA->privateKeyPath())), hash('sha256', $fixtures['key'])),
+    'cert sync A: private-key checksum matches metadata'
 );
-$attemptCert = $stackCert['attempts']->findByStoreOrder($stackCert['storeId'], $orderCert);
-$smartCert = $attemptCert !== null
-    ? $stackCert['smartUcfLifecycle']->findByAttempt((int) $attemptCert['attempt_id'])
-    : null;
+
+// B. Cert exists, key missing => download full pair.
+$transportCertB = new Phase4FakeCpHttpTransport();
+Phase9TestHarness::enqueueCpCreateSuccess($transportCertB);
+mtuc9_queue_ssl_metadata($transportCertB, $fixtures['cert'], $fixtures['key']);
+mtuc9_queue_ssl_bundle($transportCertB, $fixtures['cert'], $fixtures['key']);
+$stackCertB = Phase9TestHarness::stack($transportCertB, null, null, Phase5TestHarness::STORE_A, array('uni_sertificat' => 1));
+@file_put_contents($pathsA->certificatePath(), $fixtures['cert']);
+@unlink($pathsA->privateKeyPath());
+Phase9TestHarness::seedBankOrder($stackCertB['memoryDb'], 9602, $stackCertB['storeId']);
+$resultCertB = $stackCertB['submission']->submit(Phase9TestHarness::submitInput(9602, $stackCertB['storeId']));
+mtuc9_assert(!empty($resultCertB['success']), 'cert sync B: succeeds when key missing');
+mtuc9_assert(mtuc9_count_ssl_bundle_gets($transportCertB) === 1, 'cert sync B: full bundle downloaded once');
+
+// C. Current pair => metadata only, no bundle download.
+$transportCertC = new Phase4FakeCpHttpTransport();
+Phase9TestHarness::enqueueCpCreateSuccess($transportCertC);
+mtuc9_queue_ssl_metadata($transportCertC, $fixtures['cert'], $fixtures['key']);
+$stackCertC = Phase9TestHarness::stack($transportCertC, null, null, Phase5TestHarness::STORE_A, array('uni_sertificat' => 1));
+@file_put_contents($pathsA->certificatePath(), $fixtures['cert']);
+@file_put_contents($pathsA->privateKeyPath(), $fixtures['key']);
+Phase9TestHarness::seedBankOrder($stackCertC['memoryDb'], 9603, $stackCertC['storeId']);
+$resultCertC = $stackCertC['submission']->submit(Phase9TestHarness::submitInput(9603, $stackCertC['storeId']));
+mtuc9_assert(!empty($resultCertC['success']), 'cert sync C: succeeds with current pair');
+mtuc9_assert(mtuc9_count_ssl_bundle_gets($transportCertC) === 0, 'cert sync C: no bundle download');
+
+// D/E. Certificate or key checksum changed => bundle download and replace pair.
+$transportCertD = new Phase4FakeCpHttpTransport();
+Phase9TestHarness::enqueueCpCreateSuccess($transportCertD);
+mtuc9_queue_ssl_metadata($transportCertD, $fixtures['cert'], $fixtures['key']);
+mtuc9_queue_ssl_bundle($transportCertD, $fixtures['cert'], $fixtures['key']);
+$stackCertD = Phase9TestHarness::stack($transportCertD, null, null, Phase5TestHarness::STORE_A, array('uni_sertificat' => 1));
+@file_put_contents($pathsA->certificatePath(), $fixtures['cert'] . "\n");
+@file_put_contents($pathsA->privateKeyPath(), $fixtures['key']);
+Phase9TestHarness::seedBankOrder($stackCertD['memoryDb'], 9604, $stackCertD['storeId']);
+$resultCertD = $stackCertD['submission']->submit(Phase9TestHarness::submitInput(9604, $stackCertD['storeId']));
+mtuc9_assert(!empty($resultCertD['success']), 'cert sync D: cert checksum drift refreshes');
+mtuc9_assert(mtuc9_count_ssl_bundle_gets($transportCertD) === 1, 'cert sync D: bundle download = 1');
+
+$transportCertE = new Phase4FakeCpHttpTransport();
+Phase9TestHarness::enqueueCpCreateSuccess($transportCertE);
+mtuc9_queue_ssl_metadata($transportCertE, $fixtures['cert'], $fixtures['key']);
+mtuc9_queue_ssl_bundle($transportCertE, $fixtures['cert'], $fixtures['key']);
+$stackCertE = Phase9TestHarness::stack($transportCertE, null, null, Phase5TestHarness::STORE_A, array('uni_sertificat' => 1));
+@file_put_contents($pathsA->certificatePath(), $fixtures['cert']);
+@file_put_contents($pathsA->privateKeyPath(), $fixtures['key'] . "\n");
+Phase9TestHarness::seedBankOrder($stackCertE['memoryDb'], 9605, $stackCertE['storeId']);
+$resultCertE = $stackCertE['submission']->submit(Phase9TestHarness::submitInput(9605, $stackCertE['storeId']));
+mtuc9_assert(!empty($resultCertE['success']), 'cert sync E: key checksum drift refreshes');
+mtuc9_assert(mtuc9_count_ssl_bundle_gets($transportCertE) === 1, 'cert sync E: bundle download = 1');
+
+// F/G/H/J: invalid bundle, mismatch, missing passphrase, metadata transient without pair => no SmartUCF call.
+$transportCertF = new Phase4FakeCpHttpTransport();
+Phase9TestHarness::enqueueCpCreateSuccess($transportCertF);
+mtuc9_queue_ssl_metadata($transportCertF, $fixtures['cert'], $fixtures['key']);
+mtuc9_queue_ssl_bundle($transportCertF, $fixtures['invalid_cert'], $fixtures['key']);
+$stackCertF = Phase9TestHarness::stack($transportCertF, null, null, Phase5TestHarness::STORE_A, array('uni_sertificat' => 1));
+@unlink($pathsA->certificatePath());
+@unlink($pathsA->privateKeyPath());
+Phase9TestHarness::seedBankOrder($stackCertF['memoryDb'], 9606, $stackCertF['storeId']);
+$resultCertF = $stackCertF['submission']->submit(Phase9TestHarness::submitInput(9606, $stackCertF['storeId']));
+mtuc9_assert(empty($resultCertF['success']), 'cert sync F: invalid downloaded cert fails');
+mtuc9_assert(Phase9TestHarness::smartUcfCallCount($stackCertF['smartUcfProbe']) === 0, 'cert sync F: no SmartUCF call');
+
+$transportCertG = new Phase4FakeCpHttpTransport();
+Phase9TestHarness::enqueueCpCreateSuccess($transportCertG);
+mtuc9_queue_ssl_metadata($transportCertG, $fixtures['cert'], $fixtures['key']);
+mtuc9_queue_ssl_bundle($transportCertG, $fixtures['cert'], $fixtures['other_key']);
+$stackCertG = Phase9TestHarness::stack($transportCertG, null, null, Phase5TestHarness::STORE_A, array('uni_sertificat' => 1));
+Phase9TestHarness::seedBankOrder($stackCertG['memoryDb'], 9607, $stackCertG['storeId']);
+$resultCertG = $stackCertG['submission']->submit(Phase9TestHarness::submitInput(9607, $stackCertG['storeId']));
+mtuc9_assert(empty($resultCertG['success']), 'cert sync G: mismatched cert/key fails');
+mtuc9_assert(Phase9TestHarness::smartUcfCallCount($stackCertG['smartUcfProbe']) === 0, 'cert sync G: no SmartUCF call');
+
+@unlink($pathsA->passphrasePath());
+$transportCertH = new Phase4FakeCpHttpTransport();
+Phase9TestHarness::enqueueCpCreateSuccess($transportCertH);
+$stackCertH = Phase9TestHarness::stack($transportCertH, null, null, Phase5TestHarness::STORE_A, array('uni_sertificat' => 1));
+Phase9TestHarness::seedBankOrder($stackCertH['memoryDb'], 9608, $stackCertH['storeId']);
+$resultCertH = $stackCertH['submission']->submit(Phase9TestHarness::submitInput(9608, $stackCertH['storeId']));
+mtuc9_assert(empty($resultCertH['success']), 'cert sync H: missing passphrase fails deterministically');
+mtuc9_assert(Phase9TestHarness::smartUcfCallCount($stackCertH['smartUcfProbe']) === 0, 'cert sync H: no SmartUCF call');
+@file_put_contents($pathsA->passphrasePath(), "<?php\nreturn array('passphrase' => 'phase2-fixture-secret');\n");
+@chmod($pathsA->passphrasePath(), 0600);
+
+$transportCertJ = new Phase4FakeCpHttpTransport();
+Phase9TestHarness::enqueueCpCreateSuccess($transportCertJ);
+$transportCertJ->enqueueJson(503, array('success' => false, 'error' => 'temporarily_unavailable'));
+$stackCertJ = Phase9TestHarness::stack($transportCertJ, null, null, Phase5TestHarness::STORE_A, array('uni_sertificat' => 1));
+@unlink($pathsA->certificatePath());
+@unlink($pathsA->privateKeyPath());
+Phase9TestHarness::seedBankOrder($stackCertJ['memoryDb'], 9609, $stackCertJ['storeId']);
+$resultCertJ = $stackCertJ['submission']->submit(Phase9TestHarness::submitInput(9609, $stackCertJ['storeId']));
+mtuc9_assert(empty($resultCertJ['success']), 'cert sync J: metadata transient + no local pair fails');
+mtuc9_assert(Phase9TestHarness::smartUcfCallCount($stackCertJ['smartUcfProbe']) === 0, 'cert sync J: no SmartUCF call');
+
+// I. Metadata transient + valid local pair => fail-open use local pair.
+$transportCertI = new Phase4FakeCpHttpTransport();
+Phase9TestHarness::enqueueCpCreateSuccess($transportCertI);
+$transportCertI->enqueueJson(503, array('success' => false, 'error' => 'temporarily_unavailable'));
+$stackCertI = Phase9TestHarness::stack($transportCertI, null, null, Phase5TestHarness::STORE_A, array('uni_sertificat' => 1));
+@file_put_contents($pathsA->certificatePath(), $fixtures['cert']);
+@file_put_contents($pathsA->privateKeyPath(), $fixtures['key']);
+Phase9TestHarness::seedBankOrder($stackCertI['memoryDb'], 9610, $stackCertI['storeId']);
+$resultCertI = $stackCertI['submission']->submit(Phase9TestHarness::submitInput(9610, $stackCertI['storeId']));
+mtuc9_assert(!empty($resultCertI['success']), 'cert sync I: metadata transient + valid local pair proceeds');
+mtuc9_assert(Phase9TestHarness::smartUcfCallCount($stackCertI['smartUcfProbe']) === 1, 'cert sync I: SmartUCF proceeds with local pair');
+
+// No bank_sent_process1 on sync/pre-call failure paths.
 mtuc9_assert(
-    $smartCert !== null
-        && (string) $smartCert['smartucf_error_class'] === MtUniCreditSmartUcfSessionCoordinator::ERROR_CERTIFICATE_INVALID,
-    'missing cert: smartucf_certificate_invalid'
+    Phase9TestHarness::bankStatusId($stackCertF, 9606) !== MtUniCreditBankStatus::SENT_PROCESS1
+        && Phase9TestHarness::bankStatusId($stackCertG, 9607) !== MtUniCreditBankStatus::SENT_PROCESS1
+        && Phase9TestHarness::bankStatusId($stackCertH, 9608) !== MtUniCreditBankStatus::SENT_PROCESS1
+        && Phase9TestHarness::bankStatusId($stackCertJ, 9609) !== MtUniCreditBankStatus::SENT_PROCESS1,
+    'cert sync failures: no bank_sent_process1 before SmartUCF'
 );
 
 // ---------------------------------------------------------------------------
@@ -500,6 +701,10 @@ $phase9Files = array(
     'smart_ucf_session_coordinator.php',
     'certificate_local_paths.php',
     'certificate_pair_validator.php',
+    'certificate_sync_exception.php',
+    'certificate_consumer_lease.php',
+    'certificate_local_store.php',
+    'certificate_synchronizer.php',
     'mtls_private_key_passphrase_provider.php',
     'process1_service_factory.php',
     'bank_status.php',

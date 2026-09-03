@@ -9,6 +9,7 @@
 final class MtUniCreditSmartUcfSessionCoordinator
 {
     const ERROR_CERTIFICATE_INVALID = 'smartucf_certificate_invalid';
+    const ERROR_CREDENTIALS_SYNC_FAILED = 'smartucf_credentials_sync_failed';
 
     const CUSTOMER_OUTCOME_UNKNOWN =
     'Поръчката е създадена, но потвърждението от банковата система не беше получено. Не изпращайте заявката повторно.';
@@ -37,6 +38,9 @@ final class MtUniCreditSmartUcfSessionCoordinator
     /** @var MtUniCreditSmartUcfPayloadBuilder */
     private $payloadBuilder;
 
+    /** @var MtUniCreditCertificateSynchronizer|null */
+    private $certificateSynchronizer;
+
     /** @var MtUniCreditPhase9LifecycleLog|null */
     private $phase9Log;
 
@@ -63,6 +67,7 @@ final class MtUniCreditSmartUcfSessionCoordinator
      * @param MtUniCreditMtlsPrivateKeyPassphraseProvider|null $passphrases
      * @param MtUniCreditCertificatePairValidator|null $certificateValidator
      * @param MtUniCreditSmartUcfPayloadBuilder|null $payloadBuilder
+     * @param MtUniCreditCertificateSynchronizer|null $certificateSynchronizer
      */
     public function __construct(
         MtUniCreditSmartUcfLifecycleRepository $lifecycle,
@@ -71,7 +76,8 @@ final class MtUniCreditSmartUcfSessionCoordinator
         $certificatePaths = null,
         $passphrases = null,
         $certificateValidator = null,
-        $payloadBuilder = null
+        $payloadBuilder = null,
+        $certificateSynchronizer = null
     ) {
         if (!is_object($client) || !method_exists($client, 'createSession')) {
             throw new InvalidArgumentException('SmartUCF client must provide createSession().');
@@ -93,6 +99,9 @@ final class MtUniCreditSmartUcfSessionCoordinator
         $this->payloadBuilder = $payloadBuilder instanceof MtUniCreditSmartUcfPayloadBuilder
             ? $payloadBuilder
             : new MtUniCreditSmartUcfPayloadBuilder();
+        $this->certificateSynchronizer = $certificateSynchronizer instanceof MtUniCreditCertificateSynchronizer
+            ? $certificateSynchronizer
+            : null;
         $this->phase9Log = null;
     }
 
@@ -169,15 +178,39 @@ final class MtUniCreditSmartUcfSessionCoordinator
         $certPath = null;
         $keyPath = null;
         $passphrase = '';
+        $lease = null;
         if (MtUniCreditShopConfigurationFlags::usesSmartUcfCertificate($shop)) {
             try {
-                $certPath = $this->certificatePaths->certificatePath();
-                $keyPath = $this->certificatePaths->privateKeyPath();
-                $passphrase = $this->passphrases->requirePassphrase($this->certificatePaths->passphrasePath());
-                $validation = $this->certificateValidator->validate($certPath, $keyPath, $passphrase);
-                if (empty($validation['ok'])) {
-                    throw new RuntimeException('SmartUCF certificate pair validation failed.');
+                if ($this->certificateSynchronizer instanceof MtUniCreditCertificateSynchronizer) {
+                    $lease = $this->certificateSynchronizer->ensureCurrent();
+                    $certPath = $lease->certificatePath();
+                    $keyPath = $lease->privateKeyPath();
+                    $passphrase = $lease->password();
+                } else {
+                    $certPath = $this->certificatePaths->certificatePath();
+                    $keyPath = $this->certificatePaths->privateKeyPath();
+                    $passphrase = $this->passphrases->requirePassphrase($this->certificatePaths->passphrasePath());
+                    $validation = $this->certificateValidator->validate($certPath, $keyPath, $passphrase);
+                    if (empty($validation['ok'])) {
+                        throw new RuntimeException('SmartUCF certificate pair validation failed.');
+                    }
                 }
+            } catch (MtUniCreditCertificateSyncException $exception) {
+                $errorClass = self::ERROR_CREDENTIALS_SYNC_FAILED . ':' . $exception->reason();
+                $this->logEvent(MtUniCreditPhase9LifecycleLog::EVENT_SMARTUCF_RESULT, array(
+                    'kind' => 'failed',
+                    'error_class' => $errorClass,
+                ));
+                try {
+                    $this->lifecycle->markFailed($attemptId, $errorClass, true);
+                } catch (Throwable $ignored) {
+                }
+
+                return MtUniCreditSmartUcfCoordinationResult::failed(
+                    self::CUSTOMER_FAILED,
+                    true,
+                    $errorClass
+                );
             } catch (Throwable $exception) {
                 try {
                     $this->lifecycle->markFailed($attemptId, self::ERROR_CERTIFICATE_INVALID, true);
@@ -230,7 +263,14 @@ final class MtUniCreditSmartUcfSessionCoordinator
                 $passphrase
             );
         } catch (Throwable $exception) {
+            if ($lease instanceof MtUniCreditCertificateConsumerLease) {
+                $lease->release();
+            }
             return $this->handleFailure($attemptId, $storeId, $localOrderId, $exception, $bankStatuses);
+        }
+
+        if ($lease instanceof MtUniCreditCertificateConsumerLease) {
+            $lease->release();
         }
 
         try {

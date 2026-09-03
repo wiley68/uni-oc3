@@ -138,7 +138,7 @@ final class MtUniCreditStorefrontRuntime
             $locks,
             $stack['client'],
             null,
-            MtUniCreditProcess1ServiceFactory::coordinator($db),
+            MtUniCreditProcess1ServiceFactory::coordinator($db, null, null, $stack['client']),
             MtUniCreditProcess1ServiceFactory::bankStatuses($db)
         );
 

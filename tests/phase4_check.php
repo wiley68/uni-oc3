@@ -378,6 +378,9 @@ $packageScript = (string) file_get_contents($root . DIRECTORY_SEPARATOR . 'scrip
 mtuc4_assert(strpos($packageScript, 'upload/system/library/mt_uni_credit/config/environment.php') !== false, 'package script expects extension-owned environment.php');
 mtuc4_assert(strpos($packageScript, 'forbiddenEntries') !== false, 'package script forbids old config path');
 mtuc4_assert(strpos($packageScript, "'upload/config/environment.php'") !== false, 'package script lists forbidden upload/config/environment.php');
+mtuc4_assert(strpos($packageScript, 'upload/system/library/mt_uni_credit/keys/.htaccess') !== false, 'package script expects keys directory protection');
+mtuc4_assert(strpos($packageScript, 'upload/system/library/mt_uni_credit/secrets/.htaccess') !== false, 'package script expects secrets directory protection');
+mtuc4_assert(strpos($packageScript, "'upload/system/library/mt_uni_credit/secrets/smartucf-key.php'") !== false, 'package script expects packaged smartucf-key.php placeholder');
 
 $packagePath = $root . DIRECTORY_SEPARATOR . 'dist' . DIRECTORY_SEPARATOR . 'CC_OpenCartv.3.x_UNI_v.2.0.2.ocmod.zip';
 if (is_file($packagePath)) {
@@ -386,6 +389,13 @@ if (is_file($packagePath)) {
     if ($zip->status === ZipArchive::ER_OK || $zip->numFiles > 0) {
         mtuc4_assert($zip->locateName('upload/system/library/mt_uni_credit/config/environment.php') !== false, 'package contains extension-owned environment.php');
         mtuc4_assert($zip->locateName('upload/config/environment.php') === false, 'package lacks old upload/config/environment.php');
+        mtuc4_assert($zip->locateName('upload/system/library/mt_uni_credit/keys/.htaccess') !== false, 'package contains keys/.htaccess');
+        mtuc4_assert($zip->locateName('upload/system/library/mt_uni_credit/keys/index.php') !== false, 'package contains keys/index.php');
+        mtuc4_assert($zip->locateName('upload/system/library/mt_uni_credit/secrets/.htaccess') !== false, 'package contains secrets/.htaccess');
+        mtuc4_assert($zip->locateName('upload/system/library/mt_uni_credit/secrets/index.php') !== false, 'package contains secrets/index.php');
+        mtuc4_assert($zip->locateName('upload/system/library/mt_uni_credit/keys/avalon_cert.pem') === false, 'package excludes live certificate pem');
+        mtuc4_assert($zip->locateName('upload/system/library/mt_uni_credit/keys/avalon_private_key.pem') === false, 'package excludes live private key pem');
+        mtuc4_assert($zip->locateName('upload/system/library/mt_uni_credit/secrets/smartucf-key.php') !== false, 'package contains smartucf-key.php placeholder');
         $zip->close();
     }
 }

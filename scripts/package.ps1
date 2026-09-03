@@ -92,12 +92,19 @@ $expectedEntries = @(
     'upload/catalog/view/theme/default/template/extension/mt_uni_credit/image/uni_mini_logo.png',
     'upload/catalog/view/theme/default/template/extension/mt_uni_credit/image/popup-calc-bg.png',
     'upload/system/library/mt_uni_credit/constants.php',
-    'upload/system/library/mt_uni_credit/config/environment.php'
+    'upload/system/library/mt_uni_credit/config/environment.php',
+    'upload/system/library/mt_uni_credit/keys/.htaccess',
+    'upload/system/library/mt_uni_credit/keys/index.php',
+    'upload/system/library/mt_uni_credit/secrets/.htaccess',
+    'upload/system/library/mt_uni_credit/secrets/index.php',
+    'upload/system/library/mt_uni_credit/secrets/smartucf-key.php'
 )
 $forbiddenEntries = @(
     'upload/config/environment.php',
     'upload/catalog/view/image/mt_uni_credit/uni_logo.svg',
-    'upload/catalog/view/image/mt_uni_credit/uni_logo_red.svg'
+    'upload/catalog/view/image/mt_uni_credit/uni_logo_red.svg',
+    'upload/system/library/mt_uni_credit/keys/avalon_cert.pem',
+    'upload/system/library/mt_uni_credit/keys/avalon_private_key.pem'
 )
 $zipRead = [System.IO.Compression.ZipFile]::OpenRead($OutputPath)
 try {

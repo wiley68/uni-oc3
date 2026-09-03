@@ -20,6 +20,38 @@ final class MtUniCreditHealth
 
         $protectedRoot = isset($context['protected_root']) ? $context['protected_root'] : MtUniCreditBootstrap::resolveProtectedRoot();
         $paths = MtUniCreditBootstrap::deploymentRelativePaths($protectedRoot);
+        $material = MtUniCreditDeploymentPaths::materialPaths($protectedRoot);
+        $keysDir = isset($material['certificate_absolute']) ? dirname((string) $material['certificate_absolute']) : '';
+        $keysWritable = $keysDir !== '' && is_dir($keysDir) && is_writable($keysDir);
+        $passphrasePath = isset($material['passphrase_absolute']) && $material['passphrase_absolute'] !== ''
+            ? (string) $material['passphrase_absolute']
+            : (isset($paths['protected_root']) && $paths['protected_root'] !== ''
+                ? rtrim((string) $paths['protected_root'], '/\\') . DIRECTORY_SEPARATOR . MtUniCreditConstants::RELATIVE_PASSPHRASE
+                : MtUniCreditExtensionRoot::path() . DIRECTORY_SEPARATOR . MtUniCreditConstants::RELATIVE_PASSPHRASE);
+        $passphrases = new MtUniCreditMtlsPrivateKeyPassphraseProvider();
+        $passphraseConfigured = true;
+        try {
+            $passphrases->requirePassphrase($passphrasePath);
+        } catch (Exception $exception) {
+            $passphraseConfigured = false;
+        }
+        $pairValid = false;
+        if (
+            isset($material['certificate_absolute']) && isset($material['private_key_absolute'])
+            && $material['certificate_absolute'] !== '' && $material['private_key_absolute'] !== '' && $passphraseConfigured
+        ) {
+            try {
+                $validator = new MtUniCreditCertificatePairValidator();
+                $validation = $validator->validate(
+                    (string) $material['certificate_absolute'],
+                    (string) $material['private_key_absolute'],
+                    $passphrases->requirePassphrase($passphrasePath)
+                );
+                $pairValid = !empty($validation['ok']);
+            } catch (Exception $exception) {
+                $pairValid = false;
+            }
+        }
 
         $checks = array(
             self::buildCheck(
@@ -63,6 +95,11 @@ final class MtUniCreditHealth
                 self::filePresenceDetail($protectedRoot, MtUniCreditConstants::RELATIVE_PASSPHRASE)
             ),
             self::buildCheck(
+                'passphrase_configured',
+                $passphraseConfigured ? MtUniCreditConstants::HEALTH_READY : MtUniCreditConstants::HEALTH_WARNING,
+                $passphraseConfigured ? 'configured' : 'missing/invalid'
+            ),
+            self::buildCheck(
                 'certificate_file',
                 self::filePresenceStatus($protectedRoot, MtUniCreditConstants::RELATIVE_CERTIFICATE),
                 self::filePresenceDetail($protectedRoot, MtUniCreditConstants::RELATIVE_CERTIFICATE)
@@ -71,6 +108,16 @@ final class MtUniCreditHealth
                 'private_key_file',
                 self::filePresenceStatus($protectedRoot, MtUniCreditConstants::RELATIVE_PRIVATE_KEY),
                 self::filePresenceDetail($protectedRoot, MtUniCreditConstants::RELATIVE_PRIVATE_KEY)
+            ),
+            self::buildCheck(
+                'keys_directory_writable',
+                $keysWritable ? MtUniCreditConstants::HEALTH_READY : MtUniCreditConstants::HEALTH_WARNING,
+                $keysWritable ? 'writable' : 'not writable or missing'
+            ),
+            self::buildCheck(
+                'certificate_pair_valid',
+                $pairValid ? MtUniCreditConstants::HEALTH_READY : MtUniCreditConstants::HEALTH_WARNING,
+                $pairValid ? 'valid' : 'not validated'
             ),
             self::buildCheck(
                 'cp_credentials',

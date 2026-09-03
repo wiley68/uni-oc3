@@ -46,7 +46,7 @@ final class Phase7TestHarness
                 );
             }
         );
-        $process1 = MtUniCreditProcess1ServiceFactory::coordinator($db, $smartUcfClient, $clock);
+        $process1 = MtUniCreditProcess1ServiceFactory::coordinator($db, $smartUcfClient, $clock, $services['client']);
         $bankStatuses = MtUniCreditProcess1ServiceFactory::bankStatuses($db, $clock);
         $lifecycle = new MtUniCreditControlPanelOrderLifecycleService(
             $attempts,

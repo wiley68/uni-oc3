@@ -141,6 +141,59 @@ final class MtUniCreditControlPanelClient
     }
 
     /**
+     * @return array{
+     *   available: bool,
+     *   ssl_revision: string,
+     *   certificate_sha256: string,
+     *   private_key_sha256: string,
+     *   not_before: string,
+     *   not_after: string
+     * }
+     */
+    public function getSslCertificateMetadata()
+    {
+        $response = $this->authenticatedRequest('GET', '/ssl/certificate');
+        $data = isset($response['data']) ? $response['data'] : null;
+        if (!is_array($data)) {
+            throw new MtUniCreditCpInvalidPayloadException('The Control Panel SSL metadata response has no data object.');
+        }
+
+        return $this->normalizeSslMetadata($data);
+    }
+
+    /**
+     * @return array{
+     *   available: bool,
+     *   ssl_revision: string,
+     *   certificate_sha256: string,
+     *   private_key_sha256: string,
+     *   not_before: string,
+     *   not_after: string,
+     *   certificate_pem: string,
+     *   private_key_pem: string
+     * }
+     */
+    public function downloadSslCertificateBundle()
+    {
+        $response = $this->authenticatedRequest('GET', '/ssl/certificate/bundle');
+        $data = isset($response['data']) ? $response['data'] : null;
+        if (!is_array($data)) {
+            throw new MtUniCreditCpInvalidPayloadException('The Control Panel SSL bundle response has no data object.');
+        }
+        foreach (array('certificate_pem', 'private_key_pem', 'certificate_sha256', 'private_key_sha256') as $field) {
+            if (!isset($data[$field]) || !is_string($data[$field]) || trim((string) $data[$field]) === '') {
+                throw new MtUniCreditCpInvalidPayloadException('The Control Panel SSL bundle is missing required fields.');
+            }
+        }
+        $metadata = $this->normalizeSslMetadata(array_merge($data, array('available' => true)));
+
+        return array_merge($metadata, array(
+            'certificate_pem' => (string) $data['certificate_pem'],
+            'private_key_pem' => (string) $data['private_key_pem'],
+        ));
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function createOrder(array $order)
@@ -287,6 +340,42 @@ final class MtUniCreditControlPanelClient
         }
 
         return is_array($decoded) ? $decoded : array();
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @return array{
+     *   available: bool,
+     *   ssl_revision: string,
+     *   certificate_sha256: string,
+     *   private_key_sha256: string,
+     *   not_before: string,
+     *   not_after: string
+     * }
+     */
+    private function normalizeSslMetadata(array $data)
+    {
+        $available = !empty($data['available']);
+        $certificateHash = strtolower(trim((string) (isset($data['certificate_sha256']) ? $data['certificate_sha256'] : '')));
+        $privateKeyHash = strtolower(trim((string) (isset($data['private_key_sha256']) ? $data['private_key_sha256'] : '')));
+        if (
+            $available
+            && (
+                !preg_match('/^[a-f0-9]{64}$/', $certificateHash)
+                || !preg_match('/^[a-f0-9]{64}$/', $privateKeyHash)
+            )
+        ) {
+            throw new MtUniCreditCpInvalidPayloadException('The Control Panel SSL metadata hashes are invalid.');
+        }
+
+        return array(
+            'available' => $available,
+            'ssl_revision' => (string) (isset($data['ssl_revision']) ? $data['ssl_revision'] : ''),
+            'certificate_sha256' => $certificateHash,
+            'private_key_sha256' => $privateKeyHash,
+            'not_before' => isset($data['not_before']) ? (string) $data['not_before'] : '',
+            'not_after' => isset($data['not_after']) ? (string) $data['not_after'] : '',
+        );
     }
 
     /**

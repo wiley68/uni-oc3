@@ -99,6 +99,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'smart_ucf_lifecycle_repository.php
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'certificate_local_paths.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'mtls_private_key_passphrase_provider.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'certificate_pair_validator.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'certificate_sync_exception.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'certificate_consumer_lease.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'certificate_local_store.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'certificate_synchronizer.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'smart_ucf_session_coordinator.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'process1_service_factory.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'shop_process_context.php';
