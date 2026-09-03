@@ -39,8 +39,12 @@ final class MtUniCreditStorefrontRuntime
                 MtUniCreditConstants::STOREFRONT_LOGO_ALTERNATIVE_RELATIVE
             ),
             'badge' => MtUniCreditStorefrontAssetUrls::versionedUrl(
-                $baseFs . 'image' . DIRECTORY_SEPARATOR . 'uni_apply_badge.svg',
+                $baseFs . 'image' . DIRECTORY_SEPARATOR . 'uni_mini_logo.png',
                 MtUniCreditConstants::STOREFRONT_APPLY_BADGE_RELATIVE
+            ),
+            'popup_calc_bg' => MtUniCreditStorefrontAssetUrls::versionedUrl(
+                $baseFs . 'image' . DIRECTORY_SEPARATOR . 'popup-calc-bg.png',
+                MtUniCreditConstants::STOREFRONT_POPUP_CALC_BG_RELATIVE
             ),
         );
     }

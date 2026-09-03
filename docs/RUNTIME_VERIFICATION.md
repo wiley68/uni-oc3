@@ -808,20 +808,24 @@ Test Product and Cart separately after hard-refresh.
 
 1. [ ] Title: **Избор на схема за лизинг**.
 2. [ ] Asymmetric frame `border-radius: 14.5px 14.5px 80px 14.5px`.
-3. [ ] Eight rows: цена/стойност, месеци, първоначална вноска, заем, вноска, обща дължима, ГЛП, ГПР.
-4. [ ] EUR labels use **евро**; BGN use **лв.**; first-installment **input remains numeric-only**.
-5. [ ] Labels black; values red (`#ed1c24`).
-6. [ ] Change months / first installment → dependent figures update via server recalculate (no second JS calculator).
+3. [ ] Left watermark `popup-calc-bg.png` visible inside the calc frame.
+4. [ ] Row spacing comfortable (~12px); eight rows present.
+5. [ ] EUR labels use **евро**; BGN use **лв.**; first-installment **input remains numeric-only**.
+6. [ ] Labels black; values red (`#ed1c24`).
+7. [ ] First-button dropdown lists **all** eligible schemes (standard + promo non-zero + promo 0%), ordered months ASC then standard → nonzero → zero; same-month options stay distinct.
+8. [ ] Opening from first button whose preferred is e.g. `12 месеца - промо компютри` initially selects that **identity**, not plain `12 месеца`.
+9. [ ] Opening from dedicated 0% button lists **only** 0% promo schemes.
+10. [ ] Changing `12 месеца` → `12 месеца - промо компютри` recalculates financials (months unchanged).
 
 #### Footer
 
 1. [ ] Left: **Отказ** + **Добави в количката** / **Купи** (Product); Cart has no invent Add-to-Cart secondary.
-2. [ ] Right: **Кандидатствай** with Apply badge image (`uni_apply_badge.svg`).
+2. [ ] Right: **Кандидатствай** with correct `uni_mini_logo.png` badge (OC4 position).
 3. [ ] Cancel closes popup only (no order / CP side effect).
 
 #### Transition
 
-1. [ ] Apply → OC4-like `hidden` + `__step--active` switch to existing Step 2 form; no page reload; focus moves into Step 2.
+1. [ ] Apply → opacity transition-out Step 1 → transition-in Step 2 (`hidden` + `__step--active`); focus moves into Step 2; no reload.
 2. [ ] Step 2 visual parity is **not** evaluated in this closure.
 
 ### Explicit exclusions (Phase 8)

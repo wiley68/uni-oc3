@@ -213,55 +213,121 @@
       }
       $.each(offer.schemes, function (_, scheme) {
         var selected = scheme.key === selectedSchemeKey ? " selected" : "";
+        var label = scheme.label;
+        if (!label) {
+          label = scheme.months + " месеца";
+          if (scheme.description) {
+            label += " - " + scheme.description;
+          }
+        }
         $select.append(
           '<option value="' +
             scheme.key +
             '"' +
             selected +
             ">" +
-            scheme.months +
-            " месеца\u00A0\u00A0\u00A0</option>",
+            label +
+            "\u00A0\u00A0\u00A0</option>",
         );
       });
       if (!selectedSchemeKey && offer.preferred_scheme_key) {
         selectedSchemeKey = offer.preferred_scheme_key;
-        $select.val(selectedSchemeKey);
       }
+      $select.val(selectedSchemeKey);
       fillDisplays(findScheme(offer.schemes, selectedSchemeKey));
     }
 
-    function setStep(step) {
-      $modal
-        .find("[data-mtuc-step]")
-        .attr("hidden", true)
-        .removeClass("mt-uni-credit-storefront__step--active");
-      $modal
-        .find('[data-mtuc-step="' + step + '"]')
-        .removeAttr("hidden")
-        .addClass("mt-uni-credit-storefront__step--active");
-      if (step === 2) {
-        window.setTimeout(function () {
-          $modal
-            .find("[data-mtuc-form]")
-            .find("input, select, textarea")
-            .filter(":visible")
-            .first()
-            .trigger("focus");
-        }, 0);
-      }
+    function focusStep2Field() {
+      window.setTimeout(function () {
+        $modal
+          .find("[data-mtuc-form]")
+          .find("input, select, textarea")
+          .filter(":visible")
+          .first()
+          .trigger("focus");
+      }, 0);
     }
 
-    function openModal(offerType) {
+    /**
+     * OC4 contract: toggle [hidden] + __step--active, then focus Step 2.
+     * Visual transition uses short opacity fade (Jet/UniCredit family hide/show('slow')
+     * rhythm) while keeping OC4 class/hidden sequencing — no hard flash.
+     */
+    function setStep(step, options) {
+      var opts = options || {};
+      var animate = opts.animate !== false;
+      var $steps = $modal.find("[data-mtuc-step]");
+      var $target = $modal.find('[data-mtuc-step="' + step + '"]');
+      var $current = $steps.filter(".mt-uni-credit-storefront__step--active");
+      var currentStep = $current.attr("data-mtuc-step");
+
+      function activateTarget() {
+        $steps
+          .attr("hidden", true)
+          .removeClass(
+            "mt-uni-credit-storefront__step--active is-transitioning-out is-transitioning-in",
+          )
+          .css("opacity", "");
+        $target
+          .removeAttr("hidden")
+          .addClass("mt-uni-credit-storefront__step--active")
+          .css("opacity", "");
+        if (step === 2) {
+          focusStep2Field();
+        }
+      }
+
+      if (
+        !animate ||
+        !$current.length ||
+        String(currentStep) === String(step) ||
+        !$target.length
+      ) {
+        activateTarget();
+        return;
+      }
+
+      $current
+        .addClass("is-transitioning-out")
+        .css("opacity", "0");
+      window.setTimeout(function () {
+        $current
+          .attr("hidden", true)
+          .removeClass(
+            "mt-uni-credit-storefront__step--active is-transitioning-out",
+          )
+          .css("opacity", "");
+        $target
+          .removeAttr("hidden")
+          .addClass(
+            "mt-uni-credit-storefront__step--active is-transitioning-in",
+          )
+          .css("opacity", "0");
+        // Force reflow so opacity transition runs.
+        void $target[0].offsetWidth;
+        $target.css("opacity", "1");
+        window.setTimeout(function () {
+          $target.removeClass("is-transitioning-in").css("opacity", "");
+          if (step === 2) {
+            focusStep2Field();
+          }
+        }, 350);
+      }, 350);
+    }
+
+    function openModal(offerType, preferredKey) {
       selectedOfferType = offerType || selectedOfferType;
       var offer = currentOffer();
-      if (offer && offer.preferred_scheme_key) {
+      if (preferredKey) {
+        selectedSchemeKey = preferredKey;
+      } else if (offer && offer.preferred_scheme_key) {
         selectedSchemeKey = offer.preferred_scheme_key;
       }
       moveModalToBody();
       setProcessing(true);
       setPopupError("");
       fillSchemes();
-      setStep(1);
+      setStep(1, { animate: false });
       $modal.removeAttr("hidden").attr("aria-hidden", "false");
       $modal.find(".mt-uni-credit-storefront__dialog").trigger("focus");
       scheduleRecalculate(true);
@@ -274,7 +340,7 @@
       }
       setProcessing(false);
       $modal.attr("hidden", true).attr("aria-hidden", "true");
-      setStep(1);
+      setStep(1, { animate: false });
       restoreModal();
     }
 
@@ -469,7 +535,11 @@
 
     $root.off("click.mtuc").on("click.mtuc", "[data-mtuc-offer]", function (e) {
       e.preventDefault();
-      openModal($(this).attr("data-mtuc-offer"));
+      var $btn = $(this);
+      openModal(
+        $btn.attr("data-mtuc-offer"),
+        $btn.attr("data-preferred-key") || "",
+      );
     });
 
     $modal.data("mtucApi", {
@@ -479,8 +549,11 @@
       selectScheme: function (key) {
         selectedSchemeKey = key;
         var offer = currentOffer();
-        if (offer) {
-          fillDisplays(findScheme(offer.schemes || [], selectedSchemeKey));
+        var scheme = offer
+          ? findScheme(offer.schemes || [], selectedSchemeKey)
+          : null;
+        if (scheme) {
+          fillDisplays(scheme);
         }
         scheduleRecalculate(true);
       },

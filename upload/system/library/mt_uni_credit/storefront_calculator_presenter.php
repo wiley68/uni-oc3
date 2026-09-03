@@ -203,16 +203,9 @@ final class MtUniCreditStorefrontCalculatorPresenter
             $pool = $type === 'promo'
                 ? $resolution->promoSchemes
                 : $this->cartSchemes->unifiedSchemes($resolution, $shop);
-        } elseif ($product instanceof MtUniCreditProductContext) {
-            if ($type === 'promo') {
-                $pool = $this->calculator->availableSchemes($shop, $product, 'promo');
-            } else {
-                $pool = array_merge(
-                    $this->calculator->availableSchemes($shop, $product, 'standard'),
-                    $this->calculator->availableSchemes($shop, $product, 'promo')
-                );
-            }
             $pool = MtUniCreditSchemePresentationOrder::sort($pool, $shop);
+        } elseif ($product instanceof MtUniCreditProductContext) {
+            $pool = (new MtUniCreditProductSchemeList($this->calculator))->schemes($shop, $product, $type);
         }
 
         $schemes = array();
@@ -231,9 +224,19 @@ final class MtUniCreditStorefrontCalculatorPresenter
             } catch (Exception $exception) {
                 continue;
             }
+            $description = MtUniCreditProductSchemeList::description($shop, $scheme);
+            $zeroInterest = MtUniCreditSchemePresentationCategory::isZeroInterest($scheme);
+            $category = MtUniCreditSchemePresentationCategory::classify($scheme, $shop);
             $schemes[] = array(
                 'key' => $key,
+                'scheme_type' => $scheme->type,
                 'months' => $scheme->months,
+                'filter_id' => $scheme->filterId,
+                'kop_code' => $scheme->kopCode,
+                'description' => $description,
+                'label' => self::formatSchemeOptionLabel($scheme->months, $description),
+                'presentation_category' => $category,
+                'zero_interest_promo' => $zeroInterest,
                 'monthly' => $result->monthlyInstallment,
                 'monthly_installment' => $result->monthlyInstallment,
                 'financed' => $result->financedAmount,
@@ -250,6 +253,8 @@ final class MtUniCreditStorefrontCalculatorPresenter
         if ($schemes === array()) {
             return null;
         }
+
+        $schemes = MtUniCreditSchemePresentationOrder::sortPresentedRows($schemes, $shop);
 
         return array(
             'type' => $type,
@@ -268,6 +273,24 @@ final class MtUniCreditStorefrontCalculatorPresenter
             ),
             'schemes' => $schemes,
         );
+    }
+
+    /**
+     * OC4/Woo option label: "{months} месеца" or "{months} месеца - {description}".
+     *
+     * @param int $months
+     * @param string $description
+     * @return string
+     */
+    public static function formatSchemeOptionLabel($months, $description)
+    {
+        $label = ((int) $months) . ' месеца';
+        $description = trim((string) $description);
+        if ($description !== '') {
+            $label .= ' - ' . $description;
+        }
+
+        return $label;
     }
 
     /**

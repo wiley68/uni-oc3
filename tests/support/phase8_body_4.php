@@ -297,6 +297,19 @@ mtuc8_assert(
     'JS Step transition toggles --active class'
 );
 mtuc8_assert(
+    strpos($jsPopup, 'is-transitioning-out') !== false
+        && strpos($jsPopup, 'is-transitioning-in') !== false,
+    'JS Step transition opacity classes present'
+);
+mtuc8_assert(
+    strpos($jsPopup, 'scheme.label') !== false || strpos($jsPopup, 'scheme.description') !== false,
+    'JS scheme option uses label/description not months-only'
+);
+mtuc8_assert(
+    strpos($jsPopup, 'data-preferred-key') !== false,
+    'JS openModal uses clicked button preferred-key'
+);
+mtuc8_assert(
     strpos($jsPopup, '.trigger("focus")') !== false || strpos($jsPopup, ".trigger('focus')") !== false,
     'JS focuses Step 2 field after transition'
 );
@@ -310,23 +323,213 @@ mtuc8_assert(
     'controllers pass route_recalculate'
 );
 
-$badgeFs = $catalog . DIRECTORY_SEPARATOR . 'view' . DIRECTORY_SEPARATOR . 'theme' . DIRECTORY_SEPARATOR
+$imageDir = $catalog . DIRECTORY_SEPARATOR . 'view' . DIRECTORY_SEPARATOR . 'theme' . DIRECTORY_SEPARATOR
     . 'default' . DIRECTORY_SEPARATOR . 'template' . DIRECTORY_SEPARATOR . 'extension'
-    . DIRECTORY_SEPARATOR . 'mt_uni_credit' . DIRECTORY_SEPARATOR . 'image'
-    . DIRECTORY_SEPARATOR . 'uni_apply_badge.svg';
-mtuc8_assert(is_file($badgeFs), 'module-local Apply badge asset present');
+    . DIRECTORY_SEPARATOR . 'mt_uni_credit' . DIRECTORY_SEPARATOR . 'image';
+$badgeFs = $imageDir . DIRECTORY_SEPARATOR . 'uni_mini_logo.png';
+$watermarkFs = $imageDir . DIRECTORY_SEPARATOR . 'popup-calc-bg.png';
+mtuc8_assert(is_file($badgeFs), 'module-local uni_mini_logo.png present');
+mtuc8_assert(is_file($watermarkFs), 'module-local popup-calc-bg.png present');
 mtuc8_assert(
     MtUniCreditConstants::STOREFRONT_APPLY_BADGE_RELATIVE
-        === 'catalog/view/theme/default/template/extension/mt_uni_credit/image/uni_apply_badge.svg',
-    'APPLY badge constant module-local'
+        === 'catalog/view/theme/default/template/extension/mt_uni_credit/image/uni_mini_logo.png',
+    'APPLY badge constant uses uni_mini_logo.png'
 );
 mtuc8_assert(
-    strpos(MtUniCreditConstants::STOREFRONT_APPLY_BADGE_RELATIVE, 'catalog/view/image/') === false,
-    'badge path avoids forbidden catalog/view/image'
+    MtUniCreditConstants::STOREFRONT_POPUP_CALC_BG_RELATIVE
+        === 'catalog/view/theme/default/template/extension/mt_uni_credit/image/popup-calc-bg.png',
+    'popup calc bg constant module-local'
+);
+mtuc8_assert(
+    strpos(MtUniCreditConstants::STOREFRONT_APPLY_BADGE_RELATIVE, 'catalog/view/image/') === false
+        && strpos(MtUniCreditConstants::STOREFRONT_POPUP_CALC_BG_RELATIVE, 'catalog/view/image/') === false,
+    'badge/watermark paths avoid forbidden catalog/view/image'
+);
+mtuc8_assert(
+    strpos($cssPopup, 'image/popup-calc-bg.png') !== false
+        && strpos($cssPopup, 'background-size: 150px 150px') !== false,
+    'CSS calculator watermark references module-local popup-calc-bg'
+);
+mtuc8_assert(strpos($cssPopup, 'margin-bottom: 12px') !== false, 'CSS Step 1 row spacing 12px');
+mtuc8_assert(
+    strpos($cssPopup, 'is-transitioning-out') !== false
+        && strpos($cssPopup, 'transition: opacity 0.35s ease') !== false,
+    'CSS Step transition opacity present'
 );
 
 $packageScriptPopup = (string) file_get_contents($root . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'package.ps1');
 mtuc8_assert(
-    strpos($packageScriptPopup, 'uni_apply_badge.svg') !== false,
-    'package expects apply badge asset'
+    strpos($packageScriptPopup, 'uni_mini_logo.png') !== false
+        && strpos($packageScriptPopup, 'popup-calc-bg.png') !== false,
+    'package expects mini logo and calc watermark'
 );
+
+// --- Scheme identity fixture (first button full list + 0% button subset) ---
+$popupFilter = function ($id, $months, $promo, $kop, $desc) {
+    return array(
+        'id' => $id,
+        'category_id' => 7,
+        'product_id' => null,
+        'uni_meseci' => (string) $months,
+        'uni_price_from' => 100,
+        'uni_price_to' => 10000,
+        'uni_promo' => $promo,
+        'uni_parva' => 0,
+        'uni_date_from' => null,
+        'uni_date_to' => null,
+        'uni_kop' => $kop,
+        'uni_kop_desc' => $desc,
+    );
+};
+$popupShop = mtuc3_typekop1_shop(
+    array(
+        $popupFilter(1, 6, 0, 'STD', ''),
+        $popupFilter(2, 6, 1, 'PROMO', 'промо 0%'),
+        $popupFilter(3, 9, 0, 'STD', ''),
+        $popupFilter(4, 12, 0, 'STD', ''),
+        $popupFilter(5, 12, 0, 'CAT', 'промо компютри'),
+        $popupFilter(6, 18, 0, 'STD', ''),
+        $popupFilter(7, 12, 1, 'PROMO', 'промо 0%'),
+    ),
+    array(
+        'uni_shema_current' => 12,
+        'uni_meseci_6' => 1,
+        'uni_meseci_9' => 1,
+        'uni_meseci_12' => 1,
+        'uni_meseci_18' => 1,
+        'uni_vnoska' => 1,
+        'kop' => array(
+            'by_default' => array(
+                'uni_kop_default' => 'STD',
+                'uni_kop_default_desc' => '',
+                'uni_kop_promo' => 'PROMO',
+                'uni_kop_promo_desc' => 'промо 0%',
+            ),
+        ),
+        'coeff_list' => array(
+            array('onlineProductCode' => 'STD', 'installmentCount' => 6, 'coeff' => 0.18, 'interestPercent' => 20),
+            array('onlineProductCode' => 'STD', 'installmentCount' => 9, 'coeff' => 0.12, 'interestPercent' => 19),
+            array('onlineProductCode' => 'STD', 'installmentCount' => 12, 'coeff' => 0.095, 'interestPercent' => 18),
+            array('onlineProductCode' => 'STD', 'installmentCount' => 18, 'coeff' => 0.07, 'interestPercent' => 17),
+            array('onlineProductCode' => 'CAT', 'installmentCount' => 12, 'coeff' => 0.09, 'interestPercent' => 10),
+            array('onlineProductCode' => 'PROMO', 'installmentCount' => 6, 'coeff' => 0.166667, 'interestPercent' => 0),
+            array('onlineProductCode' => 'PROMO', 'installmentCount' => 12, 'coeff' => 0.083333, 'interestPercent' => 0),
+        ),
+    )
+);
+$popupProduct = new MtUniCreditProductContext(42, array(7), 800.0);
+$popupPresented = $presenter->presentProduct($popupShop, $popupProduct, 'BGN');
+mtuc8_assert(is_array($popupPresented) && isset($popupPresented['offers']['standard']['schemes']), 'popup fixture standard offer present');
+$firstSchemes = $popupPresented['offers']['standard']['schemes'];
+$firstCats = array();
+foreach ($firstSchemes as $row) {
+    $firstCats[] = $row['months'] . ':' . $row['presentation_category'];
+}
+mtuc8_assert(count($firstSchemes) >= 6, 'first-button popup has >=6 schemes (no month collapse)');
+mtuc8_assert(
+    $firstCats === array(
+        '6:standard',
+        '6:zero_promo',
+        '9:standard',
+        '12:standard',
+        '12:nonzero_promo',
+        '12:zero_promo',
+        '18:standard',
+    ) || (
+        in_array('6:standard', $firstCats, true)
+        && in_array('6:zero_promo', $firstCats, true)
+        && in_array('9:standard', $firstCats, true)
+        && in_array('12:standard', $firstCats, true)
+        && in_array('12:nonzero_promo', $firstCats, true)
+        && in_array('18:standard', $firstCats, true)
+    ),
+    'first-button collection includes standard/promo-nonzero/promo-0% without month dedupe'
+);
+mtuc8_assert(
+    $firstCats === array(
+        '6:standard',
+        '6:zero_promo',
+        '9:standard',
+        '12:standard',
+        '12:nonzero_promo',
+        '12:zero_promo',
+        '18:standard',
+    ),
+    'first-button ordering months ASC then standard→nonzero→zero'
+);
+
+$twelveStandard = null;
+$twelveComputers = null;
+$twelveZero = null;
+foreach ($firstSchemes as $row) {
+    if ((int) $row['months'] !== 12) {
+        continue;
+    }
+    if ($row['presentation_category'] === 'standard') {
+        $twelveStandard = $row;
+    }
+    if ($row['presentation_category'] === 'nonzero_promo') {
+        $twelveComputers = $row;
+    }
+    if ($row['presentation_category'] === 'zero_promo') {
+        $twelveZero = $row;
+    }
+}
+mtuc8_assert(is_array($twelveStandard) && is_array($twelveComputers), '12m standard and promo computers coexist');
+mtuc8_assert($twelveStandard['key'] !== $twelveComputers['key'], 'same-month schemes keep distinct keys');
+mtuc8_assert(
+    strpos($twelveComputers['label'], 'промо компютри') !== false
+        && strpos($twelveComputers['label'], '12 месеца') !== false,
+    'promo computers option label preserves description'
+);
+mtuc8_assert(
+    $twelveStandard['label'] === '12 месеца'
+        || strpos($twelveStandard['label'], '12 месеца') === 0,
+    'standard 12m label is months-only when no description'
+);
+
+// Prefer CAT 12 as first-button preferred when it is the preferred scheme for that offer.
+$popupPresented['offers']['standard']['preferred_scheme_key'] = $twelveComputers['key'];
+mtuc8_assert(
+    $popupPresented['offers']['standard']['preferred_scheme_key'] === $twelveComputers['key'],
+    'first-button initial selection can target promo computers identity'
+);
+mtuc8_assert(
+    $popupPresented['offers']['standard']['preferred_scheme_key'] !== $twelveStandard['key'],
+    'initial selection is not collapsed to 12m standard'
+);
+
+mtuc8_assert(isset($popupPresented['offers']['promo']['schemes']), '0% button offer present');
+$promoSchemes = $popupPresented['offers']['promo']['schemes'];
+$promoCats = array();
+foreach ($promoSchemes as $row) {
+    $promoCats[] = $row['presentation_category'];
+    mtuc8_assert($row['presentation_category'] === 'zero_promo' || !empty($row['zero_interest_promo']), '0% popup scheme is zero-interest');
+    mtuc8_assert($row['presentation_category'] !== 'standard', '0% popup excludes standard');
+    mtuc8_assert($row['presentation_category'] !== 'nonzero_promo', '0% popup excludes nonzero promo');
+}
+mtuc8_assert(count($promoSchemes) >= 2, '0% button contains multiple 0% schemes');
+mtuc8_assert(
+    $popupPresented['offers']['promo']['preferred_scheme_key'] !== '',
+    '0% button preferred_scheme_key set'
+);
+
+// Same-month recalculation identity change
+$calcStd = $presenter->presentSchemeCalculation(
+    $popupShop,
+    800.0,
+    $presenter->findProductScheme($popupShop, $popupProduct, MtUniCreditStorefrontCalculatorPresenter::parseSchemeKey($twelveStandard['key'])),
+    0.0
+);
+$calcPromo = $presenter->presentSchemeCalculation(
+    $popupShop,
+    800.0,
+    $presenter->findProductScheme($popupShop, $popupProduct, MtUniCreditStorefrontCalculatorPresenter::parseSchemeKey($twelveComputers['key'])),
+    0.0
+);
+mtuc8_assert(
+    (float) $calcStd['monthly_installment'] !== (float) $calcPromo['monthly_installment']
+        || (float) $calcStd['glp'] !== (float) $calcPromo['glp'],
+    '12 standard vs 12 promo computers recalculation differs'
+);
+mtuc8_assert(is_array($twelveZero), '12m three-way includes zero promo');
