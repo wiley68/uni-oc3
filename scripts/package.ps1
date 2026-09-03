@@ -78,6 +78,7 @@ $expectedEntries = @(
     'upload/admin/controller/extension/payment/mt_uni_credit.php',
     'upload/admin/view/image/payment/uni_logo.svg',
     'upload/admin/view/stylesheet/mt_uni_credit_module.css',
+    'upload/admin/view/javascript/mt_uni_credit_module.js',
     'upload/catalog/controller/extension/payment/mt_uni_credit.php',
     'upload/catalog/controller/extension/mt_uni_credit/product.php',
     'upload/catalog/controller/extension/mt_uni_credit/cart.php',

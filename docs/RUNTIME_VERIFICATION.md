@@ -377,10 +377,16 @@ Record engine, charset/collation (prefer InnoDB + utf8mb4; note if fallback requ
 
 ### Admin form ownership (Save vs operational actions)
 
-1. [ ] Top-right Save submits only Module settings (`extension/module/mt_uni_credit`) — never `downloadJournal` / `refreshBankData`.
-2. [ ] **Обнови данните от банката** triggers only refresh (POST `refreshBankData`).
-3. [ ] **Изтегли журнал операции** triggers only JSON download (`unipayment-smartucf-log-YYYYMMDD-HHMMSS.json`).
-4. [ ] Operational buttons are outside `form-module` (separate forms); Enter in a settings field does not download the journal.
+OpenCart 3 admin `common.js` submits every `form[id*="form-"]` when any `button[type=submit]` is clicked. This Module page therefore keeps **one persistent form only** (`form-module`). Refresh/Journal use `type="button"` and create a temporary POST form only on explicit click.
+
+1. [ ] Fresh page DOM: only persistent module form is `form-module` — no `form-refresh-bank` / `form-download-journal`.
+2. [ ] DevTools: `[...document.forms].map(f => ({id:f.id, action:f.action}))` shows `form-module` for this module content.
+3. [ ] Top-right Save → Network shows exactly one relevant POST `route=extension/module/mt_uni_credit` — never `refreshBankData` / `downloadJournal`; no JSON download.
+4. [ ] Leave configured Secret blank + harmless setting change → Save succeeds.
+5. [ ] **Обнови данните от банката** → only `POST .../refreshBankData` then redirect.
+6. [ ] **Изтегли журнал операции** → only `POST .../downloadJournal` and one `unipayment-smartucf-log-*.json` download.
+7. [ ] Enter in UNICID/Secret/spacing submits only settings (never journal/refresh).
+8. [ ] Optional Save stack trace no longer includes `form-refresh-bank.submit()` / `form-download-journal.submit()`.
 
 Sanitized SQL example:
 

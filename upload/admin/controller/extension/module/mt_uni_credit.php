@@ -13,6 +13,7 @@ class ControllerExtensionModuleMtUniCredit extends Controller
 
         $this->document->setTitle($this->language->get('heading_title'));
         $this->document->addStyle('view/stylesheet/mt_uni_credit_module.css');
+        $this->document->addScript('view/javascript/mt_uni_credit_module.js');
 
         $this->load->model('setting/setting');
         $this->load->model('extension/module/mt_uni_credit');

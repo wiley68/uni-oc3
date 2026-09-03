@@ -1,5 +1,9 @@
 {{ header }}{{ column_left }}
-<div id="content" class="mt-uni-credit-module">
+{#
+  OC3 admin common.js submits every form[id*="form-"] on any submit-button click.
+  Keep only #form-module persistent; operational actions POST via temporary forms.
+#}
+<div id="content" class="mt-uni-credit-module" data-mt-uni-credit-refresh-bank="{{ refresh_bank_data }}" data-mt-uni-credit-download-journal="{{ download_journal }}">
   <div class="page-header">
     <div class="container-fluid">
       <div class="pull-right">
@@ -103,16 +107,12 @@
         <div class="form-horizontal">
           <div class="form-group">
             <div class="col-sm-offset-2 col-sm-10">
-              <form action="{{ refresh_bank_data }}" method="post" id="form-refresh-bank" class="mt-uni-inline-action">
-                <button type="submit" name="mt_uni_credit_refresh_bank" value="1" class="btn btn-default">
-                  <i class="fa fa-refresh"></i> {{ button_refresh_bank_data }}
-                </button>
-              </form>
-              <form action="{{ download_journal }}" method="post" id="form-download-journal" class="mt-uni-inline-action">
-                <button type="submit" class="btn btn-default">
-                  <i class="fa fa-download"></i> {{ button_download_journal }}
-                </button>
-              </form>
+              <button type="button" id="button-mt-uni-credit-refresh-bank" class="btn btn-default mt-uni-inline-action">
+                <i class="fa fa-refresh"></i> {{ button_refresh_bank_data }}
+              </button>
+              <button type="button" id="button-mt-uni-credit-download-journal" class="btn btn-default mt-uni-inline-action">
+                <i class="fa fa-download"></i> {{ button_download_journal }}
+              </button>
               <p class="help-block">{{ help_download_journal }}</p>
             </div>
           </div>

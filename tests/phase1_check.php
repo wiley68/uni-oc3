@@ -34,6 +34,7 @@ $requiredFiles = array(
     'upload/admin/language/bg-bg/extension/module/mt_uni_credit.php',
     'upload/admin/view/template/extension/module/mt_uni_credit.twig',
     'upload/admin/view/stylesheet/mt_uni_credit_module.css',
+    'upload/admin/view/javascript/mt_uni_credit_module.js',
     'upload/admin/controller/extension/payment/mt_uni_credit.php',
     'upload/admin/model/extension/payment/mt_uni_credit.php',
     'upload/admin/language/en-gb/extension/payment/mt_uni_credit.php',
@@ -171,44 +172,56 @@ mtuc1_assert(strpos($moduleTwig, 'module_mt_uni_credit_product_button_action') !
 mtuc1_assert(strpos($moduleTwig, 'module_mt_uni_credit_button_top_spacing') !== false, 'module twig has button top spacing');
 mtuc1_assert(strpos($moduleTwig, 'button_refresh_bank_data') !== false, 'module twig has refresh bank data button');
 mtuc1_assert(strpos($moduleTwig, 'button_download_journal') !== false, 'module twig has download journal button');
-mtuc1_assert(strpos($moduleTwig, 'refresh_bank_data') !== false, 'module twig wires refresh bank data route');
-mtuc1_assert(strpos($moduleTwig, 'download_journal') !== false, 'module twig wires download journal route');
+mtuc1_assert(strpos($moduleTwig, 'refresh_bank_data') !== false || strpos($moduleTwig, 'data-mt-uni-credit-refresh-bank') !== false, 'module twig wires refresh bank data route');
+mtuc1_assert(strpos($moduleTwig, 'download_journal') !== false || strpos($moduleTwig, 'data-mt-uni-credit-download-journal') !== false, 'module twig wires download journal route');
 mtuc1_assert(strpos($moduleTwig, 'id="form-module"') !== false, 'module twig defines form-module');
-mtuc1_assert(strpos($moduleTwig, 'id="form-refresh-bank"') !== false, 'module twig defines form-refresh-bank');
-mtuc1_assert(strpos($moduleTwig, 'id="form-download-journal"') !== false, 'module twig defines form-download-journal');
 mtuc1_assert(substr_count($moduleTwig, 'id="form-module"') === 1, 'form-module id is unique');
-mtuc1_assert(substr_count($moduleTwig, 'id="form-refresh-bank"') === 1, 'form-refresh-bank id is unique');
-mtuc1_assert(substr_count($moduleTwig, 'id="form-download-journal"') === 1, 'form-download-journal id is unique');
+mtuc1_assert(strpos($moduleTwig, 'id="form-refresh-bank"') === false, 'module twig has no persistent form-refresh-bank');
+mtuc1_assert(strpos($moduleTwig, 'id="form-download-journal"') === false, 'module twig has no persistent form-download-journal');
 mtuc1_assert(strpos($moduleTwig, 'form="form-refresh-bank"') === false, 'refresh button does not use cross-form form= association');
 mtuc1_assert(strpos($moduleTwig, 'form="form-download-journal"') === false, 'journal button does not use cross-form form= association');
 mtuc1_assert(strpos($moduleTwig, 'formnovalidate') === false, 'module twig has no formnovalidate bypass');
+mtuc1_assert(strpos($moduleTwig, 'formaction=') === false, 'module twig has no operational formaction attributes');
 mtuc1_assert(strpos($moduleTwig, 'enctype="multipart/form-data"') === false, 'module settings form is not multipart');
 mtuc1_assert(preg_match('/<button[^>]*form="form-module"[^>]*>/', $moduleTwig) === 1, 'Save button belongs only to form-module');
-mtuc1_assert(
-    preg_match('/id="form-refresh-bank"[^>]*action="\{\{\s*refresh_bank_data\s*\}\}"/', $moduleTwig) === 1
-        || preg_match('/action="\{\{\s*refresh_bank_data\s*\}\}"[^>]*id="form-refresh-bank"/', $moduleTwig) === 1,
-    'refresh form action is refresh route only'
-);
-mtuc1_assert(
-    preg_match('/id="form-download-journal"[^>]*action="\{\{\s*download_journal\s*\}\}"/', $moduleTwig) === 1
-        || preg_match('/action="\{\{\s*download_journal\s*\}\}"[^>]*id="form-download-journal"/', $moduleTwig) === 1,
-    'journal form action is journal route only'
-);
 mtuc1_assert(
     preg_match('/id="form-module"[^>]*action="\{\{\s*action\s*\}\}"/', $moduleTwig) === 1
         || preg_match('/action="\{\{\s*action\s*\}\}"[^>]*id="form-module"/', $moduleTwig) === 1,
     'settings form action is module settings route only'
 );
 mtuc1_assert(strpos($moduleTwig, '{% if not has_secret %} required="required"{% endif %}') !== false, 'secret required only when not configured');
+mtuc1_assert(
+    preg_match('/<button[^>]*type="button"[^>]*id="button-mt-uni-credit-refresh-bank"/', $moduleTwig) === 1
+        || preg_match('/<button[^>]*id="button-mt-uni-credit-refresh-bank"[^>]*type="button"/', $moduleTwig) === 1,
+    'refresh bank control is type=button'
+);
+mtuc1_assert(
+    preg_match('/<button[^>]*type="button"[^>]*id="button-mt-uni-credit-download-journal"/', $moduleTwig) === 1
+        || preg_match('/<button[^>]*id="button-mt-uni-credit-download-journal"[^>]*type="button"/', $moduleTwig) === 1,
+    'download journal control is type=button'
+);
+mtuc1_assert(substr_count($moduleTwig, '<form') === 1, 'module twig has exactly one persistent form');
 $formModulePos = strpos($moduleTwig, 'id="form-module"');
 $formModuleClose = strpos($moduleTwig, '</form>', $formModulePos);
-$refreshFormPos = strpos($moduleTwig, 'id="form-refresh-bank"');
-$journalFormPos = strpos($moduleTwig, 'id="form-download-journal"');
 mtuc1_assert($formModulePos !== false && $formModuleClose !== false, 'form-module has closing tag');
-mtuc1_assert($refreshFormPos !== false && $refreshFormPos > $formModuleClose, 'refresh form is outside form-module');
-mtuc1_assert($journalFormPos !== false && $journalFormPos > $formModuleClose, 'journal form is outside form-module');
 $formModuleInner = substr($moduleTwig, $formModulePos, $formModuleClose - $formModulePos);
 mtuc1_assert(strpos($formModuleInner, '<form') === false, 'forms are not nested');
+mtuc1_assert(
+    strpos($moduleTwig, 'common.js') !== false || strpos($moduleTwig, 'form[id*="form-"]') !== false || strpos($moduleTwig, 'OC3 admin common.js') !== false,
+    'module twig documents OC3 common.js single-form constraint'
+);
+
+$moduleJsPath = $root . DIRECTORY_SEPARATOR . 'upload/admin/view/javascript/mt_uni_credit_module.js';
+mtuc1_assert(is_file($moduleJsPath), 'module admin operational JS helper exists');
+$moduleJs = (string) file_get_contents($moduleJsPath);
+mtuc1_assert(strpos($moduleJs, 'function mtUniCreditPostAction') !== false || strpos($moduleJs, 'mtUniCreditPostAction') !== false, 'JS helper exposes mtUniCreditPostAction');
+mtuc1_assert(strpos($moduleJs, "createElement('form')") !== false || strpos($moduleJs, 'createElement("form")') !== false, 'JS helper creates a temporary form');
+mtuc1_assert(strpos($moduleJs, "method = 'post'") !== false || strpos($moduleJs, 'method = "post"') !== false || strpos($moduleJs, ".method = 'post'") !== false, 'JS helper sets method POST');
+mtuc1_assert(strpos($moduleJs, '.action =') !== false || strpos($moduleJs, 'form.action') !== false, 'JS helper sets supplied action');
+mtuc1_assert(strpos($moduleJs, 'appendChild') !== false, 'JS helper appends temporary form only when invoked');
+mtuc1_assert(strpos($moduleJs, '.submit(') !== false || strpos($moduleJs, 'form.submit') !== false, 'JS helper calls native submit');
+mtuc1_assert(strpos($moduleJs, 'form[id*=') !== false || strpos($moduleJs, 'common.js') !== false, 'JS helper documents OC3 common.js form-submit behaviour');
+mtuc1_assert(strpos($moduleController, 'mt_uni_credit_module.js') !== false, 'module controller loads operational JS helper');
 mtuc1_assert(strpos($moduleTwig, 'module_mt_uni_credit_unicid') !== false, 'module twig has UNICID');
 mtuc1_assert(strpos($moduleTwig, 'maxlength="36"') !== false, 'module twig UNICID maxlength 36');
 mtuc1_assert(strpos($moduleTwig, 'module_mt_uni_credit_debug_enabled') !== false, 'module twig uses normalized debug key');
