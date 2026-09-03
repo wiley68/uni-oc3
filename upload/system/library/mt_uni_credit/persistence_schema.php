@@ -46,6 +46,43 @@ final class MtUniCreditPersistenceSchema
         foreach (self::createAllTableStatements($this->db->getPrefix()) as $sql) {
             $this->db->query($sql);
         }
+        $this->ensurePhase9Columns();
+    }
+
+    /**
+     * Add SmartUCF lifecycle columns when missing (fresh CREATE already includes them).
+     *
+     * @return void
+     */
+    public function ensurePhase9Columns()
+    {
+        $table = $this->db->getPrefix() . MtUniCreditPersistenceTableNames::FINANCING_ATTEMPT;
+        $existing = array();
+        try {
+            $result = $this->db->query('SHOW COLUMNS FROM `' . $table . '`');
+            if (is_object($result) && isset($result->rows) && is_array($result->rows)) {
+                foreach ($result->rows as $row) {
+                    if (isset($row['Field'])) {
+                        $existing[(string) $row['Field']] = true;
+                    }
+                }
+            }
+        } catch (Exception $exception) {
+            $existing = array();
+        }
+
+        foreach (self::createPhase9AlterStatements($this->db->getPrefix()) as $sql) {
+            if (preg_match("/ADD COLUMN `([^`]+)`/", $sql, $match)) {
+                if (isset($existing[$match[1]])) {
+                    continue;
+                }
+            }
+            try {
+                $this->db->query($sql);
+            } catch (Exception $exception) {
+                // Column may already exist on hosts that cannot SHOW COLUMNS consistently.
+            }
+        }
     }
 
     /**
@@ -78,6 +115,28 @@ final class MtUniCreditPersistenceSchema
             self::createPhase3TableStatements($prefix),
             self::createPhase6TableStatements($prefix),
             self::createPhase7TableStatements($prefix)
+        );
+    }
+
+    /**
+     * Idempotent Phase 9 column upgrades for financing_attempt.
+     *
+     * @param string $prefix
+     * @return array<int, string>
+     */
+    public static function createPhase9AlterStatements($prefix)
+    {
+        $financingAttempt = $prefix . MtUniCreditPersistenceTableNames::FINANCING_ATTEMPT;
+
+        return array(
+            "ALTER TABLE `{$financingAttempt}` ADD COLUMN `smartucf_state` VARCHAR(32) NOT NULL DEFAULT 'not_started'",
+            "ALTER TABLE `{$financingAttempt}` ADD COLUMN `smartucf_session_id` VARCHAR(128) NULL",
+            "ALTER TABLE `{$financingAttempt}` ADD COLUMN `smartucf_redirect_url` VARCHAR(768) NULL",
+            "ALTER TABLE `{$financingAttempt}` ADD COLUMN `smartucf_http_code` INT NULL",
+            "ALTER TABLE `{$financingAttempt}` ADD COLUMN `smartucf_error_class` VARCHAR(64) NULL",
+            "ALTER TABLE `{$financingAttempt}` ADD COLUMN `smartucf_retryable` TINYINT(1) NOT NULL DEFAULT 0",
+            "ALTER TABLE `{$financingAttempt}` ADD COLUMN `smartucf_claimed_at` DATETIME NULL",
+            "ALTER TABLE `{$financingAttempt}` ADD COLUMN `smartucf_completed_at` DATETIME NULL",
         );
     }
 
@@ -205,12 +264,21 @@ final class MtUniCreditPersistenceSchema
                 `control_panel_order_id` BIGINT UNSIGNED NULL,
                 `cp_payload` LONGTEXT NULL,
                 `last_error_class` VARCHAR(64) NULL,
+                `smartucf_state` VARCHAR(32) NOT NULL DEFAULT 'not_started',
+                `smartucf_session_id` VARCHAR(128) NULL,
+                `smartucf_redirect_url` VARCHAR(768) NULL,
+                `smartucf_http_code` INT NULL,
+                `smartucf_error_class` VARCHAR(64) NULL,
+                `smartucf_retryable` TINYINT(1) NOT NULL DEFAULT 0,
+                `smartucf_claimed_at` DATETIME NULL,
+                `smartucf_completed_at` DATETIME NULL,
                 `created_at` DATETIME NOT NULL,
                 `updated_at` DATETIME NOT NULL,
                 PRIMARY KEY (`attempt_id`),
                 UNIQUE KEY `uniq_mt_uni_credit_store_order` (`store_id`, `order_id`),
                 KEY `idx_mt_uni_credit_attempt_operation` (`store_id`, `entry_point`, `operation_key_hash`, `state`),
-                KEY `idx_mt_uni_credit_attempt_state_updated` (`state`, `updated_at`)
+                KEY `idx_mt_uni_credit_attempt_state_updated` (`state`, `updated_at`),
+                KEY `idx_mt_uni_credit_attempt_smartucf_state` (`smartucf_state`, `updated_at`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
         );
     }

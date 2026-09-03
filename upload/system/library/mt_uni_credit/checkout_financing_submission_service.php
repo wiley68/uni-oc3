@@ -132,7 +132,7 @@ final class MtUniCreditCheckoutFinancingSubmissionService
         $fresh = $this->attempts->findById((int) $attempt['attempt_id']);
 
         if ($result->success) {
-            return array(
+            $out = array(
                 'success' => true,
                 'message' => MtUniCreditControlPanelOrderLifecycleService::CUSTOMER_SUCCESS_MESSAGE,
                 'control_panel_order_id' => $result->controlPanelOrderId,
@@ -140,20 +140,29 @@ final class MtUniCreditCheckoutFinancingSubmissionService
                 'attempt' => $fresh !== null ? $fresh : $attempt,
                 'apply_native_order_status' => !$result->localReplay,
             );
+            if ($result->redirectUrl !== '') {
+                $out['redirect'] = $result->redirectUrl;
+                $out['bank_redirect'] = true;
+            }
+
+            return $out;
         }
 
-        $message = $result->ambiguousBlocked
-            ? MtUniCreditControlPanelOrderLifecycleService::CUSTOMER_AMBIGUOUS_MESSAGE
-            : MtUniCreditControlPanelOrderLifecycleService::CUSTOMER_FAILURE_MESSAGE;
+        $message = $result->customerMessage !== null && $result->customerMessage !== ''
+            ? $result->customerMessage
+            : ($result->ambiguousBlocked
+                ? MtUniCreditControlPanelOrderLifecycleService::CUSTOMER_AMBIGUOUS_MESSAGE
+                : MtUniCreditControlPanelOrderLifecycleService::CUSTOMER_FAILURE_MESSAGE);
 
         return array(
             'success' => false,
             'error' => $result->errorClass !== null ? $result->errorClass : 'cp_submit_failed',
             'message' => $message,
+            'control_panel_order_id' => $result->controlPanelOrderId,
             'recoverable' => $result->recoverable,
             'ambiguous_blocked' => $result->ambiguousBlocked,
             'attempt' => $fresh !== null ? $fresh : $attempt,
-            'apply_native_order_status' => false,
+            'apply_native_order_status' => $result->cpSucceeded && !$result->localReplay,
         );
     }
 

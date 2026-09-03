@@ -962,6 +962,14 @@ final class Phase2MemoryDb
             'control_panel_order_id' => null,
             'cp_payload' => null,
             'last_error_class' => null,
+            'smartucf_state' => MtUniCreditSmartUcfLifecycleStates::NOT_STARTED,
+            'smartucf_session_id' => null,
+            'smartucf_redirect_url' => null,
+            'smartucf_http_code' => null,
+            'smartucf_error_class' => null,
+            'smartucf_retryable' => 0,
+            'smartucf_claimed_at' => null,
+            'smartucf_completed_at' => null,
             'created_at' => (string) $fields['created_at'],
             'updated_at' => (string) $fields['updated_at'],
         );
@@ -993,6 +1001,32 @@ final class Phase2MemoryDb
             }
         }
 
+        if (preg_match("/AND `smartucf_state` IN \\(([^)]+)\\)/", $sql, $smartStateMatch)) {
+            $allowedSmart = array();
+            if (preg_match_all("/'([^']+)'/", $smartStateMatch[1], $parts)) {
+                $allowedSmart = $parts[1];
+            }
+            if (!in_array((string) $row['smartucf_state'], $allowedSmart, true)) {
+                return $this->emptyResult();
+            }
+        }
+
+        if (
+            strpos($sql, "`smartucf_state` = '" . MtUniCreditSmartUcfLifecycleStates::NOT_STARTED . "'") !== false
+            || strpos($sql, 'smartucf_retryable` = 1') !== false
+        ) {
+            if (strpos($sql, 'OR (`smartucf_state`') !== false) {
+                $ok = ((string) $row['smartucf_state'] === MtUniCreditSmartUcfLifecycleStates::NOT_STARTED)
+                    || (
+                        (string) $row['smartucf_state'] === MtUniCreditSmartUcfLifecycleStates::FAILED
+                        && (int) $row['smartucf_retryable'] === 1
+                    );
+                if (!$ok) {
+                    return $this->emptyResult();
+                }
+            }
+        }
+
         if (strpos($sql, 'AND (`cp_payload` IS NULL OR `cp_payload` = \'\')') !== false) {
             if ($row['cp_payload'] !== null && $row['cp_payload'] !== '') {
                 return $this->emptyResult();
@@ -1005,23 +1039,41 @@ final class Phase2MemoryDb
             }
         }
 
-        foreach (array('state', 'updated_at', 'cp_payload', 'request_fingerprint', 'last_error_class') as $column) {
+        $stringColumns = array(
+            'state',
+            'updated_at',
+            'cp_payload',
+            'request_fingerprint',
+            'last_error_class',
+            'smartucf_state',
+            'smartucf_session_id',
+            'smartucf_redirect_url',
+            'smartucf_error_class',
+            'smartucf_claimed_at',
+            'smartucf_completed_at',
+        );
+        foreach ($stringColumns as $column) {
+            if (stripos($sql, '`' . $column . '` = NULL') !== false) {
+                $row[$column] = null;
+                continue;
+            }
             $value = $this->extractSetValue($sql, $column);
             if ($value !== '') {
-                if ($column === 'last_error_class' && stripos($sql, '`last_error_class` = NULL') !== false) {
-                    $row[$column] = null;
-                } else {
-                    $row[$column] = $value;
-                }
+                $row[$column] = $value;
             }
-        }
-
-        if (stripos($sql, '`last_error_class` = NULL') !== false) {
-            $row['last_error_class'] = null;
         }
 
         if (preg_match('/`control_panel_order_id`\\s*=\\s*(\\d+)/', $sql, $cpMatch)) {
             $row['control_panel_order_id'] = (int) $cpMatch[1];
+        }
+        if (preg_match('/`smartucf_http_code`\\s*=\\s*(\\d+)/', $sql, $httpMatch)) {
+            $row['smartucf_http_code'] = (int) $httpMatch[1];
+        }
+        if (stripos($sql, '`smartucf_http_code` = NULL') !== false) {
+            $row['smartucf_http_code'] = null;
+        }
+        if (preg_match('/`smartucf_retryable`\\s*=\\s*(\\d+)/', $sql, $retryMatch)) {
+            $row['smartucf_retryable'] = (int) $retryMatch[1];
         }
 
         $this->financingAttempts[$attemptId] = $row;

@@ -162,10 +162,20 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
             if ($statusId > 0 && method_exists($this->model_checkout_order, 'addOrderHistory')) {
                 $this->model_checkout_order->addOrderHistory((int) $context['order_id'], $statusId);
             }
+        } elseif (empty($result['success']) && !empty($result['apply_native_order_status'])) {
+            $statusId = (int) $this->config->get(MtUniCreditConstants::PAYMENT_SETTING_ORDER_STATUS_ID);
+            if ($statusId > 0 && method_exists($this->model_checkout_order, 'addOrderHistory')) {
+                $this->model_checkout_order->addOrderHistory((int) $context['order_id'], $statusId);
+            }
         }
 
         if (empty($result['success']) && isset($result['message']) && is_string($result['message'])) {
             $this->session->data['mt_uni_credit_checkout_flash'] = (string) $result['message'];
+        }
+
+        if (!empty($result['success']) && !empty($result['redirect'])) {
+            $this->response->redirect((string) $result['redirect']);
+            return;
         }
 
         $this->response->redirect($this->url->link(MtUniCreditConstants::CHECKOUT_PREPARED_ROUTE, '', true));

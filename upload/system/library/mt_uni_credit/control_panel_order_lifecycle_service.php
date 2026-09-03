@@ -26,17 +26,27 @@ final class MtUniCreditControlPanelOrderLifecycleService
     /** @var MtUniCreditControlPanelOrderPayloadBuilder */
     private $payloadBuilder;
 
+    /** @var MtUniCreditSmartUcfSessionCoordinator|null */
+    private $process1;
+
+    /** @var MtUniCreditOrderBankStatusRepository|null */
+    private $bankStatuses;
+
     /**
      * @param MtUniCreditFinancingAttemptRepository $attempts
      * @param MtUniCreditOperationLockRepository $locks
      * @param MtUniCreditControlPanelClient $client
      * @param MtUniCreditControlPanelOrderPayloadBuilder|null $payloadBuilder
+     * @param MtUniCreditSmartUcfSessionCoordinator|null $process1
+     * @param MtUniCreditOrderBankStatusRepository|null $bankStatuses
      */
     public function __construct(
         MtUniCreditFinancingAttemptRepository $attempts,
         MtUniCreditOperationLockRepository $locks,
         MtUniCreditControlPanelClient $client,
-        $payloadBuilder = null
+        $payloadBuilder = null,
+        $process1 = null,
+        $bankStatuses = null
     ) {
         $this->attempts = $attempts;
         $this->locks = $locks;
@@ -44,6 +54,8 @@ final class MtUniCreditControlPanelOrderLifecycleService
         $this->payloadBuilder = $payloadBuilder instanceof MtUniCreditControlPanelOrderPayloadBuilder
             ? $payloadBuilder
             : new MtUniCreditControlPanelOrderPayloadBuilder();
+        $this->process1 = $process1 instanceof MtUniCreditSmartUcfSessionCoordinator ? $process1 : null;
+        $this->bankStatuses = $bankStatuses instanceof MtUniCreditOrderBankStatusRepository ? $bankStatuses : null;
     }
 
     /**
@@ -129,7 +141,15 @@ final class MtUniCreditControlPanelOrderLifecycleService
 
         $existingCpId = (int) $row['control_panel_order_id'];
         if ($existingCpId > 0 && $row['state'] === MtUniCreditFinancingAttemptState::CP_CREATED) {
-            return MtUniCreditControlPanelOrderSubmissionResult::ok($existingCpId, true);
+            return $this->continueAfterCpCreated(
+                $attemptId,
+                $existingCpId,
+                true,
+                $order,
+                $orderProducts,
+                $calculation,
+                $shop
+            );
         }
 
         if ($row['state'] === MtUniCreditFinancingAttemptState::CP_OUTCOME_UNKNOWN) {
@@ -196,7 +216,15 @@ final class MtUniCreditControlPanelOrderLifecycleService
             $fresh = $this->attempts->findById($attemptId);
             $freshCp = $fresh !== null ? (int) $fresh['control_panel_order_id'] : 0;
             if ($fresh !== null && $freshCp > 0 && $fresh['state'] === MtUniCreditFinancingAttemptState::CP_CREATED) {
-                return MtUniCreditControlPanelOrderSubmissionResult::ok($freshCp, true);
+                return $this->continueAfterCpCreated(
+                    $attemptId,
+                    $freshCp,
+                    true,
+                    $order,
+                    $orderProducts,
+                    $calculation,
+                    $shop
+                );
             }
             if ($fresh !== null && $fresh['state'] === MtUniCreditFinancingAttemptState::CP_OUTCOME_UNKNOWN) {
                 return MtUniCreditControlPanelOrderSubmissionResult::fail(
@@ -252,7 +280,15 @@ final class MtUniCreditControlPanelOrderLifecycleService
             );
             $this->attempts->clearLastErrorClass($attemptId);
 
-            return MtUniCreditControlPanelOrderSubmissionResult::ok($cpId);
+            return $this->continueAfterCpCreated(
+                $attemptId,
+                $cpId,
+                false,
+                $order,
+                $orderProducts,
+                $calculation,
+                $shop
+            );
         } catch (MtUniCreditCpAuthenticationException $exception) {
             $this->attempts->persistFailure(
                 $attemptId,
@@ -370,6 +406,115 @@ final class MtUniCreditControlPanelOrderLifecycleService
                 true
             );
         }
+    }
+
+    /**
+     * After definitive CP create success: Process 2 is a no-op; Process 1 runs SmartUCF.
+     *
+     * @param int $attemptId
+     * @param int $cpId
+     * @param bool $localReplay
+     * @param array<string, mixed> $order
+     * @param array<int, array<string, mixed>> $orderProducts
+     * @param MtUniCreditCalculationResult $calculation
+     * @param array<string, mixed> $shop
+     * @return MtUniCreditControlPanelOrderSubmissionResult
+     */
+    private function continueAfterCpCreated(
+        $attemptId,
+        $cpId,
+        $localReplay,
+        array $order,
+        array $orderProducts,
+        MtUniCreditCalculationResult $calculation,
+        array $shop
+    ) {
+        $coordinator = $this->resolveProcess1Coordinator();
+        if ($coordinator === null) {
+            return MtUniCreditControlPanelOrderSubmissionResult::ok($cpId, $localReplay);
+        }
+
+        $localOrderId = (int) (isset($order['order_id']) ? $order['order_id'] : 0);
+        $process1 = $coordinator->run(
+            $attemptId,
+            $shop,
+            $order,
+            $orderProducts,
+            $calculation,
+            $localOrderId,
+            $cpId,
+            $this->resolveBankStatuses()
+        );
+
+        if ($process1->isProcess2()) {
+            return MtUniCreditControlPanelOrderSubmissionResult::ok($cpId, $localReplay);
+        }
+        if ($process1->isCreated()) {
+            return MtUniCreditControlPanelOrderSubmissionResult::ok(
+                $cpId,
+                $localReplay,
+                $process1->redirectUrl()
+            );
+        }
+        if ($process1->isProcessing() || $process1->isOutcomeUnknown()) {
+            return MtUniCreditControlPanelOrderSubmissionResult::failAfterCp(
+                $cpId,
+                $localReplay,
+                $process1->isProcessing() ? 'smartucf_processing' : 'smartucf_outcome_unknown',
+                false,
+                true,
+                $process1->customerMessage() !== ''
+                    ? $process1->customerMessage()
+                    : self::CUSTOMER_AMBIGUOUS_MESSAGE
+            );
+        }
+
+        return MtUniCreditControlPanelOrderSubmissionResult::failAfterCp(
+            $cpId,
+            $localReplay,
+            $process1->errorClass() !== '' ? $process1->errorClass() : 'smartucf_submit_failed',
+            $process1->isRetryable(),
+            false,
+            $process1->customerMessage() !== ''
+                ? $process1->customerMessage()
+                : MtUniCreditSmartUcfSessionCoordinator::CUSTOMER_FAILED
+        );
+    }
+
+    /**
+     * @return MtUniCreditSmartUcfSessionCoordinator|null
+     */
+    private function resolveProcess1Coordinator()
+    {
+        if ($this->process1 instanceof MtUniCreditSmartUcfSessionCoordinator) {
+            return $this->process1;
+        }
+
+        try {
+            $this->process1 = MtUniCreditProcess1ServiceFactory::coordinator($this->attempts->database());
+        } catch (Exception $exception) {
+            return null;
+        }
+
+        return $this->process1;
+    }
+
+    /**
+     * @return MtUniCreditOrderBankStatusRepository|null
+     */
+    private function resolveBankStatuses()
+    {
+        if ($this->bankStatuses instanceof MtUniCreditOrderBankStatusRepository) {
+            return $this->bankStatuses;
+        }
+
+        try {
+            $this->bankStatuses = MtUniCreditProcess1ServiceFactory::bankStatuses($this->attempts->database());
+        } catch (Exception $exception) {
+            return null;
+        }
+
+        return $this->bankStatuses;
     }
 
     /**

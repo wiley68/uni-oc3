@@ -342,6 +342,18 @@ final class MtUniCreditFinancingAttemptRepository
                 : 0,
             'cp_payload' => isset($row['cp_payload']) ? $row['cp_payload'] : null,
             'last_error_class' => isset($row['last_error_class']) ? $row['last_error_class'] : null,
+            'smartucf_state' => isset($row['smartucf_state'])
+                ? (string) $row['smartucf_state']
+                : MtUniCreditSmartUcfLifecycleStates::NOT_STARTED,
+            'smartucf_session_id' => isset($row['smartucf_session_id']) ? $row['smartucf_session_id'] : null,
+            'smartucf_redirect_url' => isset($row['smartucf_redirect_url']) ? $row['smartucf_redirect_url'] : null,
+            'smartucf_http_code' => isset($row['smartucf_http_code']) && $row['smartucf_http_code'] !== null
+                ? (int) $row['smartucf_http_code']
+                : null,
+            'smartucf_error_class' => isset($row['smartucf_error_class']) ? $row['smartucf_error_class'] : null,
+            'smartucf_retryable' => isset($row['smartucf_retryable']) ? (int) $row['smartucf_retryable'] : 0,
+            'smartucf_claimed_at' => isset($row['smartucf_claimed_at']) ? $row['smartucf_claimed_at'] : null,
+            'smartucf_completed_at' => isset($row['smartucf_completed_at']) ? $row['smartucf_completed_at'] : null,
             'created_at' => (string) $row['created_at'],
             'updated_at' => (string) $row['updated_at'],
         );

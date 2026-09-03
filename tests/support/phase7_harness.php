@@ -32,10 +32,29 @@ final class Phase7TestHarness
 
         $attempts = new MtUniCreditFinancingAttemptRepository($db, $clock);
         $locks = new MtUniCreditOperationLockRepository($db, $clock);
+        $smartUcfProbe = (object) array('calls' => array());
+        $smartUcfClient = new MtUniCreditSmartUcfSessionClient(
+            null,
+            null,
+            function (array $options) use ($smartUcfProbe) {
+                $smartUcfProbe->calls[] = $options;
+
+                return array(
+                    'body' => json_encode(array('sucfOnlineSessionID' => 'phase7-session-abc')),
+                    'error' => '',
+                    'http_code' => 200,
+                );
+            }
+        );
+        $process1 = MtUniCreditProcess1ServiceFactory::coordinator($db, $smartUcfClient, $clock);
+        $bankStatuses = MtUniCreditProcess1ServiceFactory::bankStatuses($db, $clock);
         $lifecycle = new MtUniCreditControlPanelOrderLifecycleService(
             $attempts,
             $locks,
-            $services['client']
+            $services['client'],
+            null,
+            $process1,
+            $bankStatuses
         );
         $submission = new MtUniCreditCheckoutFinancingSubmissionService(
             $attempts,
@@ -58,6 +77,9 @@ final class Phase7TestHarness
             'lifecycle' => $lifecycle,
             'submission' => $submission,
             'storeId' => $storeId,
+            'smartUcfProbe' => $smartUcfProbe,
+            'process1' => $process1,
+            'bankStatuses' => $bankStatuses,
         );
     }
 

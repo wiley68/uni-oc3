@@ -136,7 +136,10 @@ final class MtUniCreditStorefrontRuntime
         $lifecycle = new MtUniCreditControlPanelOrderLifecycleService(
             $attempts,
             $locks,
-            $stack['client']
+            $stack['client'],
+            null,
+            MtUniCreditProcess1ServiceFactory::coordinator($db),
+            MtUniCreditProcess1ServiceFactory::bankStatuses($db)
         );
 
         return new MtUniCreditStorefrontFinancingSubmissionService(

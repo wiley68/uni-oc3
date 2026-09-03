@@ -143,7 +143,10 @@ class ModelExtensionPaymentMtUniCredit extends Model
         $lifecycle = new MtUniCreditControlPanelOrderLifecycleService(
             $attempts,
             new MtUniCreditOperationLockRepository($db),
-            $stack['client']
+            $stack['client'],
+            null,
+            MtUniCreditProcess1ServiceFactory::coordinator($db),
+            MtUniCreditProcess1ServiceFactory::bankStatuses($db)
         );
         $service = new MtUniCreditCheckoutFinancingSubmissionService(
             $attempts,

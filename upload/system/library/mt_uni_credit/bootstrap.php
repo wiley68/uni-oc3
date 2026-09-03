@@ -85,6 +85,22 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'cp_service_factory.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'calculator' . DIRECTORY_SEPARATOR . 'bootstrap.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'health.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'installer.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'shop_configuration_flags.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'bank_status.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'smart_ucf_endpoint_policy.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'smart_ucf_session_exception.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'smart_ucf_lifecycle_states.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'smart_ucf_failure_classification.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'smart_ucf_failure_classifier.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'smart_ucf_payload_builder.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'smart_ucf_session_client.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'smart_ucf_coordination_result.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'smart_ucf_lifecycle_repository.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'certificate_local_paths.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'mtls_private_key_passphrase_provider.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'certificate_pair_validator.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'smart_ucf_session_coordinator.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'process1_service_factory.php';
 
 /**
  * Phase 2 bootstrap helpers for mt_uni_credit.

@@ -853,3 +853,38 @@ Test Product and Cart separately after hard-refresh.
 - [ ] Product Buy payment preselect OCMOD skipped (soft session preference only).
 - [ ] This Product OCMOD anchor closure does not change Cart calculation/lifecycle or Checkout Phase 7.
 - [ ] Popup Step 1 closure does **not** redesign Step 2 content (separate later task).
+
+---
+
+## Phase 9 — Process 1 / SmartUCF lifecycle (local PASS)
+
+Automated gate: `php tests/phase9_check.php` (189 checks, no live network).
+
+### Process 1 success
+
+1. [ ] After CP `cp_created`, Process 1 (`uni_proces !== 1`) issues exactly one SmartUCF `sucfOnlineSessionStart`.
+2. [ ] Local bank status becomes `bank_sent_process1`.
+3. [ ] Customer redirect is the stored trusted application URL (allowlisted host + path + safe session id).
+4. [ ] Repeat submit / local replay does **not** issue a second SmartUCF session create.
+
+### SmartUCF failure
+
+1. [ ] Definitive remote reject (`errorCode` JSON, HTTP 4xx) → `bank_send_failed_smartucf`; CP order id preserved; SmartUCF state failed/non-retryable.
+2. [ ] Timeout / transport ambiguous → `outcome_unknown`; **no** `bank_sent_process1`; **no** `bank_send_failed_smartucf`; second submit does **not** fresh-resend SmartUCF.
+3. [ ] Concurrent claim: while `submitting`, a second `claimForSubmitting` returns null.
+
+### Process 2 no-call
+
+1. [ ] `uni_proces === 1` → Process 2 path: **0** SmartUCF HTTP calls; bank status is neither `bank_sent_process1` nor `bank_send_failed_smartucf`.
+
+### Certificate / privacy / diagnostics
+
+1. [ ] `uni_sertificat = 1` with missing local cert/passphrase → no SmartUCF HTTP call; no `bank_sent_process1` (pre-send / retryable; not terminal SmartUCF bank failure).
+2. [ ] Cert diagnostics remain **metadata-only** (no private-key PEM / passphrase in exception messages or logs).
+3. [ ] Debug log retrieval continues via the existing Phase 6 bridge (`extension/mt_uni_credit/api/smartucf_debug_log`); raw SmartUCF request body is not a required persisted log path.
+
+### Explicit exclusions (Phase 9)
+
+- [ ] No Process 2 EGN/phone2 persistence, mail, or retention (Phase 10).
+- [ ] No Thank You / admin presentation / homepage ads (Phase 11).
+- [ ] No live SmartUCF or live CP calls in the automated gate.
