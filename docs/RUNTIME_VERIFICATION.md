@@ -367,10 +367,20 @@ Record engine, charset/collation (prefer InnoDB + utf8mb4; note if fallback requ
 
 1. [ ] First save with UNICID + Secret succeeds.
 2. [ ] DB value for `module_mt_uni_credit_secret` starts with `enc:v1:` (report prefix + length only).
-3. [ ] Reopen Module admin: Secret password field is **empty**; UI indicates secret is configured.
-4. [ ] Save with blank Secret preserves prior encrypted value (prefix unchanged).
-5. [ ] Save with new Secret changes encrypted value (prefix stays `enc:v1:`, body differs).
-6. [ ] Corrupt encrypted value (test shop only) fails closed in admin/health without exposing plaintext.
+3. [ ] Reopen Module admin: Secret password field is **empty**; UI indicates secret is configured (`text_secret_configured`); Secret input is **not** browser-`required`.
+4. [ ] Change a harmless setting (e.g. button spacing), leave Secret empty, click top-right Save → save succeeds.
+5. [ ] No browser message „Моля попълнете това поле“ on Secret.
+6. [ ] No download of `unipayment-smartucf-log-*.json` during normal Save.
+7. [ ] Existing encrypted Secret preserved (prefix unchanged; refresh bank still works).
+8. [ ] Save with new Secret changes encrypted value (prefix stays `enc:v1:`, body differs).
+9. [ ] Corrupt encrypted value (test shop only) fails closed in admin/health without exposing plaintext.
+
+### Admin form ownership (Save vs operational actions)
+
+1. [ ] Top-right Save submits only Module settings (`extension/module/mt_uni_credit`) — never `downloadJournal` / `refreshBankData`.
+2. [ ] **Обнови данните от банката** triggers only refresh (POST `refreshBankData`).
+3. [ ] **Изтегли журнал операции** triggers only JSON download (`unipayment-smartucf-log-YYYYMMDD-HHMMSS.json`).
+4. [ ] Operational buttons are outside `form-module` (separate forms); Enter in a settings field does not download the journal.
 
 Sanitized SQL example:
 

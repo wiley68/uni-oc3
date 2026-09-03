@@ -74,7 +74,9 @@ final class MtUniCreditCredentialsRepository
      */
     public function hasSecret($storeId)
     {
-        return $this->getSecret($storeId) !== null;
+        $storedSecret = (string) ($this->settings->get($storeId, MtUniCreditConstants::MODULE_SETTING_SECRET) ?? '');
+
+        return $storedSecret !== '' && MtUniCreditSettingCipher::hasEncryptedPrefix($storedSecret);
     }
 
     /**
@@ -83,9 +85,7 @@ final class MtUniCreditCredentialsRepository
      */
     public function isSecretReadable($storeId)
     {
-        $storedSecret = (string) ($this->settings->get($storeId, MtUniCreditConstants::MODULE_SETTING_SECRET) ?? '');
-
-        return $storedSecret === '' || $this->getSecret($storeId) !== null;
+        return $this->getSecret($storeId) !== null;
     }
 
     /**

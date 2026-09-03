@@ -130,7 +130,8 @@ mtuc2_assert($credentials->getSecret($storeId) === 'replacement-secret', 'replac
 
 $store->set($storeId, MtUniCreditConstants::MODULE_SETTING_SECRET, 'enc:v1:corrupt');
 mtuc2_assert($credentials->getSecret($storeId) === null, 'corrupt stored secret fails closed');
-mtuc2_assert($credentials->hasSecret($storeId) === false, 'corrupt stored secret is not configured');
+mtuc2_assert($credentials->hasSecret($storeId) === true, 'corrupt enc:v1 envelope still counts as configured');
+mtuc2_assert($credentials->isSecretReadable($storeId) === false, 'corrupt stored secret is not readable');
 
 $vector = $hmacFixture['vector'];
 $signature = MtUniCreditRequestSignatureProtocol::computeSignature(

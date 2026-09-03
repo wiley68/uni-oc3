@@ -104,19 +104,6 @@ class ModelExtensionModuleMtUniCredit extends Model
         $storeId = $this->resolveStoreId();
         $services = $this->createCpServices();
         $previousUnicid = $services['credentials']->getUnicid($storeId);
-        $secretChanged = false;
-
-        if (array_key_exists(MtUniCreditConstants::MODULE_SETTING_SECRET, $post)) {
-            $secret = trim((string) $post[MtUniCreditConstants::MODULE_SETTING_SECRET]);
-            if ($secret !== '') {
-                try {
-                    $services['credentials']->saveSecret($storeId, $secret);
-                    $secretChanged = true;
-                } catch (RuntimeException $exception) {
-                    throw new MtUniCreditSecretPersistException('error_secret_encrypt_failed');
-                }
-            }
-        }
 
         $payload = array();
 
@@ -143,24 +130,40 @@ class ModelExtensionModuleMtUniCredit extends Model
             $payload[$key] = MtUniCreditLocalSettings::normalizeFlag($post[$key]);
         }
 
-        if ($payload) {
-            $this->load->model('setting/setting');
-            $existing = $this->model_setting_setting->getSetting(MtUniCreditConstants::MODULE_SETTINGS_CODE, $storeId);
-            if (!is_array($existing)) {
-                $existing = array();
+        // Never let a blank POST Secret overwrite encrypted storage via editSetting().
+        unset($payload[MtUniCreditConstants::MODULE_SETTING_SECRET]);
+
+        $this->load->model('setting/setting');
+        $existing = $this->model_setting_setting->getSetting(MtUniCreditConstants::MODULE_SETTINGS_CODE, $storeId);
+        if (!is_array($existing)) {
+            $existing = array();
+        }
+
+        // editSetting() deletes all rows for the module code — preserve secret/tokens/other keys.
+        foreach ($existing as $key => $value) {
+            if (!array_key_exists($key, $payload)) {
+                $payload[$key] = $value;
             }
+        }
 
-            $merged = array_merge($existing, $payload);
+        $this->model_setting_setting->editSetting(
+            MtUniCreditConstants::MODULE_SETTINGS_CODE,
+            $payload,
+            $storeId
+        );
 
-            if (!empty($existing[MtUniCreditConstants::MODULE_SETTING_SECRET])) {
-                $merged[MtUniCreditConstants::MODULE_SETTING_SECRET] = $existing[MtUniCreditConstants::MODULE_SETTING_SECRET];
+        // Write/replace Secret AFTER editSetting so DELETE+reinsert cannot drop a fresh envelope.
+        $secretChanged = false;
+        if (array_key_exists(MtUniCreditConstants::MODULE_SETTING_SECRET, $post)) {
+            $secret = trim((string) $post[MtUniCreditConstants::MODULE_SETTING_SECRET]);
+            if ($secret !== '') {
+                try {
+                    $services['credentials']->saveSecret($storeId, $secret);
+                    $secretChanged = true;
+                } catch (RuntimeException $exception) {
+                    throw new MtUniCreditSecretPersistException('error_secret_encrypt_failed');
+                }
             }
-
-            $this->model_setting_setting->editSetting(
-                MtUniCreditConstants::MODULE_SETTINGS_CODE,
-                $merged,
-                $storeId
-            );
         }
 
         $newUnicid = trim((string) (isset($payload[MtUniCreditConstants::MODULE_SETTING_UNICID])

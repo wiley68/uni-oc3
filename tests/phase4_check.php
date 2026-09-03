@@ -110,7 +110,7 @@ mtuc4_assert($credentials->hasSecret($storeId) === false, 'missing Secret not co
 
 Phase4TestHarness::prepareCredentials($settings, $storeId);
 $settings->set($storeId, MtUniCreditConstants::MODULE_SETTING_SECRET, 'enc:v1:corrupt');
-mtuc4_assert($credentials->hasSecret($storeId) === false, 'corrupt encrypted Secret fails closed');
+mtuc4_assert($credentials->hasSecret($storeId) === true, 'corrupt enc:v1 envelope still counts as configured');
 mtuc4_assert($credentials->isSecretReadable($storeId) === false, 'corrupt encrypted Secret not readable');
 
 // Auth lifecycle

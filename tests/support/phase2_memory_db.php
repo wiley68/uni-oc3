@@ -8,6 +8,9 @@ final class Phase2MemoryDb
     /** @var array<int, array<string, array<string, string>>> */
     private $settings = array();
 
+    /** @var array<int, array<string, string>> */
+    private $settingCodes = array();
+
     /** @var array<int, array<string, mixed>> */
     private $apiNonces = array();
 
@@ -62,6 +65,7 @@ final class Phase2MemoryDb
     public function reset()
     {
         $this->settings = array();
+        $this->settingCodes = array();
         $this->apiNonces = array();
         $this->operationLocks = array();
         $this->shopCache = array();
@@ -418,9 +422,38 @@ final class Phase2MemoryDb
     private function insertSetting($sql)
     {
         $fields = $this->parseInsertValues($sql);
+        if ($fields === array()) {
+            $fields = array(
+                'store_id' => (string) $this->extractWhereInt(str_replace('WHERE', 'SET', $sql), 'store_id'),
+                'code' => $this->extractQuoted($sql, '`code` = \'', '\''),
+                'key' => $this->extractQuoted($sql, '`key` = \'', '\''),
+                'value' => $this->extractQuoted($sql, '`value` = \'', '\''),
+            );
+            if ($fields['code'] === '') {
+                $fields['code'] = $this->extractQuoted($sql, "code` = '", "'");
+            }
+            if ($fields['key'] === '') {
+                $fields['key'] = $this->extractQuoted($sql, "key` = '", "'");
+            }
+            if ($fields['value'] === '') {
+                $fields['value'] = $this->extractQuoted($sql, "value` = '", "'");
+            }
+            if (!isset($fields['store_id']) || $fields['store_id'] === '0' || $fields['store_id'] === 0) {
+                if (preg_match("/store_id\\s*=\\s*'(\\d+)'/", $sql, $m)) {
+                    $fields['store_id'] = $m[1];
+                } elseif (preg_match("/store_id\\s*=\\s*(\\d+)/", $sql, $m)) {
+                    $fields['store_id'] = $m[1];
+                }
+            }
+        }
+
         $storeId = (int) $fields['store_id'];
         $key = (string) $fields['key'];
+        if ($key === '') {
+            return $this->emptyResult();
+        }
         $this->settings[$storeId][$key] = (string) $fields['value'];
+        $this->settingCodes[$storeId][$key] = isset($fields['code']) ? (string) $fields['code'] : '';
         $this->affected = 1;
 
         return $this->emptyResult();
@@ -452,12 +485,33 @@ final class Phase2MemoryDb
     {
         $storeId = (int) $this->extractWhereInt($sql, 'store_id');
         $key = $this->extractWhereQuoted($sql, 'key');
-        if (!isset($this->settings[$storeId][$key])) {
+        $code = $this->extractWhereQuoted($sql, 'code');
+
+        if ($key !== '') {
+            if (!isset($this->settings[$storeId][$key])) {
+                return $this->emptyResult();
+            }
+            unset($this->settings[$storeId][$key]);
+            unset($this->settingCodes[$storeId][$key]);
+            $this->affected = 1;
+
             return $this->emptyResult();
         }
 
-        unset($this->settings[$storeId][$key]);
-        $this->affected = 1;
+        if ($code !== '' && isset($this->settings[$storeId])) {
+            $deleted = 0;
+            foreach (array_keys($this->settings[$storeId]) as $settingKey) {
+                $settingCode = isset($this->settingCodes[$storeId][$settingKey])
+                    ? (string) $this->settingCodes[$storeId][$settingKey]
+                    : '';
+                if ($settingCode === $code) {
+                    unset($this->settings[$storeId][$settingKey]);
+                    unset($this->settingCodes[$storeId][$settingKey]);
+                    $deleted++;
+                }
+            }
+            $this->affected = $deleted;
+        }
 
         return $this->emptyResult();
     }
@@ -470,11 +524,38 @@ final class Phase2MemoryDb
     {
         $storeId = (int) $this->extractWhereInt($sql, 'store_id');
         $key = $this->extractWhereQuoted($sql, 'key');
-        if (!isset($this->settings[$storeId][$key])) {
-            return $this->emptyResult();
+        $code = $this->extractWhereQuoted($sql, 'code');
+
+        if ($key !== '') {
+            if (!isset($this->settings[$storeId][$key])) {
+                return $this->emptyResult();
+            }
+
+            return $this->singleRow(array('value' => $this->settings[$storeId][$key]));
         }
 
-        return $this->singleRow(array('value' => $this->settings[$storeId][$key]));
+        if ($code !== '' && isset($this->settings[$storeId])) {
+            $rows = array();
+            foreach ($this->settings[$storeId] as $settingKey => $value) {
+                $settingCode = isset($this->settingCodes[$storeId][$settingKey])
+                    ? (string) $this->settingCodes[$storeId][$settingKey]
+                    : '';
+                if ($settingCode !== $code) {
+                    continue;
+                }
+                $rows[] = array(
+                    'store_id' => $storeId,
+                    'code' => $code,
+                    'key' => (string) $settingKey,
+                    'value' => (string) $value,
+                    'serialized' => '0',
+                );
+            }
+
+            return $this->rowsResult($rows);
+        }
+
+        return $this->emptyResult();
     }
 
     /**
@@ -555,6 +636,12 @@ final class Phase2MemoryDb
     private function extractWhereInt($sql, $column)
     {
         if (preg_match('/`' . preg_quote($column, '/') . '`\s*=\s*(\d+)/', $sql, $matches)) {
+            return (int) $matches[1];
+        }
+        if (preg_match('/(?:^|\\s)' . preg_quote($column, '/') . '\\s*=\\s*\'(\\d+)\'/', $sql, $matches)) {
+            return (int) $matches[1];
+        }
+        if (preg_match('/(?:^|\\s)' . preg_quote($column, '/') . '\\s*=\\s*(\\d+)/', $sql, $matches)) {
             return (int) $matches[1];
         }
 
@@ -974,7 +1061,7 @@ final class Phase2MemoryDb
      */
     private function emptyResult()
     {
-        return (object) array('num_rows' => 0, 'row' => array());
+        return (object) array('num_rows' => 0, 'row' => array(), 'rows' => array());
     }
 
     /**
@@ -983,6 +1070,21 @@ final class Phase2MemoryDb
      */
     private function singleRow(array $row)
     {
-        return (object) array('num_rows' => 1, 'row' => $row);
+        return (object) array('num_rows' => 1, 'row' => $row, 'rows' => array($row));
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $rows
+     * @return object
+     */
+    private function rowsResult(array $rows)
+    {
+        $first = $rows === array() ? array() : $rows[0];
+
+        return (object) array(
+            'num_rows' => count($rows),
+            'row' => $first,
+            'rows' => $rows,
+        );
     }
 }

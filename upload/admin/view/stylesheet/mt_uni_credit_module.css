@@ -63,3 +63,9 @@
   color: inherit;
   font-weight: normal;
 }
+
+.mt-uni-credit-module .mt-uni-inline-action {
+  display: inline-block;
+  margin: 0 8px 0 0;
+  vertical-align: middle;
+}
