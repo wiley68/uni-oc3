@@ -153,6 +153,28 @@ $cartPresented = $presenter->presentCart($shop, $eligibleCart, $eligibleResoluti
 mtuc8_assert(is_array($cartPresented) && !empty($cartPresented['hide_secondary']), 'cart presenter eligible + hide_secondary');
 mtuc8_assert(isset($cartPresented['cart_fingerprint']) && $cartPresented['cart_fingerprint'] !== '', 'cart fingerprint present');
 
+// EUR display uses word "евро", never the € symbol (buttons + popup source labels)
+$eurShop = mtuc3_golden_shop(array('uni_eur' => 3, 'uni_vnoska' => 1));
+$eurPresented = $presenter->presentProduct($eurShop, $product, 'EUR');
+mtuc8_assert(is_array($eurPresented) && isset($eurPresented['offers']['standard']['installment_label']), 'EUR presenter label present');
+mtuc8_assert(
+    strpos($eurPresented['offers']['standard']['installment_label'], 'евро') !== false,
+    'EUR installment_label uses евро'
+);
+mtuc8_assert(
+    strpos($eurPresented['offers']['standard']['installment_label'], '€') === false,
+    'EUR installment_label has no € symbol'
+);
+$bgnLabel = $eligible['offers']['standard']['installment_label'];
+mtuc8_assert(strpos($bgnLabel, 'лв.') !== false, 'BGN installment_label uses лв.');
+$jsPathForCurrency = $catalog . DIRECTORY_SEPARATOR . 'view' . DIRECTORY_SEPARATOR . 'theme' . DIRECTORY_SEPARATOR
+    . 'default' . DIRECTORY_SEPARATOR . 'template' . DIRECTORY_SEPARATOR . 'extension' . DIRECTORY_SEPARATOR
+    . 'mt_uni_credit' . DIRECTORY_SEPARATOR . 'storefront.js';
+$jsCurrency = (string) file_get_contents($jsPathForCurrency);
+mtuc8_assert(strpos($jsCurrency, 'formatMoneyWithCurrency') !== false, 'JS formats popup amounts with currency label');
+mtuc8_assert(strpos($jsCurrency, '"евро"') !== false, 'JS EUR label is евро');
+mtuc8_assert(strpos($jsCurrency, '€') === false, 'JS has no € symbol');
+
 // CSRF
 $session = array();
 $token = MtUniCreditStorefrontCsrf::issue($session);
@@ -184,7 +206,8 @@ mtuc8_assert($missing === '', 'asset url missing file returns empty');
 
 // storeUrl must not require HTTP_SERVER / HTTPS_SERVER to be defined
 $stubConfig = new class {
-    private $values;
+    /** @var array<string, string> */
+    private $values = array();
     public function __construct()
     {
         $this->values = array(
@@ -193,6 +216,10 @@ $stubConfig = new class {
             'config_ssl' => 'https://shop.example/',
         );
     }
+    /**
+     * @param string $key
+     * @return string|null
+     */
     public function get($key)
     {
         return isset($this->values[$key]) ? $this->values[$key] : null;
@@ -207,6 +234,10 @@ mtuc8_assert(
     'storeUrl uses config_url for non-default store without HTTP_SERVER'
 );
 $stubConfigDefault = new class {
+    /**
+     * @param string $key
+     * @return string|null
+     */
     public function get($key)
     {
         if ($key === 'config_store_id') {
@@ -254,6 +285,140 @@ $cssPath = $catalog . DIRECTORY_SEPARATOR . 'view' . DIRECTORY_SEPARATOR . 'them
 $css = (string) file_get_contents($cssPath);
 mtuc8_assert(!preg_match('/(^|\\n)\\s*\\.btn\\s*\\{/', $css), 'CSS does not style bare .btn {');
 
+// Button visual parity — CP mapping via presenter + shared Product/Cart CSS contract
+$buttonShopLight = mtuc3_golden_shop(array(
+    'uni_eur' => 0,
+    'uni_vnoska' => 1,
+    'uni_type_button' => 0,
+    'uni_button_row' => 1,
+    'uni_button_width' => 315,
+    'uni_button_height' => 62,
+));
+$buttonVmLight = $presenter->presentProduct($buttonShopLight, $product, 'BGN');
+mtuc8_assert(is_array($buttonVmLight), 'button VM light present');
+mtuc8_assert(
+    isset($buttonVmLight['dark_button'], $buttonVmLight['buttons_in_row'], $buttonVmLight['button_width'], $buttonVmLight['button_height']),
+    'button VM exposes uni_type_button/row/width/height mapping'
+);
+mtuc8_assert($buttonVmLight['dark_button'] === false, 'uni_type_button=0 => light (dark_button false)');
+mtuc8_assert($buttonVmLight['buttons_in_row'] === true, 'uni_button_row=1 => buttons_in_row true');
+mtuc8_assert((int) $buttonVmLight['button_width'] === 315, 'non-default uni_button_width reaches VM');
+mtuc8_assert((int) $buttonVmLight['button_height'] === 62, 'non-default uni_button_height reaches VM');
+mtuc8_assert(
+    isset($buttonVmLight['offers']['standard'], $buttonVmLight['offers']['promo']),
+    'standard + promo offers both present for visual parity'
+);
+
+$buttonShopDark = mtuc3_golden_shop(array(
+    'uni_eur' => 0,
+    'uni_vnoska' => 1,
+    'uni_type_button' => 1,
+    'uni_button_row' => 0,
+    'uni_button_width' => 315,
+    'uni_button_height' => 62,
+));
+$buttonVmDark = $presenter->presentProduct($buttonShopDark, $product, 'BGN');
+mtuc8_assert(is_array($buttonVmDark) && $buttonVmDark['dark_button'] === true, 'uni_type_button=1 => dark');
+mtuc8_assert($buttonVmDark['buttons_in_row'] === false, 'uni_button_row!=1 => stacked');
+
+$buttonVmCart = $presenter->presentCart(
+    $buttonShopLight,
+    new MtUniCreditCartContext(array(mtuc3_cart_line(42, array(7), 500.0)), 500.0),
+    null,
+    'BGN'
+);
+mtuc8_assert(is_array($buttonVmCart), 'cart button VM present');
+mtuc8_assert(
+    (int) $buttonVmCart['button_width'] === 315
+        && (int) $buttonVmCart['button_height'] === 62
+        && $buttonVmCart['dark_button'] === false
+        && $buttonVmCart['buttons_in_row'] === true,
+    'Product/Cart share same CP button mapping fields'
+);
+
+$productTwig = (string) file_get_contents(
+    $catalog . DIRECTORY_SEPARATOR . 'view' . DIRECTORY_SEPARATOR . 'theme' . DIRECTORY_SEPARATOR
+        . 'default' . DIRECTORY_SEPARATOR . 'template' . DIRECTORY_SEPARATOR . 'extension'
+        . DIRECTORY_SEPARATOR . 'mt_uni_credit' . DIRECTORY_SEPARATOR . 'product_widget.twig'
+);
+$cartTwig = (string) file_get_contents(
+    $catalog . DIRECTORY_SEPARATOR . 'view' . DIRECTORY_SEPARATOR . 'theme' . DIRECTORY_SEPARATOR
+        . 'default' . DIRECTORY_SEPARATOR . 'template' . DIRECTORY_SEPARATOR . 'extension'
+        . DIRECTORY_SEPARATOR . 'mt_uni_credit' . DIRECTORY_SEPARATOR . 'cart_widget.twig'
+);
+foreach (array('product' => $productTwig, 'cart' => $cartTwig) as $surface => $twig) {
+    mtuc8_assert(
+        strpos($twig, 'mt-uni-credit-storefront--dark') !== false,
+        $surface . ' twig dark class from dark_button'
+    );
+    mtuc8_assert(
+        strpos($twig, 'mt-uni-credit-storefront--stacked') !== false,
+        $surface . ' twig stacked class from buttons_in_row'
+    );
+    mtuc8_assert(
+        strpos($twig, '--mtuc-button-width:') !== false && strpos($twig, '--mtuc-button-height:') !== false,
+        $surface . ' twig inline CSS vars from button_width/height'
+    );
+    mtuc8_assert(
+        strpos($twig, 'mt-uni-credit-storefront__button mt-uni-credit-storefront__button--') !== false,
+        $surface . ' twig shared base button class + offer modifier'
+    );
+    mtuc8_assert(strpos($twig, 'mt-uni-credit-storefront__logo') !== false, $surface . ' twig standard logo slot');
+    mtuc8_assert(strpos($twig, 'mt-uni-credit-storefront__badge') !== false, $surface . ' twig promo 0% badge');
+    mtuc8_assert(strpos($twig, 'asset_fonts') !== false, $surface . ' twig loads local fonts CSS');
+}
+
+mtuc8_assert(
+    strpos($css, '#mt-uni-credit-product-root') !== false
+        && strpos($css, '#mt-uni-credit-cart-root') !== false,
+    'CSS scopes Product and Cart roots together'
+);
+mtuc8_assert(strpos($css, 'border: 2px solid var(--mtuc-red)') !== false, 'CSS 2px UniCredit red border');
+mtuc8_assert(strpos($css, 'border-radius: 9999px') !== false, 'CSS pill radius 9999px');
+mtuc8_assert(strpos($css, '--mtuc-button-width:') !== false, 'CSS configured width variable');
+mtuc8_assert(strpos($css, '--mtuc-button-height:') !== false, 'CSS configured height variable');
+mtuc8_assert(strpos($css, 'background: #fff') !== false, 'CSS white standard background');
+mtuc8_assert(strpos($css, 'background: var(--mtuc-red)') !== false, 'CSS red dark background');
+mtuc8_assert(strpos($css, 'border-color: #b82119') !== false, 'CSS dark red border');
+mtuc8_assert(strpos($css, 'color: var(--mtuc-red-text)') !== false, 'CSS red standard title');
+mtuc8_assert(
+    preg_match(
+        '/mt-uni-credit-storefront--dark[\s\S]*?\.mt-uni-credit-storefront__button-title[\s\S]*?color:\s*#fff/',
+        $css
+    ) === 1,
+    'CSS white dark title'
+);
+mtuc8_assert(strpos($css, '--mtuc-red: #ee2e24') !== false, 'CSS OC4 --mtuc-red');
+mtuc8_assert(strpos($css, 'mt-uni-credit-storefront--stacked') !== false, 'CSS stacked layout');
+mtuc8_assert(strpos($css, '@container mtuc-product-buttons') !== false, 'CSS responsive container query');
+mtuc8_assert(
+    strpos($css, 'mt-uni-credit-product-calculator__popup') === false
+        && strpos($css, 'popup-calc') === false,
+    'CSS button closure does not port OC4 popup selectors'
+);
+
+$fontsCss = $catalog . DIRECTORY_SEPARATOR . 'view' . DIRECTORY_SEPARATOR . 'theme' . DIRECTORY_SEPARATOR
+    . 'default' . DIRECTORY_SEPARATOR . 'template' . DIRECTORY_SEPARATOR . 'extension'
+    . DIRECTORY_SEPARATOR . 'mt_uni_credit' . DIRECTORY_SEPARATOR . 'storefront_fonts.css';
+$fontFile = $catalog . DIRECTORY_SEPARATOR . 'view' . DIRECTORY_SEPARATOR . 'theme' . DIRECTORY_SEPARATOR
+    . 'default' . DIRECTORY_SEPARATOR . 'template' . DIRECTORY_SEPARATOR . 'extension'
+    . DIRECTORY_SEPARATOR . 'mt_uni_credit' . DIRECTORY_SEPARATOR . 'fonts' . DIRECTORY_SEPARATOR
+    . 'roboto-condensed' . DIRECTORY_SEPARATOR . 'roboto-condensed-latin-700.woff2';
+mtuc8_assert(is_file($fontsCss), 'local storefront_fonts.css present');
+mtuc8_assert(is_file($fontFile), 'local Roboto Condensed woff2 present');
+mtuc8_assert(
+    MtUniCreditConstants::STOREFRONT_ASSET_FONTS_CSS_RELATIVE !== ''
+        && MtUniCreditConstants::STOREFRONT_LOGO_STANDARD_RELATIVE !== '',
+    'font/logo asset constants defined'
+);
+mtuc8_assert(
+    strpos($productSrc, 'asset_fonts') !== false && strpos($cartSrc, 'asset_fonts') !== false,
+    'Product/Cart controllers pass asset_fonts'
+);
+mtuc8_assert(
+    strpos($productSrc, 'logo_standard_url') !== false && strpos($cartSrc, 'logo_alternative_url') !== false,
+    'Product/Cart controllers pass logo URLs'
+);
 // OCMOD anchors — frozen Product template strategy
 $installXml = (string) file_get_contents($root . DIRECTORY_SEPARATOR . 'install.xml');
 mtuc8_assert(strpos($installXml, 'mt_uni_credit:product') !== false, 'OCMOD product marker');

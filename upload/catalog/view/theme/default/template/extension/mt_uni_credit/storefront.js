@@ -50,6 +50,18 @@
     return n.toFixed(2);
   }
 
+  function currencyDisplayLabel(currencyIso) {
+    return String(currencyIso || "").toUpperCase() === "EUR" ? "евро" : "лв.";
+  }
+
+  function formatMoneyWithCurrency(value, currencyIso) {
+    var amount = formatMoney(value);
+    if (amount === "") {
+      return "";
+    }
+    return amount + " " + currencyDisplayLabel(currencyIso);
+  }
+
   function initRoot($, $root) {
     if ($root.attr("data-mtuc-bound") === "1") {
       return;
@@ -58,7 +70,8 @@
 
     var bootstrap = parseBootstrap($root) || {};
     var state = bootstrap.calculator || {};
-    var entryPoint = $root.attr("data-entry-point") || bootstrap.entry_point || "product";
+    var entryPoint =
+      $root.attr("data-entry-point") || bootstrap.entry_point || "product";
     var modalId =
       entryPoint === "cart"
         ? "#mt-uni-credit-cart-modal"
@@ -120,10 +133,19 @@
       if (!scheme) {
         return;
       }
-      $modal.find('[data-mtuc-display="price"]').text(formatMoney(state.price));
-      $modal.find('[data-mtuc-display="monthly"]').text(formatMoney(scheme.monthly));
-      $modal.find('[data-mtuc-display="total"]').text(formatMoney(scheme.total));
-      $modal.find("[data-mtuc-first]").val(formatMoney(scheme.first_installment || 0));
+      var currencyIso = state.currency_iso || "";
+      $modal
+        .find('[data-mtuc-display="price"]')
+        .text(formatMoneyWithCurrency(state.price, currencyIso));
+      $modal
+        .find('[data-mtuc-display="monthly"]')
+        .text(formatMoneyWithCurrency(scheme.monthly, currencyIso));
+      $modal
+        .find('[data-mtuc-display="total"]')
+        .text(formatMoneyWithCurrency(scheme.total, currencyIso));
+      $modal
+        .find("[data-mtuc-first]")
+        .val(formatMoney(scheme.first_installment || 0));
       if (scheme.first_installment_locked) {
         $modal.find("[data-mtuc-first]").attr("readonly", "readonly");
       }
@@ -132,6 +154,7 @@
     function fillSchemes() {
       var offer = currentOffer();
       var $select = $modal.find("[data-mtuc-schemes]");
+      var currencyIso = state.currency_iso || "";
       $select.empty();
       if (!offer || !offer.schemes) {
         return;
@@ -146,8 +169,8 @@
             ">" +
             scheme.months +
             " × " +
-            formatMoney(scheme.monthly) +
-            "</option>"
+            formatMoneyWithCurrency(scheme.monthly, currencyIso) +
+            "</option>",
         );
       });
       if (!selectedSchemeKey && offer.preferred_scheme_key) {
@@ -158,7 +181,10 @@
     }
 
     function setStep(step) {
-      $modal.find("[data-mtuc-step]").attr("hidden", true).removeClass("mt-uni-credit-storefront__step--active");
+      $modal
+        .find("[data-mtuc-step]")
+        .attr("hidden", true)
+        .removeClass("mt-uni-credit-storefront__step--active");
       $modal
         .find('[data-mtuc-step="' + step + '"]')
         .removeAttr("hidden")
@@ -199,7 +225,7 @@
             return;
           }
           var id = match[1];
-          if ($el.is(':checkbox') || $el.is(':radio')) {
+          if ($el.is(":checkbox") || $el.is(":radio")) {
             if (!$el.is(":checked")) {
               return;
             }
@@ -267,16 +293,26 @@
           sequence: localSeq,
         },
         function (err, response) {
-          if (err || !response || !response.success || response.sequence !== localSeq) {
+          if (
+            err ||
+            !response ||
+            !response.success ||
+            response.sequence !== localSeq
+          ) {
             if (response && response.unavailable) {
-              $root.find("[data-mtuc-entry-error]").text("").attr("hidden", true);
+              $root
+                .find("[data-mtuc-entry-error]")
+                .text("")
+                .attr("hidden", true);
               $root.hide();
             }
             return;
           }
           state = response.calculator || state;
           $root.find("[data-mtuc-preferred-price]").each(function () {
-            var type = $(this).closest("[data-mtuc-offer]").attr("data-mtuc-offer");
+            var type = $(this)
+              .closest("[data-mtuc-offer]")
+              .attr("data-mtuc-offer");
             if (state.offers && state.offers[type]) {
               $(this).text(state.offers[type].installment_label);
             }
@@ -284,7 +320,7 @@
           if ($modal.is(":visible") || !$modal.attr("hidden")) {
             fillSchemes();
           }
-        }
+        },
       );
     }
 
@@ -333,7 +369,7 @@
                     "index.php?route=checkout/checkout";
                 });
               }
-            }
+            },
           );
           return;
         }
@@ -347,7 +383,9 @@
         }
         var consent = $form.find("[data-mtuc-consent]").is(":checked");
         if (!consent) {
-          $modal.find("[data-mtuc-submit-error]").text("Моля, приемете условията.");
+          $modal
+            .find("[data-mtuc-submit-error]")
+            .text("Моля, приемете условията.");
           return;
         }
         $modal.find("[data-mtuc-processing]").removeAttr("hidden");
@@ -367,26 +405,34 @@
           data.option = form.option;
         } else {
           data.cart_fingerprint =
-            $root.attr("data-cart-fingerprint") || bootstrap.cart_fingerprint || "";
+            $root.attr("data-cart-fingerprint") ||
+            bootstrap.cart_fingerprint ||
+            "";
         }
-        postJson($root.attr("data-route-submit"), data, function (err, response) {
-          $modal.find("[data-mtuc-processing]").attr("hidden", true);
-          if (err || !response) {
-            $modal.find("[data-mtuc-submit-error]").text("Заявката не беше успешна.");
-            return;
-          }
-          if (response.redirect) {
-            window.location = response.redirect;
-            return;
-          }
-          if (response.success) {
-            closeModal();
-            return;
-          }
-          $modal
-            .find("[data-mtuc-submit-error]")
-            .text(response.message || "Заявката не беше успешна.");
-        });
+        postJson(
+          $root.attr("data-route-submit"),
+          data,
+          function (err, response) {
+            $modal.find("[data-mtuc-processing]").attr("hidden", true);
+            if (err || !response) {
+              $modal
+                .find("[data-mtuc-submit-error]")
+                .text("Заявката не беше успешна.");
+              return;
+            }
+            if (response.redirect) {
+              window.location = response.redirect;
+              return;
+            }
+            if (response.success) {
+              closeModal();
+              return;
+            }
+            $modal
+              .find("[data-mtuc-submit-error]")
+              .text(response.message || "Заявката не беше успешна.");
+          },
+        );
       },
       scheduleCalculate: scheduleCalculate,
     });
@@ -404,7 +450,7 @@
 
     function apiFromEvent(el) {
       var $modal = $(el).closest(
-        "#mt-uni-credit-product-modal, #mt-uni-credit-cart-modal"
+        "#mt-uni-credit-product-modal, #mt-uni-credit-cart-modal",
       );
       return $modal.length ? $modal.data("mtucApi") : null;
     }
@@ -418,7 +464,7 @@
         if (api) {
           api.closeModal();
         }
-      }
+      },
     );
 
     $(document).on(
@@ -430,7 +476,7 @@
         if (api) {
           api.setStep(2);
         }
-      }
+      },
     );
 
     $(document).on(
@@ -442,7 +488,7 @@
         if (api) {
           api.setStep(1);
         }
-      }
+      },
     );
 
     $(document).on(
@@ -453,7 +499,7 @@
         if (api) {
           api.selectScheme($(this).val());
         }
-      }
+      },
     );
 
     $(document).on(
@@ -465,7 +511,7 @@
         if (api) {
           api.secondary();
         }
-      }
+      },
     );
 
     $(document).on(
@@ -477,22 +523,24 @@
         if (api) {
           api.submit();
         }
-      }
+      },
     );
 
     $(document).on("keydown.mtuc", function (e) {
       if (!(e.key === "Escape" || e.keyCode === 27)) {
         return;
       }
-      $("#mt-uni-credit-product-modal, #mt-uni-credit-cart-modal").each(function () {
-        var $m = $(this);
-        if (!$m.attr("hidden")) {
-          var api = $m.data("mtucApi");
-          if (api) {
-            api.closeModal();
+      $("#mt-uni-credit-product-modal, #mt-uni-credit-cart-modal").each(
+        function () {
+          var $m = $(this);
+          if (!$m.attr("hidden")) {
+            var api = $m.data("mtucApi");
+            if (api) {
+              api.closeModal();
+            }
           }
-        }
-      });
+        },
+      );
     });
 
     $(document).on(
@@ -504,16 +552,18 @@
         if (typeof schedule === "function") {
           schedule();
         }
-      }
+      },
     );
   }
 
   waitForJQuery(50, 200, function ($) {
     bindDocumentHandlersOnce($);
     function boot() {
-      $("#mt-uni-credit-product-root, #mt-uni-credit-cart-root").each(function () {
-        initRoot($, $(this));
-      });
+      $("#mt-uni-credit-product-root, #mt-uni-credit-cart-root").each(
+        function () {
+          initRoot($, $(this));
+        },
+      );
     }
     $(boot);
     // Journal/AJAX fragment rebuilds: re-init new roots only (bound roots skipped).

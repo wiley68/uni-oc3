@@ -1,4 +1,4 @@
-# Build deterministic UniCredit OpenCart 3 distributable package.
+﻿# Build deterministic UniCredit OpenCart 3 distributable package.
 # Output: dist/CC_OpenCartv.3.x_UNI_v.2.0.2.ocmod.zip
 
 $ErrorActionPreference = 'Stop'
@@ -86,6 +86,9 @@ $expectedEntries = @(
     'upload/catalog/view/theme/default/template/extension/payment/mt_uni_credit.twig',
     'upload/catalog/view/theme/default/template/extension/mt_uni_credit/storefront.js',
     'upload/catalog/view/theme/default/template/extension/mt_uni_credit/storefront.css',
+    'upload/catalog/view/theme/default/template/extension/mt_uni_credit/storefront_fonts.css',
+    'upload/catalog/view/image/mt_uni_credit/uni_logo.svg',
+    'upload/catalog/view/image/mt_uni_credit/uni_logo_red.svg',
     'upload/system/library/mt_uni_credit/constants.php',
     'upload/system/library/mt_uni_credit/config/environment.php'
 )
@@ -108,4 +111,3 @@ try {
 finally {
     $zipRead.Dispose()
 }
-

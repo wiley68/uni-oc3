@@ -737,8 +737,37 @@ Automated gate: `php tests/phase8_check.php` (no live network).
 6. [ ] PHP / OpenCart logs remain clean.
 7. [ ] Compiled/modified Product Twig conceptually places widget **immediately before** `{% if minimum > 1 %}`.
 
+### Button visual parity (Product + Cart)
+
+Authority: `reference-uni-oc4/catalog/view/stylesheet/mt_uni_credit_product.css` (button shell only). Popup/modal styling is out of scope.
+
+CP fields (via fresh shop cache → presenter): `uni_type_button`, `uni_button_row`, `uni_button_width`, `uni_button_height`.
+
+#### Light (`uni_type_button = 0`)
+
+1. [ ] Product and Cart buttons: white background, 2px red border (`#ee2e24`), pill `border-radius: 9999px`.
+2. [ ] Title red/bold; monthly/interest secondary text dark; logo (standard) or `0%` badge (promo) at right.
+3. [ ] Hover: subtle red-tinted background; focus outline visible without relying only on color.
+
+#### Dark (`uni_type_button = 1`)
+
+1. [ ] Product and Cart: UniCredit red background, dark red border `#b82119`, all button text/badge white.
+2. [ ] Logo uses alternative (light-on-red) asset; promo still shows `0%`.
+
+#### Dimensions
+
+1. [ ] Change CP `uni_button_width` / `uni_button_height` (e.g. 315×62), refresh shop data, hard-refresh storefront.
+2. [ ] Rendered buttons use those values (`--mtuc-button-width` / `--mtuc-button-height`); not stuck at 290×56.
+
+#### Standard + Promo + row
+
+1. [ ] When both offers exist: same base button class, same height/radius/border/padding/typography; Standard has logo, Promo has `0%`.
+2. [ ] `uni_button_row = 1`: same row when width allows; other value: stacked (`--stacked`).
+3. [ ] Narrow viewport: no page overflow; buttons remain usable; configured width kept on desktop.
+
 ### Explicit exclusions (Phase 8)
 
 - [ ] No SmartUCF / Process 1/2 / EGN / email / Thank You / homepage ads (Phase 9+).
 - [ ] Product Buy payment preselect OCMOD skipped (soft session preference only).
 - [ ] This Product OCMOD anchor closure does not change Cart calculation/lifecycle or Checkout Phase 7.
+- [ ] Button visual parity closure does **not** change popup/modal design (separate task).

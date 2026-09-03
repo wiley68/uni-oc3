@@ -1,6 +1,6 @@
 {% set calc = calculator %}
 <div id="mt-uni-credit-cart-root"
-     class="mt-uni-credit-storefront{% if calc.dark_button %} mt-uni-credit-storefront--dark{% endif %}"
+     class="mt-uni-credit-storefront{% if calc.dark_button %} mt-uni-credit-storefront--dark{% endif %}{% if not calc.buttons_in_row %} mt-uni-credit-storefront--stacked{% endif %}"
      data-entry-point="cart"
      data-product-id="0"
      data-hide-secondary="1"
@@ -10,7 +10,8 @@
      data-checkout-url="{{ checkout_url }}"
      data-cart-fingerprint="{{ cart_fingerprint }}"
      data-mtuc-button-width="{{ calc.button_width }}"
-     data-mtuc-button-height="{{ calc.button_height }}">
+     data-mtuc-button-height="{{ calc.button_height }}"
+     style="--mtuc-button-width: {{ calc.button_width }}px; --mtuc-button-height: {{ calc.button_height }}px;">
   <div class="mt-uni-credit-storefront__calculator" aria-live="polite">
     {% if calc.heading %}
       <p class="mt-uni-credit-storefront__heading">{{ calc.heading }}</p>
@@ -23,8 +24,17 @@
                 class="mt-uni-credit-storefront__button mt-uni-credit-storefront__button--{{ offer_type }}"
                 data-mtuc-offer="{{ offer_type }}"
                 data-preferred-key="{{ offer.preferred_scheme_key }}">
-          <span class="mt-uni-credit-storefront__button-title">{{ heading }}</span>
-          <span class="mt-uni-credit-storefront__button-price" data-mtuc-preferred-price>{{ offer.installment_label }}</span>
+          <span class="mt-uni-credit-storefront__button-content">
+            <span class="mt-uni-credit-storefront__button-title">{{ heading }}</span>
+            <span class="mt-uni-credit-storefront__button-price" data-mtuc-preferred-price>{{ offer.installment_label }}</span>
+          </span>
+          {% if offer_type == 'promo' %}
+            <span class="mt-uni-credit-storefront__badge" aria-hidden="true">0%</span>
+          {% else %}
+            <span class="mt-uni-credit-storefront__logo">
+              <img src="{% if calc.dark_button %}{{ logo_alternative_url }}{% else %}{{ logo_standard_url }}{% endif %}" alt="UniCredit" data-mtuc-logo />
+            </span>
+          {% endif %}
         </button>
       {% endfor %}
     </div>
@@ -33,6 +43,9 @@
   {{ modal }}
 </div>
 <script type="application/json" data-mtuc-bootstrap>{{ {calculator: calc, entry_point: 'cart', cart_fingerprint: cart_fingerprint}|json_encode }}</script>
+{% if asset_fonts %}
+<link rel="stylesheet" href="{{ asset_fonts }}" />
+{% endif %}
 {% if asset_css %}
 <link rel="stylesheet" href="{{ asset_css }}" />
 {% endif %}

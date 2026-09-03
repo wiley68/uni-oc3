@@ -263,6 +263,9 @@ class ControllerExtensionMtUniCreditCart extends Controller
         $data['csrf'] = $csrf;
         $data['asset_css'] = $assets['css'];
         $data['asset_js'] = $assets['js'];
+        $data['asset_fonts'] = $assets['fonts'];
+        $data['logo_standard_url'] = $assets['logo_standard'];
+        $data['logo_alternative_url'] = $assets['logo_alternative'];
         $data['route_calculate'] = $this->url->link(MtUniCreditConstants::CART_ROUTE . '/calculate', '', true);
         $data['route_submit'] = $this->url->link(MtUniCreditConstants::CART_ROUTE . '/submit', '', true);
         $data['route_stash'] = '';

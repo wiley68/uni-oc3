@@ -7,7 +7,7 @@ final class MtUniCreditStorefrontRuntime
 {
     /**
      * @param object $registry OpenCart registry-like controller ($this)
-     * @return array{css:string,js:string}
+     * @return array{css:string,js:string,fonts:string,logo_standard:string,logo_alternative:string}
      */
     public static function assetUrls($registry)
     {
@@ -15,6 +15,10 @@ final class MtUniCreditStorefrontRuntime
             ? rtrim(DIR_APPLICATION, '/\\') . DIRECTORY_SEPARATOR . 'view' . DIRECTORY_SEPARATOR . 'theme'
             . DIRECTORY_SEPARATOR . 'default' . DIRECTORY_SEPARATOR . 'template' . DIRECTORY_SEPARATOR
             . 'extension' . DIRECTORY_SEPARATOR . 'mt_uni_credit' . DIRECTORY_SEPARATOR
+            : '';
+        $imageFs = defined('DIR_APPLICATION')
+            ? rtrim(DIR_APPLICATION, '/\\') . DIRECTORY_SEPARATOR . 'view' . DIRECTORY_SEPARATOR . 'image'
+            . DIRECTORY_SEPARATOR . 'mt_uni_credit' . DIRECTORY_SEPARATOR
             : '';
 
         return array(
@@ -25,6 +29,18 @@ final class MtUniCreditStorefrontRuntime
             'js' => MtUniCreditStorefrontAssetUrls::versionedUrl(
                 $baseFs . 'storefront.js',
                 MtUniCreditConstants::STOREFRONT_ASSET_JS_RELATIVE
+            ),
+            'fonts' => MtUniCreditStorefrontAssetUrls::versionedUrl(
+                $baseFs . 'storefront_fonts.css',
+                MtUniCreditConstants::STOREFRONT_ASSET_FONTS_CSS_RELATIVE
+            ),
+            'logo_standard' => MtUniCreditStorefrontAssetUrls::versionedUrl(
+                $imageFs . 'uni_logo.svg',
+                MtUniCreditConstants::STOREFRONT_LOGO_STANDARD_RELATIVE
+            ),
+            'logo_alternative' => MtUniCreditStorefrontAssetUrls::versionedUrl(
+                $imageFs . 'uni_logo_red.svg',
+                MtUniCreditConstants::STOREFRONT_LOGO_ALTERNATIVE_RELATIVE
             ),
         );
     }
