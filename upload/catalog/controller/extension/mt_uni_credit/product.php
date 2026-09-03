@@ -466,11 +466,30 @@ class ControllerExtensionMtUniCreditProduct extends Controller
             $customerRow['email'] = (string) $this->customer->getEmail();
             $customerRow['telephone'] = (string) $this->customer->getTelephone();
             $defaultAddressId = (int) $this->customer->getAddressId();
+            // OC3 Controller has __get but no __isset — never gate model access with isset().
             $this->load->model('account/address');
-            if (isset($this->model_account_address) && method_exists($this->model_account_address, 'getAddresses')) {
-                $raw = $this->model_account_address->getAddresses();
-                if (is_array($raw)) {
-                    $addresses = array_values($raw);
+            $raw = $this->model_account_address->getAddresses();
+            if (is_array($raw)) {
+                // Native getAddresses() is keyed by address_id; normalize to a list.
+                $addresses = array_values($raw);
+            }
+            // Ownership-checked default via getAddress() when address_id is set.
+            if ($defaultAddressId > 0) {
+                $owned = $this->model_account_address->getAddress($defaultAddressId);
+                if (is_array($owned) && (int) (isset($owned['address_id']) ? $owned['address_id'] : 0) === $defaultAddressId) {
+                    $found = false;
+                    foreach ($addresses as $row) {
+                        if ((int) (isset($row['address_id']) ? $row['address_id'] : 0) === $defaultAddressId) {
+                            $found = true;
+                            break;
+                        }
+                    }
+                    if (!$found) {
+                        $addresses[] = $owned;
+                    }
+                } else {
+                    // Stale customer.address_id — keep book for single-address fallback.
+                    $defaultAddressId = 0;
                 }
             }
         }

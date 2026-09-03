@@ -1,7 +1,12 @@
 <?php
 
 /**
- * Product/Cart popup customer prefill (OC4 ProductPopupCustomerPrefill parity).
+ * Product/Cart popup customer prefill (OC4 ProductPopupCustomerPrefill + OC3 address-book rules).
+ *
+ * Address selection (persistent customer address book only — not checkout session):
+ * 1. Valid customer.address_id that exists in the customer's book.
+ * 2. Else exactly one book address → that address (covers address_id=0 / stale default).
+ * 3. Else multiple addresses with no valid default → empty (no arbitrary first-row pick).
  */
 final class MtUniCreditStorefrontCustomerPrefill
 {
@@ -30,17 +35,21 @@ final class MtUniCreditStorefrontCustomerPrefill
             return $empty;
         }
 
-        $address = $this->selectAddress($addresses, (int) $defaultAddressId);
-        // Phone: customer telephone only when usable. Never invent from unrelated metadata.
-        // Address rows in OC3 typically have no telephone; do not substitute phone2/EGN/custom fields.
+        $book = $this->normalizeAddressBook($addresses);
+        $address = $this->selectAddress($book, (int) $defaultAddressId);
+        // Phone: customer telephone only when usable. Never invent from address/metadata.
         $telephone = '';
         if (isset($customer['telephone'])) {
             $telephone = trim((string) $customer['telephone']);
         }
 
         return array(
-            'firstname' => trim((string) (isset($address['firstname']) ? $address['firstname'] : (isset($customer['firstname']) ? $customer['firstname'] : ''))),
-            'lastname' => trim((string) (isset($address['lastname']) ? $address['lastname'] : (isset($customer['lastname']) ? $customer['lastname'] : ''))),
+            'firstname' => trim((string) (isset($address['firstname']) && (string) $address['firstname'] !== ''
+                ? $address['firstname']
+                : (isset($customer['firstname']) ? $customer['firstname'] : ''))),
+            'lastname' => trim((string) (isset($address['lastname']) && (string) $address['lastname'] !== ''
+                ? $address['lastname']
+                : (isset($customer['lastname']) ? $customer['lastname'] : ''))),
             'address' => $this->joinAddress($address),
             'telephone' => $telephone,
             'email' => trim((string) (isset($customer['email']) ? $customer['email'] : '')),
@@ -49,6 +58,30 @@ final class MtUniCreditStorefrontCustomerPrefill
             'phone2' => '',
             'egn' => '',
         );
+    }
+
+    /**
+     * @param list<array<string, mixed>>|array<int|string, array<string, mixed>> $addresses
+     * @return list<array<string, mixed>>
+     */
+    private function normalizeAddressBook($addresses)
+    {
+        $book = array();
+        if (!is_array($addresses)) {
+            return $book;
+        }
+        foreach ($addresses as $address) {
+            if (!is_array($address)) {
+                continue;
+            }
+            $id = (int) (isset($address['address_id']) ? $address['address_id'] : 0);
+            if ($id <= 0) {
+                continue;
+            }
+            $book[] = $address;
+        }
+
+        return $book;
     }
 
     /**
@@ -66,7 +99,13 @@ final class MtUniCreditStorefrontCustomerPrefill
             }
         }
 
-        return isset($addresses[0]) && is_array($addresses[0]) ? $addresses[0] : array();
+        // No valid default (zero / stale / missing): single-address fallback only.
+        if (count($addresses) === 1) {
+            return $addresses[0];
+        }
+
+        // Multiple addresses without a valid default — do not guess.
+        return array();
     }
 
     /**

@@ -719,15 +719,17 @@ Automated gate: `php tests/phase8_check.php` (no live network).
 3. [ ] Labels black + `*` required marker; larger Roboto Condensed inputs; focus without blue Bootstrap frame.
 4. [ ] Consent checkbox/link matches OC4; Submit `Изпрати` disabled until all required + consent.
 5. [ ] Logged customer prefills available fields; missing telephone stays empty.
-6. [ ] Product and Cart share the same Step 2 form contract.
+6. [ ] Logged customer with valid `customer.address_id` → that address book row fills `Адрес`.
+7. [ ] Logged customer with `address_id=0` (or stale) and exactly one saved address → that address fills `Адрес`.
+8. [ ] Product and Cart behave identically; guest remains empty.
 
-7. [ ] CP `uni_zaglavie` non-empty → heading text exact; empty/whitespace → **no** heading DOM and no reserved gap.
-8. [ ] Change price-affecting option without reload → UniCredit buttons refresh (labels, preferred keys, count/eligibility).
-9. [ ] Change quantity (type / +/- / theme controls) → financing refreshes for `unitWithTax × qty`.
-10. [ ] Open popup after option/qty change → Step 1 uses refreshed price/schemes/preferred identity (not page-load state).
-11. [ ] Rapid option switching → final UI matches final selection (sequence/abort stale guard).
-12. [ ] Failed calculate → no infinite loader; buttons not submit-ready on stale data; next change retries.
-13. [ ] Repeated refreshes do not multiply click/modal handlers (`data-mtuc-bound` / document-once).
+9. [ ] CP `uni_zaglavie` non-empty → heading text exact; empty/whitespace → **no** heading DOM and no reserved gap.
+10. [ ] Change price-affecting option without reload → UniCredit buttons refresh (labels, preferred keys, count/eligibility).
+11. [ ] Change quantity (type / +/- / theme controls) → financing refreshes for `unitWithTax × qty`.
+12. [ ] Open popup after option/qty change → Step 1 uses refreshed price/schemes/preferred identity (not page-load state).
+13. [ ] Rapid option switching → final UI matches final selection (sequence/abort stale guard).
+14. [ ] Failed calculate → no infinite loader; buttons not submit-ready on stale data; next change retries.
+15. [ ] Repeated refreshes do not multiply click/modal handlers (`data-mtuc-bound` / document-once).
 
 ### Cart page
 

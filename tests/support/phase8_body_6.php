@@ -87,6 +87,90 @@ mtuc8_assert($logged['telephone'] === '0888123456', 'prefill phone from customer
 mtuc8_assert(strpos($logged['address'], 'ул. Тест 1') !== false, 'prefill address joins default address');
 mtuc8_assert($logged['phone2'] === '' && $logged['egn'] === '', 'Process 2 extras empty without source');
 
+// A. Valid default address_id
+$caseA = $prefill->present(
+    true,
+    array('firstname' => 'A', 'lastname' => 'B', 'email' => 'a@b.test', 'telephone' => '0888'),
+    array(
+        array('address_id' => 10, 'address_1' => 'Other', 'city' => 'X', 'postcode' => '1'),
+        array('address_id' => 42, 'address_1' => 'Default St', 'city' => 'Sofia', 'postcode' => '1000'),
+    ),
+    42
+);
+mtuc8_assert(
+    $caseA['address_id'] === 42 && strpos($caseA['address'], 'Default St') !== false,
+    'A: valid default address_id=42 used'
+);
+
+// B. One address, address_id=0 (key remote regression)
+$caseB = $prefill->present(
+    true,
+    array('firstname' => 'A', 'lastname' => 'B', 'email' => 'a@b.test', 'telephone' => ''),
+    array(
+        array('address_id' => 7, 'address_1' => 'Only Road 5', 'city' => 'Plovdiv', 'postcode' => '4000'),
+    ),
+    0
+);
+mtuc8_assert(
+    $caseB['address_id'] === 7 && strpos($caseB['address'], 'Only Road 5') !== false,
+    'B: single-address fallback when address_id=0'
+);
+mtuc8_assert($caseB['telephone'] === '', 'B: missing phone stays empty');
+
+// C. Stale default + one valid address
+$caseC = $prefill->present(
+    true,
+    array('firstname' => 'A', 'lastname' => 'B', 'email' => 'a@b.test', 'telephone' => '1'),
+    array(
+        array('address_id' => 11, 'address_1' => 'Surviving', 'city' => 'Varna', 'postcode' => '9000'),
+    ),
+    999
+);
+mtuc8_assert(
+    $caseC['address_id'] === 11 && strpos($caseC['address'], 'Surviving') !== false,
+    'C: stale default falls back to single book address'
+);
+
+// D. Multiple addresses, no default — empty (no arbitrary first-row pick)
+$caseD = $prefill->present(
+    true,
+    array('firstname' => 'Cust', 'lastname' => 'Name', 'email' => 'c@d.test', 'telephone' => '2'),
+    array(
+        array('address_id' => 1, 'firstname' => 'X', 'lastname' => 'Y', 'address_1' => 'First', 'city' => 'A', 'postcode' => '1'),
+        array('address_id' => 2, 'firstname' => 'P', 'lastname' => 'Q', 'address_1' => 'Second', 'city' => 'B', 'postcode' => '2'),
+    ),
+    0
+);
+mtuc8_assert($caseD['address'] === '' && $caseD['address_id'] === 0, 'D: multi-address no default → empty address');
+mtuc8_assert($caseD['firstname'] === 'Cust' && $caseD['lastname'] === 'Name', 'D: names fall back to customer when address unresolved');
+
+// E. Ownership — foreign address_id never selected from book
+$caseE = $prefill->present(
+    true,
+    array('firstname' => 'Me', 'lastname' => 'User', 'email' => 'me@test', 'telephone' => '3'),
+    array(
+        array('address_id' => 5, 'address_1' => 'Mine', 'city' => 'Sofia', 'postcode' => '1000'),
+    ),
+    8
+);
+mtuc8_assert(
+    $caseE['address_id'] === 5 && strpos($caseE['address'], 'Mine') !== false,
+    'E: foreign preferred id ignored; single own address used'
+);
+$caseE2 = $prefill->present(
+    true,
+    array('firstname' => 'Me', 'lastname' => 'User', 'email' => 'me@test', 'telephone' => '3'),
+    array(
+        array('address_id' => 5, 'address_1' => 'Mine', 'city' => 'Sofia', 'postcode' => '1000'),
+        array('address_id' => 6, 'address_1' => 'AlsoMine', 'city' => 'Sofia', 'postcode' => '1001'),
+    ),
+    8
+);
+mtuc8_assert(
+    $caseE2['address'] === '' && $caseE2['address_id'] === 0,
+    'E: foreign preferred id + multiple own addresses → empty (no guess)'
+);
+
 $noPhone = $prefill->present(
     true,
     array(
@@ -109,6 +193,34 @@ mtuc8_assert($noPhone['telephone'] === '', 'missing phone stays empty (no substi
 
 $guest = $prefill->present(false, array(), array(), 0);
 mtuc8_assert($guest['is_logged'] === false && $guest['firstname'] === '' && $guest['telephone'] === '', 'guest prefill empty');
+
+// Controllers must not gate address model with isset() (OC3 Controller has no __isset).
+$productCtrl = (string) file_get_contents(
+    $catalog . DIRECTORY_SEPARATOR . 'controller' . DIRECTORY_SEPARATOR . 'extension'
+        . DIRECTORY_SEPARATOR . 'mt_uni_credit' . DIRECTORY_SEPARATOR . 'product.php'
+);
+$cartCtrl = (string) file_get_contents(
+    $catalog . DIRECTORY_SEPARATOR . 'controller' . DIRECTORY_SEPARATOR . 'extension'
+        . DIRECTORY_SEPARATOR . 'mt_uni_credit' . DIRECTORY_SEPARATOR . 'cart.php'
+);
+mtuc8_assert(
+    strpos($productCtrl, 'isset($this->model_account_address)') === false,
+    'product controller does not isset()-gate address model'
+);
+mtuc8_assert(
+    strpos($cartCtrl, 'isset($this->model_account_address)') === false,
+    'cart controller does not isset()-gate address model'
+);
+mtuc8_assert(
+    strpos($productCtrl, "load->model('account/address')") !== false
+        && strpos($productCtrl, 'getAddresses()') !== false,
+    'product controller loads account/address and getAddresses'
+);
+mtuc8_assert(
+    strpos($cartCtrl, "load->model('account/address')") !== false
+        && strpos($cartCtrl, 'getAddresses()') !== false,
+    'cart controller loads account/address and getAddresses'
+);
 
 // Process 1 privacy: presenter customer never invents egn for process1 DOM
 $p1Presented = MtUniCreditStorefrontModalPresenter::present(
