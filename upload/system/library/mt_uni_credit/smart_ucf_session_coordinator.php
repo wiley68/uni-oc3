@@ -37,6 +37,24 @@ final class MtUniCreditSmartUcfSessionCoordinator
     /** @var MtUniCreditSmartUcfPayloadBuilder */
     private $payloadBuilder;
 
+    /** @var MtUniCreditPhase9LifecycleLog|null */
+    private $phase9Log;
+
+    /** @var int */
+    private $logStoreId = 0;
+
+    /** @var int */
+    private $logOrderId = 0;
+
+    /** @var string */
+    private $logEntryPoint = '';
+
+    /** @var int */
+    private $logAttemptId = 0;
+
+    /** @var int */
+    private $logCpOrderId = 0;
+
     /**
      * @param MtUniCreditSmartUcfLifecycleRepository $lifecycle
      * @param object $client Must provide createSession()
@@ -75,6 +93,30 @@ final class MtUniCreditSmartUcfSessionCoordinator
         $this->payloadBuilder = $payloadBuilder instanceof MtUniCreditSmartUcfPayloadBuilder
             ? $payloadBuilder
             : new MtUniCreditSmartUcfPayloadBuilder();
+        $this->phase9Log = null;
+    }
+
+    /**
+     * Attach safe lifecycle diagnostics for the current attempt.
+     *
+     * @param MtUniCreditPhase9LifecycleLog $log
+     * @param int $storeId
+     * @param int $orderId
+     * @param string $entryPoint
+     * @param int $attemptId
+     * @param int $cpOrderId
+     * @return void
+     */
+    public function setLifecycleLog($log, $storeId, $orderId, $entryPoint, $attemptId, $cpOrderId)
+    {
+        if ($log instanceof MtUniCreditPhase9LifecycleLog) {
+            $this->phase9Log = $log;
+        }
+        $this->logStoreId = (int) $storeId;
+        $this->logOrderId = (int) $orderId;
+        $this->logEntryPoint = (string) $entryPoint;
+        $this->logAttemptId = (int) $attemptId;
+        $this->logCpOrderId = (int) $cpOrderId;
     }
 
     /**
@@ -102,6 +144,8 @@ final class MtUniCreditSmartUcfSessionCoordinator
         $storeId = (int) (isset($order['store_id']) ? $order['store_id'] : 0);
 
         if (MtUniCreditShopConfigurationFlags::isSecondaryProcess($shop)) {
+            $this->logEvent(MtUniCreditPhase9LifecycleLog::EVENT_SKIP, array('reason' => 'process2'));
+
             return MtUniCreditSmartUcfCoordinationResult::process2();
         }
 
@@ -168,6 +212,7 @@ final class MtUniCreditSmartUcfSessionCoordinator
         }
 
         try {
+            $this->logEvent(MtUniCreditPhase9LifecycleLog::EVENT_SMARTUCF_BEGIN, array());
             // Payload build is best-effort for diagnostics; client prepares authoritatively.
             try {
                 $this->payloadBuilder->build($shop, $order, $orderProducts, $calculation, $localOrderId);
@@ -209,10 +254,41 @@ final class MtUniCreditSmartUcfSessionCoordinator
         }
 
         $this->persistProcess1BankStatus($storeId, $localOrderId, $bankStatuses);
+        $this->logEvent(MtUniCreditPhase9LifecycleLog::EVENT_SMARTUCF_RESULT, array(
+            'kind' => 'created',
+            'bank_status' => MtUniCreditBankStatus::SENT_PROCESS1,
+        ));
 
         return MtUniCreditSmartUcfCoordinationResult::created(
             (string) $session['redirect_url'],
             (string) $session['session_id']
+        );
+    }
+
+    /**
+     * @param string $eventCode
+     * @param array<string, mixed> $summary
+     * @return void
+     */
+    private function logEvent($eventCode, array $summary)
+    {
+        if (!$this->phase9Log instanceof MtUniCreditPhase9LifecycleLog) {
+            return;
+        }
+        $this->phase9Log->record(
+            $this->logStoreId,
+            $this->logOrderId,
+            $this->logEntryPoint !== '' ? $this->logEntryPoint : MtUniCreditOperationEntryPoint::CHECKOUT,
+            $eventCode,
+            array_merge(
+                array(
+                    'order_id' => $this->logOrderId,
+                    'attempt_id' => $this->logAttemptId,
+                    'control_panel_order_id' => $this->logCpOrderId,
+                    'entry_point' => $this->logEntryPoint,
+                ),
+                $summary
+            )
         );
     }
 
@@ -287,6 +363,13 @@ final class MtUniCreditSmartUcfSessionCoordinator
         if ($classification->errorClass() === MtUniCreditSmartUcfFailureClassification::CLASS_REMOTE_REJECT) {
             $this->persistLocalBankStatus($storeId, $localOrderId, MtUniCreditBankStatus::smartUcfFailure(), $bankStatuses);
         }
+
+        $this->logEvent(MtUniCreditPhase9LifecycleLog::EVENT_SMARTUCF_RESULT, array(
+            'kind' => $classification->targetState() === MtUniCreditSmartUcfLifecycleStates::OUTCOME_UNKNOWN
+                ? 'outcome_unknown'
+                : 'failed',
+            'error_class' => $classification->errorClass(),
+        ));
 
         return MtUniCreditSmartUcfCoordinationResult::failed(
             self::CUSTOMER_FAILED,

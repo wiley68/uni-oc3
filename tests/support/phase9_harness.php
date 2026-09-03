@@ -93,6 +93,18 @@ final class Phase9TestHarness
             )
         );
 
+        $storefront = new MtUniCreditStorefrontFinancingSubmissionService(
+            $attempts,
+            $locks,
+            $lifecycle,
+            $services['credentials'],
+            new MtUniCreditShopConfigurationCache(
+                new MtUniCreditShopCacheRepository($db, $clock),
+                null,
+                MtUniCreditBootstrap::shopCachePersistenceFromDb($db)
+            )
+        );
+
         return array(
             'memoryDb' => $memoryDb,
             'db' => $db,
@@ -102,12 +114,75 @@ final class Phase9TestHarness
             'locks' => $locks,
             'lifecycle' => $lifecycle,
             'submission' => $submission,
+            'storefront' => $storefront,
             'storeId' => $storeId,
             'smartUcfProbe' => $smartUcfProbe,
             'process1' => $process1,
             'bankStatuses' => $bankStatuses,
             'smartUcfLifecycle' => $smartUcfLifecycle,
             'clock' => $clock,
+        );
+    }
+
+    /**
+     * Product Step 2 equivalent input for MtUniCreditStorefrontFinancingSubmissionService.
+     *
+     * @param array<string, mixed> $stack
+     * @param int $orderId
+     * @return array<string, mixed>
+     */
+    public static function productStorefrontInput(array $stack, $orderId)
+    {
+        $storeId = (int) $stack['storeId'];
+        $orderId = (int) $orderId;
+        $line = new MtUniCreditProductLine(
+            42,
+            'Example',
+            'EX',
+            array(7),
+            1,
+            500.0,
+            500.0,
+            500.0,
+            0,
+            array(),
+            0
+        );
+
+        return array(
+            'entry_point' => MtUniCreditOperationEntryPoint::PRODUCT,
+            'store_id' => $storeId,
+            'currency_code' => 'BGN',
+            'scheme_key' => 'standard|KOPSTD|12|0',
+            'product_line' => $line,
+            'customer' => array(
+                'firstname' => 'Example',
+                'lastname' => 'Customer',
+                'email' => 'example.customer@example.test',
+                'telephone' => '+359880000000',
+                'address_1' => 'ul. Example 1',
+                'city' => 'Sofia',
+                'postcode' => '1000',
+                'country' => 'Bulgaria',
+                'country_id' => 33,
+                'zone' => 'Sofia',
+                'zone_id' => 1,
+            ),
+            'session' => array(),
+            'invoice_prefix' => 'INV',
+            'store_name' => 'Test',
+            'store_url' => 'https://example.test/',
+            'language_id' => 1,
+            'currency_id' => 1,
+            'currency_value' => 1.0,
+            'add_order' => function ($orderData) use ($stack, $orderId, $storeId) {
+                $stack['memoryDb']->seedOrder($orderId, $storeId, MtUniCreditConstants::EXTENSION_CODE);
+
+                return $orderId;
+            },
+            'load_order' => function ($loadedId) use ($storeId) {
+                return Phase7TestHarness::orderRow((int) $loadedId, $storeId);
+            },
         );
     }
 

@@ -44,12 +44,10 @@ final class MtUniCreditStorefrontCustomerPrefill
         }
 
         return array(
-            'firstname' => trim((string) (isset($address['firstname']) && (string) $address['firstname'] !== ''
-                ? $address['firstname']
-                : (isset($customer['firstname']) ? $customer['firstname'] : ''))),
-            'lastname' => trim((string) (isset($address['lastname']) && (string) $address['lastname'] !== ''
-                ? $address['lastname']
-                : (isset($customer['lastname']) ? $customer['lastname'] : ''))),
+            // Applicant identity must come from the logged customer only.
+            // Address-book recipient names must not override applicant names.
+            'firstname' => trim((string) (isset($customer['firstname']) ? $customer['firstname'] : '')),
+            'lastname' => trim((string) (isset($customer['lastname']) ? $customer['lastname'] : '')),
             'address' => $this->joinAddress($address),
             'telephone' => $telephone,
             'email' => trim((string) (isset($customer['email']) ? $customer['email'] : '')),

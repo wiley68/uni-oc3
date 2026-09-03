@@ -101,6 +101,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'mtls_private_key_passphrase_provid
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'certificate_pair_validator.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'smart_ucf_session_coordinator.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'process1_service_factory.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'shop_process_context.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'phase9_lifecycle_log.php';
 
 /**
  * Phase 2 bootstrap helpers for mt_uni_credit.

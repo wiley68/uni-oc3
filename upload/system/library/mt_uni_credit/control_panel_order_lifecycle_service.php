@@ -32,6 +32,9 @@ final class MtUniCreditControlPanelOrderLifecycleService
     /** @var MtUniCreditOrderBankStatusRepository|null */
     private $bankStatuses;
 
+    /** @var MtUniCreditPhase9LifecycleLog|null */
+    private $phase9Log;
+
     /**
      * @param MtUniCreditFinancingAttemptRepository $attempts
      * @param MtUniCreditOperationLockRepository $locks
@@ -56,6 +59,7 @@ final class MtUniCreditControlPanelOrderLifecycleService
             : new MtUniCreditControlPanelOrderPayloadBuilder();
         $this->process1 = $process1 instanceof MtUniCreditSmartUcfSessionCoordinator ? $process1 : null;
         $this->bankStatuses = $bankStatuses instanceof MtUniCreditOrderBankStatusRepository ? $bankStatuses : null;
+        $this->phase9Log = null;
     }
 
     /**
@@ -429,24 +433,97 @@ final class MtUniCreditControlPanelOrderLifecycleService
         MtUniCreditCalculationResult $calculation,
         array $shop
     ) {
-        $coordinator = $this->resolveProcess1Coordinator();
-        if ($coordinator === null) {
+        $row = $this->attempts->findById($attemptId);
+        $storeId = $row !== null ? (int) $row['store_id'] : (int) (isset($order['store_id']) ? $order['store_id'] : 0);
+        $entryPoint = $row !== null && isset($row['entry_point'])
+            ? (string) $row['entry_point']
+            : MtUniCreditOperationEntryPoint::CHECKOUT;
+        $localOrderId = (int) (isset($order['order_id']) ? $order['order_id'] : 0);
+        $rawProces = MtUniCreditShopProcessContext::rawUniProces($shop);
+        $normalized = MtUniCreditShopProcessContext::normalized($shop);
+        $log = $this->resolvePhase9Log();
+        $safeIds = array(
+            'order_id' => $localOrderId,
+            'attempt_id' => (int) $attemptId,
+            'control_panel_order_id' => (int) $cpId,
+            'entry_point' => $entryPoint,
+        );
+        $log->record($storeId, $localOrderId, $entryPoint, MtUniCreditPhase9LifecycleLog::EVENT_PROCESS_RAW, array_merge(
+            $safeIds,
+            array('uni_proces' => $rawProces)
+        ));
+        $log->record($storeId, $localOrderId, $entryPoint, MtUniCreditPhase9LifecycleLog::EVENT_PROCESS_NORMALIZED, array_merge(
+            $safeIds,
+            array('process' => $normalized)
+        ));
+
+        if ($normalized === MtUniCreditShopProcessContext::PROCESS_2) {
+            $log->record($storeId, $localOrderId, $entryPoint, MtUniCreditPhase9LifecycleLog::EVENT_SKIP, array_merge(
+                $safeIds,
+                array('reason' => 'process2')
+            ));
+
             return MtUniCreditControlPanelOrderSubmissionResult::ok($cpId, $localReplay);
         }
 
-        $localOrderId = (int) (isset($order['order_id']) ? $order['order_id'] : 0);
-        $process1 = $coordinator->run(
-            $attemptId,
+        $coordinator = $this->resolveProcess1Coordinator();
+        if ($coordinator === null) {
+            $log->record($storeId, $localOrderId, $entryPoint, MtUniCreditPhase9LifecycleLog::EVENT_SKIP, array_merge(
+                $safeIds,
+                array('reason' => 'coordinator_unavailable')
+            ));
+
+            return MtUniCreditControlPanelOrderSubmissionResult::failAfterCp(
+                $cpId,
+                $localReplay,
+                'smartucf_not_wired',
+                true,
+                false,
+                MtUniCreditSmartUcfSessionCoordinator::CUSTOMER_FAILED
+            );
+        }
+
+        $shop = MtUniCreditShopProcessContext::hydrateSmartUcfCredentials(
             $shop,
-            $order,
-            $orderProducts,
-            $calculation,
-            $localOrderId,
-            $cpId,
-            $this->resolveBankStatuses()
+            $storeId,
+            $this->resolveSmartUcfCredentials()
         );
 
+        $log->record($storeId, $localOrderId, $entryPoint, MtUniCreditPhase9LifecycleLog::EVENT_ENTER, $safeIds);
+        $coordinator->setLifecycleLog($log, $storeId, $localOrderId, $entryPoint, (int) $attemptId, (int) $cpId);
+
+        try {
+            $process1 = $coordinator->run(
+                $attemptId,
+                $shop,
+                $order,
+                $orderProducts,
+                $calculation,
+                $localOrderId,
+                $cpId,
+                $this->resolveBankStatuses()
+            );
+        } catch (Exception $exception) {
+            $log->record($storeId, $localOrderId, $entryPoint, MtUniCreditPhase9LifecycleLog::EVENT_SMARTUCF_RESULT, array_merge(
+                $safeIds,
+                array('kind' => 'exception')
+            ));
+
+            return MtUniCreditControlPanelOrderSubmissionResult::failAfterCp(
+                $cpId,
+                $localReplay,
+                'smartucf_submit_failed',
+                true,
+                false,
+                MtUniCreditSmartUcfSessionCoordinator::CUSTOMER_FAILED
+            );
+        }
         if ($process1->isProcess2()) {
+            $log->record($storeId, $localOrderId, $entryPoint, MtUniCreditPhase9LifecycleLog::EVENT_SKIP, array_merge(
+                $safeIds,
+                array('reason' => 'process2')
+            ));
+
             return MtUniCreditControlPanelOrderSubmissionResult::ok($cpId, $localReplay);
         }
         if ($process1->isCreated()) {
@@ -515,6 +592,35 @@ final class MtUniCreditControlPanelOrderLifecycleService
         }
 
         return $this->bankStatuses;
+    }
+
+    /**
+     * @return MtUniCreditPhase9LifecycleLog
+     */
+    private function resolvePhase9Log()
+    {
+        if ($this->phase9Log instanceof MtUniCreditPhase9LifecycleLog) {
+            return $this->phase9Log;
+        }
+        try {
+            $this->phase9Log = new MtUniCreditPhase9LifecycleLog($this->attempts->database());
+        } catch (Exception $exception) {
+            $this->phase9Log = new MtUniCreditPhase9LifecycleLog();
+        }
+
+        return $this->phase9Log;
+    }
+
+    /**
+     * @return MtUniCreditSmartucfCredentialsRepository|null
+     */
+    private function resolveSmartUcfCredentials()
+    {
+        try {
+            return MtUniCreditBootstrap::smartucfCredentialsRepositoryFromDb($this->attempts->database());
+        } catch (Exception $exception) {
+            return null;
+        }
     }
 
     /**

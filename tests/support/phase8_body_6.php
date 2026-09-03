@@ -171,6 +171,26 @@ mtuc8_assert(
     'E: foreign preferred id + multiple own addresses → empty (no guess)'
 );
 
+// F. Identity is customer-account first/last name; address-book recipient names must not override.
+$caseF = $prefill->present(
+    true,
+    array('firstname' => 'Test1', 'lastname' => 'Test1', 'email' => 'test1@test', 'telephone' => '0888'),
+    array(
+        array(
+            'address_id' => 42,
+            'firstname' => 'Test',
+            'lastname' => 'Test',
+            'address_1' => 'Addr Line',
+            'city' => 'Sofia',
+            'postcode' => '1000',
+        ),
+    ),
+    42
+);
+mtuc8_assert($caseF['firstname'] === 'Test1', 'F: customer firstname overrides address firstname');
+mtuc8_assert($caseF['lastname'] === 'Test1', 'F: customer lastname overrides address lastname');
+mtuc8_assert($caseF['address_id'] === 42 && strpos($caseF['address'], 'Addr Line') !== false, 'F: address still resolved by address_id');
+
 $noPhone = $prefill->present(
     true,
     array(
@@ -316,7 +336,7 @@ mtuc8_assert(
 );
 
 // Logical gating matrix (PHP-side mirror of client rules)
-function mtuc8_step2_ready(array $fields, $consent, $process2)
+function mtuc8_step2_ready(array $fields, bool $consent, bool $process2): bool
 {
     $required = array('firstname', 'lastname', 'address', 'phone', 'email');
     if ($process2) {

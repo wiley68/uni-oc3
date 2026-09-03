@@ -129,6 +129,53 @@ mtuc9_assert(
     $smartOk !== null && (string) $smartOk['smartucf_state'] === MtUniCreditSmartUcfLifecycleStates::CREATED,
     'Process1 success: smartucf_state created'
 );
+mtuc9_assert(Phase7TestHarness::countOrderPosts($transportOk) === 1, 'Process1 success: CP POST /orders exactly once');
+
+// ---------------------------------------------------------------------------
+// Product Step 2 equivalent wiring: storefront submit -> CP -> Process1 SmartUCF
+// ---------------------------------------------------------------------------
+$transportStorefrontP1 = new Phase4FakeCpHttpTransport();
+Phase9TestHarness::enqueueCpCreateSuccess($transportStorefrontP1);
+$stackStorefrontP1 = Phase9TestHarness::stack($transportStorefrontP1, null, null, Phase5TestHarness::STORE_A, array('uni_proces' => 0));
+$storefrontOrderId = 9701;
+$storefrontInput = Phase9TestHarness::productStorefrontInput($stackStorefrontP1, $storefrontOrderId);
+$storefrontResult = $stackStorefrontP1['storefront']->submit($storefrontInput);
+mtuc9_assert(!empty($storefrontResult['success']), 'storefront P1: submit success');
+mtuc9_assert((int) $storefrontResult['order_id'] === $storefrontOrderId, 'storefront P1: one local order');
+mtuc9_assert((int) $storefrontResult['control_panel_order_id'] === 555001, 'storefront P1: cp_created');
+mtuc9_assert(Phase7TestHarness::countOrderPosts($transportStorefrontP1) === 1, 'storefront P1: CP calls = 1');
+mtuc9_assert(Phase9TestHarness::smartUcfCallCount($stackStorefrontP1['smartUcfProbe']) === 1, 'storefront P1: SmartUCF calls = 1');
+mtuc9_assert(
+    Phase9TestHarness::bankStatusId($stackStorefrontP1, $storefrontOrderId) === MtUniCreditBankStatus::SENT_PROCESS1,
+    'storefront P1: bank_sent_process1'
+);
+mtuc9_assert(!empty($storefrontResult['redirect']), 'storefront P1: redirect present after SmartUCF');
+$storefrontInputReplay = $storefrontInput;
+$storefrontInputReplay['session'] = isset($storefrontResult['session']) && is_array($storefrontResult['session'])
+    ? $storefrontResult['session']
+    : array();
+$storefrontReplay = $stackStorefrontP1['storefront']->submit($storefrontInputReplay);
+mtuc9_assert(!empty($storefrontReplay['success']) && !empty($storefrontReplay['local_replay']), 'storefront P1 replay: local replay success');
+mtuc9_assert(Phase7TestHarness::countOrderPosts($transportStorefrontP1) === 1, 'storefront P1 replay: CP additional calls = 0');
+mtuc9_assert(Phase9TestHarness::smartUcfCallCount($stackStorefrontP1['smartUcfProbe']) === 1, 'storefront P1 replay: SmartUCF additional calls = 0');
+
+// ---------------------------------------------------------------------------
+// Product Step 2 equivalent wiring: Process 2 skip (no SmartUCF in Phase 9)
+// ---------------------------------------------------------------------------
+$transportStorefrontP2 = new Phase4FakeCpHttpTransport();
+Phase9TestHarness::enqueueCpCreateSuccess($transportStorefrontP2);
+$stackStorefrontP2 = Phase9TestHarness::stack($transportStorefrontP2, null, null, Phase5TestHarness::STORE_A, array('uni_proces' => 1));
+$storefrontP2OrderId = 9702;
+$storefrontP2Result = $stackStorefrontP2['storefront']->submit(
+    Phase9TestHarness::productStorefrontInput($stackStorefrontP2, $storefrontP2OrderId)
+);
+mtuc9_assert(!empty($storefrontP2Result['success']), 'storefront P2: submit success');
+mtuc9_assert(Phase7TestHarness::countOrderPosts($transportStorefrontP2) === 1, 'storefront P2: CP calls = 1');
+mtuc9_assert(Phase9TestHarness::smartUcfCallCount($stackStorefrontP2['smartUcfProbe']) === 0, 'storefront P2: SmartUCF calls = 0');
+mtuc9_assert(
+    Phase9TestHarness::bankStatusId($stackStorefrontP2, $storefrontP2OrderId) !== MtUniCreditBankStatus::SENT_PROCESS1,
+    'storefront P2: no bank_sent_process1'
+);
 
 // ---------------------------------------------------------------------------
 // Definitive SmartUCF reject (errorCode JSON, HTTP 400)
@@ -393,6 +440,48 @@ mtuc9_assert(
 mtuc9_assert(
     strpos($coordSource, 'raw_request') === false,
     'privacy: coordinator does not persist/log raw_request'
+);
+
+// ---------------------------------------------------------------------------
+// Wiring sources: Product/Cart/Checkout share the same post-CP lifecycle service
+// ---------------------------------------------------------------------------
+$storefrontRuntimeSource = mtuc9_read_source($lib . DIRECTORY_SEPARATOR . 'storefront_runtime.php');
+$productControllerSource = mtuc9_read_source(
+    $root . DIRECTORY_SEPARATOR . 'upload' . DIRECTORY_SEPARATOR . 'catalog' . DIRECTORY_SEPARATOR
+        . 'controller' . DIRECTORY_SEPARATOR . 'extension' . DIRECTORY_SEPARATOR . 'mt_uni_credit'
+        . DIRECTORY_SEPARATOR . 'product.php'
+);
+$cartControllerSource = mtuc9_read_source(
+    $root . DIRECTORY_SEPARATOR . 'upload' . DIRECTORY_SEPARATOR . 'catalog' . DIRECTORY_SEPARATOR
+        . 'controller' . DIRECTORY_SEPARATOR . 'extension' . DIRECTORY_SEPARATOR . 'mt_uni_credit'
+        . DIRECTORY_SEPARATOR . 'cart.php'
+);
+$checkoutModelSource = mtuc9_read_source(
+    $root . DIRECTORY_SEPARATOR . 'upload' . DIRECTORY_SEPARATOR . 'catalog' . DIRECTORY_SEPARATOR
+        . 'model' . DIRECTORY_SEPARATOR . 'extension' . DIRECTORY_SEPARATOR . 'payment'
+        . DIRECTORY_SEPARATOR . 'mt_uni_credit.php'
+);
+$lifecycleSource = mtuc9_read_source($lib . DIRECTORY_SEPARATOR . 'control_panel_order_lifecycle_service.php');
+mtuc9_assert(
+    strpos($productControllerSource, 'MtUniCreditStorefrontRuntime::submissionService($this)') !== false,
+    'wiring source: Product submit uses storefront submissionService'
+);
+mtuc9_assert(
+    strpos($cartControllerSource, 'MtUniCreditStorefrontRuntime::submissionService($this)') !== false,
+    'wiring source: Cart submit uses storefront submissionService'
+);
+mtuc9_assert(
+    strpos($storefrontRuntimeSource, 'new MtUniCreditControlPanelOrderLifecycleService(') !== false,
+    'wiring source: storefront runtime builds shared lifecycle service'
+);
+mtuc9_assert(
+    strpos($checkoutModelSource, 'new MtUniCreditControlPanelOrderLifecycleService(') !== false,
+    'wiring source: checkout model builds shared lifecycle service'
+);
+mtuc9_assert(
+    strpos($lifecycleSource, 'MtUniCreditPhase9LifecycleLog::EVENT_PROCESS_RAW') !== false
+        && strpos($lifecycleSource, '$coordinator->run(') !== false,
+    'wiring source: cp_created path logs process and runs Process1 coordinator'
 );
 
 // ---------------------------------------------------------------------------
