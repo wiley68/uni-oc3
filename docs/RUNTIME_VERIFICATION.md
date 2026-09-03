@@ -765,6 +765,18 @@ CP fields (via fresh shop cache → presenter): `uni_type_button`, `uni_button_r
 2. [ ] `uni_button_row = 1`: same row when width allows; other value: stacked (`--stacked`).
 3. [ ] Narrow viewport: no page overflow; buttons remain usable; configured width kept on desktop.
 
+### Button asset packaging (OC3 installer whitelist)
+
+Logos must live under module-local storefront path (not `catalog/view/image`):
+
+`catalog/view/theme/default/template/extension/mt_uni_credit/image/uni_logo.svg`
+`catalog/view/theme/default/template/extension/mt_uni_credit/image/uni_logo_red.svg`
+
+1. [ ] Native Extension Installer accepts the `.ocmod.zip` without `catalog/view/image is not allowed to be written to`.
+2. [ ] After install + Refresh Modifications, Product and Cart buttons load both SVGs (no 404).
+3. [ ] Light uses `uni_logo.svg`; dark uses `uni_logo_red.svg`.
+4. [ ] Package ZIP contains **no** `upload/catalog/view/image/` entries.
+
 ### Explicit exclusions (Phase 8)
 
 - [ ] No SmartUCF / Process 1/2 / EGN / email / Thank You / homepage ads (Phase 9+).

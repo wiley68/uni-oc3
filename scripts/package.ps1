@@ -87,13 +87,15 @@ $expectedEntries = @(
     'upload/catalog/view/theme/default/template/extension/mt_uni_credit/storefront.js',
     'upload/catalog/view/theme/default/template/extension/mt_uni_credit/storefront.css',
     'upload/catalog/view/theme/default/template/extension/mt_uni_credit/storefront_fonts.css',
-    'upload/catalog/view/image/mt_uni_credit/uni_logo.svg',
-    'upload/catalog/view/image/mt_uni_credit/uni_logo_red.svg',
+    'upload/catalog/view/theme/default/template/extension/mt_uni_credit/image/uni_logo.svg',
+    'upload/catalog/view/theme/default/template/extension/mt_uni_credit/image/uni_logo_red.svg',
     'upload/system/library/mt_uni_credit/constants.php',
     'upload/system/library/mt_uni_credit/config/environment.php'
 )
 $forbiddenEntries = @(
-    'upload/config/environment.php'
+    'upload/config/environment.php',
+    'upload/catalog/view/image/mt_uni_credit/uni_logo.svg',
+    'upload/catalog/view/image/mt_uni_credit/uni_logo_red.svg'
 )
 $zipRead = [System.IO.Compression.ZipFile]::OpenRead($OutputPath)
 try {
@@ -105,6 +107,12 @@ try {
     foreach ($entry in $forbiddenEntries) {
         if ($null -ne $zipRead.GetEntry($entry)) {
             throw "Package must not contain forbidden entry: $entry"
+        }
+    }
+    foreach ($entry in $zipRead.Entries) {
+        $name = $entry.FullName.Replace('\', '/')
+        if ($name -like 'upload/catalog/view/image/*') {
+            throw "OC3 package must not write to catalog/view/image: $name"
         }
     }
 }
