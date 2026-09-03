@@ -739,7 +739,7 @@ Automated gate: `php tests/phase8_check.php` (no live network).
 
 ### Button visual parity (Product + Cart)
 
-Authority: `reference-uni-oc4/catalog/view/stylesheet/mt_uni_credit_product.css` (button shell only). Popup/modal styling is out of scope.
+Authority: `reference-uni-oc4/catalog/view/stylesheet/mt_uni_credit_product.css` (button shell only). Popup Step 1 visual parity is covered in the section below.
 
 CP fields (via fresh shop cache → presenter): `uni_type_button`, `uni_button_row`, `uni_button_width`, `uni_button_height`.
 
@@ -772,15 +772,61 @@ Logos must live under module-local storefront path (not `catalog/view/image`):
 
 `catalog/view/theme/default/template/extension/mt_uni_credit/image/uni_logo.svg`
 `catalog/view/theme/default/template/extension/mt_uni_credit/image/uni_logo_red.svg`
+`catalog/view/theme/default/template/extension/mt_uni_credit/image/uni_apply_badge.svg`
 
 1. [ ] Native Extension Installer accepts the `.ocmod.zip` without `catalog/view/image is not allowed to be written to`.
 2. [ ] After install + Refresh Modifications, Product and Cart buttons load both SVGs (no 404).
 3. [ ] Light uses `uni_logo.svg`; dark uses `uni_logo_red.svg`.
 4. [ ] Package ZIP contains **no** `upload/catalog/view/image/` entries.
 
+### Popup Step 1 visual + runtime parity (Product + Cart)
+
+Authority: OC4 `mt_uni_credit_product.css` / `mt_uni_credit_product_modal.twig` / `mt_uni_credit_* .js` (`setStep`, `setProcessing`, recalculate). Step 2 **content** redesign is out of scope.
+
+Test Product and Cart separately after hard-refresh.
+
+#### Open / loader lifecycle
+
+1. [ ] Click financing button → popup opens.
+2. [ ] Processing overlay may appear briefly, then **hides** (`[data-mtuc-processing][hidden]`).
+3. [ ] Step 1 values become fully visible and interactive (not stuck behind loader).
+4. [ ] Force a recalculate failure (e.g. invalid network) → loader still hides; readable error in popup note.
+
+#### Shell
+
+1. [ ] Desktop width ≈ 900px max; white/`#fefefe` background; OC4 dual box-shadow.
+2. [ ] Overlay `rgba(0,0,0,.4)`.
+3. [ ] Narrow viewport: popup fits; internal scroll works; no horizontal overflow; footer usable.
+
+#### Banner
+
+1. [ ] CP CDN `uni_picture` / `uni_picturem` load; proportions preserved (`width:100%; height:auto`).
+2. [ ] Click uses `reklama_url` (fallback `uni_backurl`); `target=_blank` + `rel=noopener noreferrer`.
+3. [ ] Absent banner URLs → no invented local placeholder image.
+
+#### Body / calculator
+
+1. [ ] Title: **Избор на схема за лизинг**.
+2. [ ] Asymmetric frame `border-radius: 14.5px 14.5px 80px 14.5px`.
+3. [ ] Eight rows: цена/стойност, месеци, първоначална вноска, заем, вноска, обща дължима, ГЛП, ГПР.
+4. [ ] EUR labels use **евро**; BGN use **лв.**; first-installment **input remains numeric-only**.
+5. [ ] Labels black; values red (`#ed1c24`).
+6. [ ] Change months / first installment → dependent figures update via server recalculate (no second JS calculator).
+
+#### Footer
+
+1. [ ] Left: **Отказ** + **Добави в количката** / **Купи** (Product); Cart has no invent Add-to-Cart secondary.
+2. [ ] Right: **Кандидатствай** with Apply badge image (`uni_apply_badge.svg`).
+3. [ ] Cancel closes popup only (no order / CP side effect).
+
+#### Transition
+
+1. [ ] Apply → OC4-like `hidden` + `__step--active` switch to existing Step 2 form; no page reload; focus moves into Step 2.
+2. [ ] Step 2 visual parity is **not** evaluated in this closure.
+
 ### Explicit exclusions (Phase 8)
 
 - [ ] No SmartUCF / Process 1/2 / EGN / email / Thank You / homepage ads (Phase 9+).
 - [ ] Product Buy payment preselect OCMOD skipped (soft session preference only).
 - [ ] This Product OCMOD anchor closure does not change Cart calculation/lifecycle or Checkout Phase 7.
-- [ ] Button visual parity closure does **not** change popup/modal design (separate task).
+- [ ] Popup Step 1 closure does **not** redesign Step 2 content (separate later task).

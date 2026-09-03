@@ -235,8 +235,12 @@ final class MtUniCreditStorefrontCalculatorPresenter
                 'key' => $key,
                 'months' => $scheme->months,
                 'monthly' => $result->monthlyInstallment,
+                'monthly_installment' => $result->monthlyInstallment,
                 'financed' => $result->financedAmount,
+                'financed_amount' => $result->financedAmount,
                 'total' => $result->totalPayable,
+                'total_payable' => $result->totalPayable,
+                'glp' => $result->glp,
                 'gpr' => $result->gpr,
                 'first_installment' => $result->firstInstallment->amount,
                 'first_installment_locked' => !empty($result->firstInstallment->locked),
@@ -345,5 +349,84 @@ final class MtUniCreditStorefrontCalculatorPresenter
         }
 
         return $dimension;
+    }
+
+    /**
+     * Recalculate a single selected scheme with optional first installment.
+     *
+     * @param array<string, mixed> $shop
+     * @param float $price
+     * @param MtUniCreditAvailableScheme $scheme
+     * @param float $firstInstallment
+     * @return array<string, mixed>
+     */
+    public function presentSchemeCalculation(array $shop, $price, MtUniCreditAvailableScheme $scheme, $firstInstallment = 0.0)
+    {
+        $result = $this->calculator->calculateScheme($shop, (float) $price, $scheme, (float) $firstInstallment);
+
+        return array(
+            'price' => (float) $price,
+            'months' => (int) $scheme->months,
+            'monthly' => $result->monthlyInstallment,
+            'monthly_installment' => $result->monthlyInstallment,
+            'financed' => $result->financedAmount,
+            'financed_amount' => $result->financedAmount,
+            'total' => $result->totalPayable,
+            'total_payable' => $result->totalPayable,
+            'glp' => $result->glp,
+            'gpr' => $result->gpr,
+            'first_installment' => $result->firstInstallment->amount,
+            'first_installment_locked' => !empty($result->firstInstallment->locked),
+            'show_first_installment' => $this->flag(isset($shop['uni_first_vnoska']) ? $shop['uni_first_vnoska'] : 0),
+            'key' => self::keyForScheme($scheme),
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $shop
+     * @param MtUniCreditProductContext $product
+     * @param array{type:string,kop_code:string,months:int,filter_id:int} $parsed
+     * @return MtUniCreditAvailableScheme|null
+     */
+    public function findProductScheme(array $shop, MtUniCreditProductContext $product, array $parsed)
+    {
+        $schemes = $this->calculator->availableSchemes($shop, $product, $parsed['type']);
+        foreach ($schemes as $scheme) {
+            if (
+                $scheme->kopCode === $parsed['kop_code']
+                && $scheme->months === $parsed['months']
+                && $scheme->filterId === $parsed['filter_id']
+            ) {
+                return $scheme;
+            }
+        }
+        foreach ($schemes as $scheme) {
+            if ($scheme->kopCode === $parsed['kop_code'] && $scheme->months === $parsed['months']) {
+                return $scheme;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param MtUniCreditCartResolution $resolution
+     * @param array<string, mixed> $shop
+     * @param array{type:string,kop_code:string,months:int,filter_id:int} $parsed
+     * @return MtUniCreditAvailableScheme|null
+     */
+    public function findCartScheme(MtUniCreditCartResolution $resolution, array $shop, array $parsed)
+    {
+        foreach ($this->cartSchemes->unifiedSchemes($resolution, $shop) as $scheme) {
+            if (
+                $scheme->type === $parsed['type']
+                && $scheme->kopCode === $parsed['kop_code']
+                && $scheme->months === $parsed['months']
+            ) {
+                return $scheme;
+            }
+        }
+
+        return null;
     }
 }

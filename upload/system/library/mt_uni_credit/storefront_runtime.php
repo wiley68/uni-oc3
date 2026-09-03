@@ -7,7 +7,7 @@ final class MtUniCreditStorefrontRuntime
 {
     /**
      * @param object $registry OpenCart registry-like controller ($this)
-     * @return array{css:string,js:string,fonts:string,logo_standard:string,logo_alternative:string}
+     * @return array{css:string,js:string,fonts:string,logo_standard:string,logo_alternative:string,badge:string}
      */
     public static function assetUrls($registry)
     {
@@ -37,6 +37,10 @@ final class MtUniCreditStorefrontRuntime
             'logo_alternative' => MtUniCreditStorefrontAssetUrls::versionedUrl(
                 $baseFs . 'image' . DIRECTORY_SEPARATOR . 'uni_logo_red.svg',
                 MtUniCreditConstants::STOREFRONT_LOGO_ALTERNATIVE_RELATIVE
+            ),
+            'badge' => MtUniCreditStorefrontAssetUrls::versionedUrl(
+                $baseFs . 'image' . DIRECTORY_SEPARATOR . 'uni_apply_badge.svg',
+                MtUniCreditConstants::STOREFRONT_APPLY_BADGE_RELATIVE
             ),
         );
     }

@@ -141,9 +141,14 @@ mtuc8_assert(strpos($css, '--mtuc-red: #ee2e24') !== false, 'CSS OC4 --mtuc-red'
 mtuc8_assert(strpos($css, 'mt-uni-credit-storefront--stacked') !== false, 'CSS stacked layout');
 mtuc8_assert(strpos($css, '@container mtuc-product-buttons') !== false, 'CSS responsive container query');
 mtuc8_assert(
-    strpos($css, 'mt-uni-credit-product-calculator__popup') === false
-        && strpos($css, 'popup-calc') === false,
-    'CSS button closure does not port OC4 popup selectors'
+    strpos($css, 'max-width: 900px') !== false
+        && strpos($css, '14.5px 14.5px 80px 14.5px') !== false
+        && strpos($css, 'processing[hidden]') !== false,
+    'CSS popup Step 1 shell/calc/processing[hidden] contract'
+);
+mtuc8_assert(
+    strpos($css, 'max-width: 560px') === false,
+    'CSS popup no longer uses narrow 560px modal'
 );
 
 $fontsCss = $catalog . DIRECTORY_SEPARATOR . 'view' . DIRECTORY_SEPARATOR . 'theme' . DIRECTORY_SEPARATOR

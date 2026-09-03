@@ -60,6 +60,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'product_line.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'oc3_product_line_resolver.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'storefront_operation_identity.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'storefront_calculator_presenter.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'storefront_modal_presenter.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'product_buy_preference.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'storefront_order_draft_builder.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'storefront_financing_submission_service.php';

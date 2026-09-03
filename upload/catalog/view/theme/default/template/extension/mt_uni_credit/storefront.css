@@ -1,6 +1,6 @@
 /* Scoped UniCredit storefront styles only — never style global .btn/.modal/.row
  * Button visual contract ports reference-uni-oc4/catalog/view/stylesheet/mt_uni_credit_product.css
- * (button shell only; modal/popup selectors intentionally unchanged in this closure).
+ * (button shell + popup Step 1 OC4 visual contract on storefront BEM).
  */
 #mt-uni-credit-product-root,
 #mt-uni-credit-cart-root {
@@ -184,15 +184,28 @@
   }
 }
 
+/* Popup Step 1 — OC4 visual contract on OC3 storefront BEM */
 #mt-uni-credit-product-modal,
 #mt-uni-credit-cart-modal {
   position: fixed;
   inset: 0;
   z-index: 1050;
+  --mtuc-popup-red: #ed1c24;
+  --mtuc-popup-border: #d4d4d8;
+  --mtuc-popup-shadow: #f4f4f5;
+  --mtuc-popup-muted: #696969;
+  --mtuc-font-family: "Roboto Condensed", sans-serif;
+  font-family: var(--mtuc-font-family);
 }
 
 #mt-uni-credit-product-modal[hidden],
-#mt-uni-credit-cart-modal[hidden] {
+#mt-uni-credit-cart-modal[hidden],
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__step[hidden],
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__step[hidden],
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__processing[hidden],
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__processing[hidden],
+#mt-uni-credit-product-modal [data-mtuc-first-row][hidden],
+#mt-uni-credit-cart-modal [data-mtuc-first-row][hidden] {
   display: none !important;
 }
 
@@ -200,92 +213,282 @@
 #mt-uni-credit-cart-modal .mt-uni-credit-storefront__overlay {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(0, 0, 0, .4);
+}
+
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__modal-scroll,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__modal-scroll {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  height: 100%;
+  padding: 24px 12px;
+  overflow-y: auto;
 }
 
 #mt-uni-credit-product-modal .mt-uni-credit-storefront__dialog,
 #mt-uni-credit-cart-modal .mt-uni-credit-storefront__dialog {
   position: relative;
-  z-index: 1;
-  max-width: 560px;
-  margin: 5vh auto;
-  background: #fff;
-  border-radius: 6px;
-  padding: 20px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  width: 100%;
+  max-width: 900px;
+  margin: auto;
+  background: #fefefe;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, .2), 0 6px 20px rgba(0, 0, 0, .19);
+  color: var(--mtuc-popup-muted);
 }
 
-#mt-uni-credit-product-modal .mt-uni-credit-storefront__title,
-#mt-uni-credit-cart-modal .mt-uni-credit-storefront__title {
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__banner img,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__banner img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__popup-panel,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__popup-panel {
+  padding: 20px;
+}
+
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__popup-title,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__popup-title {
   margin: 0 0 16px;
-  color: var(--mtuc-red);
-  font-size: 20px;
+  color: #000;
+  font-size: 22px;
+  font-weight: 400;
+}
+
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__popup-calc,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__popup-calc {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px 25px 5px 100px;
+  border: 2px solid var(--mtuc-popup-border);
+  border-radius: 14.5px 14.5px 80px 14.5px;
+  background-color: #fff;
+  box-shadow: 1px 1px 1px 1px var(--mtuc-popup-shadow);
 }
 
 #mt-uni-credit-product-modal .mt-uni-credit-storefront__popup-row,
-#mt-uni-credit-cart-modal .mt-uni-credit-storefront__popup-row,
-#mt-uni-credit-product-modal .mt-uni-credit-storefront__field,
-#mt-uni-credit-cart-modal .mt-uni-credit-storefront__field {
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__popup-row {
   display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 10px;
   align-items: center;
-}
-
-#mt-uni-credit-product-modal .mt-uni-credit-storefront__field,
-#mt-uni-credit-cart-modal .mt-uni-credit-storefront__field {
-  flex-direction: column;
-  align-items: stretch;
-}
-
-#mt-uni-credit-product-modal .mt-uni-credit-storefront__select,
-#mt-uni-credit-cart-modal .mt-uni-credit-storefront__select,
-#mt-uni-credit-product-modal .mt-uni-credit-storefront__input,
-#mt-uni-credit-cart-modal .mt-uni-credit-storefront__input,
-#mt-uni-credit-product-modal .mt-uni-credit-storefront__field input,
-#mt-uni-credit-cart-modal .mt-uni-credit-storefront__field input {
+  justify-content: space-between;
+  column-gap: 32px;
   width: 100%;
-  max-width: 280px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  padding: 6px 8px;
+  margin-bottom: 8px;
 }
 
-#mt-uni-credit-product-modal .mt-uni-credit-storefront__actions,
-#mt-uni-credit-cart-modal .mt-uni-credit-storefront__actions {
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__popup-label,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__popup-label {
+  flex: 1 1 auto;
+  margin: 0;
+  padding: 0;
+  color: #000;
+  font-size: 18px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__popup-value,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__popup-value {
+  flex: 0 0 auto;
+  max-width: 55%;
+  color: var(--mtuc-popup-red);
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1.2;
+  text-align: right;
+}
+
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__popup-value--red,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__popup-value--red {
+  color: var(--mtuc-popup-red);
+}
+
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__popup-select,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__popup-select,
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__popup-input,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__popup-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 240px;
+  margin: 0;
+  padding: 0 0 0 16px;
+  border: 0;
+  border-bottom: 1px solid #b0b0b0;
+  border-radius: 0;
+  outline: none;
+  background-color: #fff;
+  box-shadow: none;
+  color: var(--mtuc-popup-red);
+  font: inherit;
+  font-size: 20px;
+  line-height: 1.2;
+  text-align: right;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__popup-select,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__popup-select {
+  padding-left: 8px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23b0b0b0' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0 center;
+  background-size: 10px 6px;
+}
+
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__popup-select:focus,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__popup-select:focus,
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__popup-select:focus-visible,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__popup-select:focus-visible,
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__popup-input:focus,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__popup-input:focus,
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__popup-input:focus-visible,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__popup-input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__popup-input[readonly],
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__popup-input[readonly] {
+  border-bottom: 0;
+  opacity: .85;
+}
+
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__popup-row--note,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__popup-row--note {
+  min-height: 18px;
+  color: var(--mtuc-popup-red);
+  font-size: 14px;
+}
+
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__popup-actions,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__popup-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  justify-content: flex-end;
-  margin-top: 16px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 20px;
 }
 
-#mt-uni-credit-product-modal .mt-uni-credit-storefront__action,
-#mt-uni-credit-cart-modal .mt-uni-credit-storefront__action {
-  border-radius: 4px;
-  padding: 8px 14px;
-  cursor: pointer;
-  border: 1px solid #ccc;
-  background: #f7f7f7;
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__popup-actions-left,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__popup-actions-left,
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__popup-actions-group,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__popup-actions-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-right: auto;
 }
 
-#mt-uni-credit-product-modal .mt-uni-credit-storefront__action--primary,
-#mt-uni-credit-cart-modal .mt-uni-credit-storefront__action--primary {
-  background: var(--mtuc-red);
-  border-color: var(--mtuc-red);
-  color: #fff;
-}
-
-#mt-uni-credit-product-modal .mt-uni-credit-storefront__processing,
-#mt-uni-credit-cart-modal .mt-uni-credit-storefront__processing {
-  position: absolute;
-  inset: 0;
-  background: rgba(255, 255, 255, 0.85);
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__popup-actions-right,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__popup-actions-right {
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-weight: 600;
+  margin-left: auto;
+}
+
+#mt-uni-credit-product-modal button.mt-uni-credit-storefront__popup-button,
+#mt-uni-credit-cart-modal button.mt-uni-credit-storefront__popup-button {
+  --mtuc-btn-offset: 4px;
+  --mtuc-btn-reveal: 1px;
+  position: relative;
+  display: inline-block;
+  min-width: 140px;
+  margin: 0;
+  padding: 0 var(--mtuc-btn-reveal) var(--mtuc-btn-reveal) 0;
+  border: 0;
+  border-radius: 6px;
+  outline: none;
+  background: #a1a1aa none;
+  box-shadow: none;
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+#mt-uni-credit-product-modal button.mt-uni-credit-storefront__popup-button > span,
+#mt-uni-credit-cart-modal button.mt-uni-credit-storefront__popup-button > span {
+  position: relative;
+  top: var(--mtuc-btn-offset);
+  left: var(--mtuc-btn-offset);
+  z-index: 1;
+  display: block;
+  padding: 0 var(--mtuc-btn-reveal) var(--mtuc-btn-reveal) 0;
+  border: 3px solid var(--mtuc-popup-border);
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 1px 1px 1px 1px var(--mtuc-popup-shadow);
+}
+
+#mt-uni-credit-product-modal button.mt-uni-credit-storefront__popup-button b,
+#mt-uni-credit-cart-modal button.mt-uni-credit-storefront__popup-button b {
+  display: block;
+  padding: 8px 20px;
+  background: #a1a1aa;
+  color: #fff;
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 20px;
+  text-align: center;
+  text-shadow: 1px 1px #729696;
+}
+
+#mt-uni-credit-product-modal button.mt-uni-credit-storefront__popup-button--primary b,
+#mt-uni-credit-cart-modal button.mt-uni-credit-storefront__popup-button--primary b {
+  color: var(--mtuc-popup-red);
+}
+
+#mt-uni-credit-product-modal button.mt-uni-credit-storefront__popup-button i,
+#mt-uni-credit-cart-modal button.mt-uni-credit-storefront__popup-button i {
+  position: absolute;
+  top: -10px;
+  left: -10px;
+  z-index: 20;
+  display: block;
+  width: 40px;
+  height: 40px;
+  border-radius: 20px;
+  background-color: #fff;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  box-shadow: 6px 6px 7px rgba(105, 105, 105, .75);
+  pointer-events: none;
+}
+
+#mt-uni-credit-product-modal button.mt-uni-credit-storefront__popup-button:focus-visible,
+#mt-uni-credit-cart-modal button.mt-uni-credit-storefront__popup-button:focus-visible {
+  outline: 2px solid var(--mtuc-popup-red);
+  outline-offset: 3px;
+}
+
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__field,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__customer-input,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__customer-input {
+  box-sizing: border-box;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid #b0b0b0;
+  border-radius: 0;
+  padding: 0 0 0 16px;
+  background: #fff;
+  color: #000;
+  font-size: 20px;
+  line-height: 1.2;
 }
 
 #mt-uni-credit-product-modal .mt-uni-credit-storefront__consent,
@@ -293,11 +496,70 @@
   margin: 12px 0;
 }
 
-#mt-uni-credit-product-modal .mt-uni-credit-storefront__popup-error,
-#mt-uni-credit-cart-modal .mt-uni-credit-storefront__popup-error,
 #mt-uni-credit-product-modal .mt-uni-credit-storefront__submit-error,
-#mt-uni-credit-cart-modal .mt-uni-credit-storefront__submit-error {
-  color: var(--mtuc-red);
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__submit-error,
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__popup-error,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__popup-error {
+  color: var(--mtuc-popup-red);
   font-size: 13px;
   min-height: 1.2em;
+}
+
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__processing,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__processing {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, .35);
+}
+
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__processing-panel,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__processing-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 24px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .96);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
+  text-align: center;
+}
+
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__processing-spinner,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__processing-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #e4e4e7;
+  border-top-color: var(--mtuc-popup-red);
+  border-radius: 50%;
+  animation: mtuc-popup-spin .8s linear infinite;
+}
+
+@keyframes mtuc-popup-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 768px) {
+  #mt-uni-credit-product-modal .mt-uni-credit-storefront__popup-calc,
+  #mt-uni-credit-cart-modal .mt-uni-credit-storefront__popup-calc {
+    padding: 12px;
+    border-radius: 14.5px 14.5px 80px 14.5px;
+  }
+
+  #mt-uni-credit-product-modal .mt-uni-credit-storefront__popup-row,
+  #mt-uni-credit-cart-modal .mt-uni-credit-storefront__popup-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  #mt-uni-credit-product-modal .mt-uni-credit-storefront__popup-select,
+  #mt-uni-credit-cart-modal .mt-uni-credit-storefront__popup-select,
+  #mt-uni-credit-product-modal .mt-uni-credit-storefront__popup-input,
+  #mt-uni-credit-cart-modal .mt-uni-credit-storefront__popup-input {
+    min-width: 0;
+  }
 }

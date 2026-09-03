@@ -66,6 +66,76 @@ class ControllerExtensionMtUniCreditCart extends Controller
         }
     }
 
+    public function recalculate()
+    {
+        $this->load->language('extension/mt_uni_credit/cart');
+        $json = array(
+            'success' => false,
+            'message' => $this->language->get('error_recalculate'),
+        );
+
+        try {
+            if (!$this->isPost() || !MtUniCreditStorefrontCsrf::verify($this->session->data, $this->posted('csrf'))) {
+                MtUniCreditStorefrontRuntime::respondJson($this, $json);
+                return;
+            }
+
+            $schemeKey = trim((string) $this->posted('scheme_key', ''));
+            $firstInstallment = (float) str_replace(',', '.', (string) $this->posted('first_installment', '0'));
+            $sequence = (int) $this->posted('sequence', 0);
+            $postedFingerprint = trim((string) $this->posted('cart_fingerprint', ''));
+
+            $shop = MtUniCreditStorefrontRuntime::loadFreshShop($this);
+            $cart = $shop !== null ? MtUniCreditStorefrontRuntime::resolveCartContext($this) : null;
+            $currency = isset($this->session->data['currency'])
+                ? (string) $this->session->data['currency']
+                : (string) $this->config->get('config_currency');
+            $parsed = MtUniCreditStorefrontCalculatorPresenter::parseSchemeKey($schemeKey);
+
+            if ($shop === null || $cart === null || $parsed === null) {
+                $json['unavailable'] = true;
+                $json['sequence'] = $sequence;
+                MtUniCreditStorefrontRuntime::respondJson($this, $json);
+                return;
+            }
+
+            $fingerprint = MtUniCreditStorefrontOperationIdentity::cartFingerprintFromContext($cart, $currency);
+            if ($postedFingerprint !== '' && !hash_equals($fingerprint, $postedFingerprint)) {
+                $json['unavailable'] = true;
+                $json['cart_changed'] = true;
+                $json['sequence'] = $sequence;
+                MtUniCreditStorefrontRuntime::respondJson($this, $json);
+                return;
+            }
+
+            $resolver = new MtUniCreditCartSchemeResolver(new MtUniCreditCalculator());
+            $resolution = $resolver->resolve($shop, $cart);
+            $presenter = new MtUniCreditStorefrontCalculatorPresenter();
+            $scheme = $presenter->findCartScheme($resolution, $shop, $parsed);
+            if ($scheme === null) {
+                $json['unavailable'] = true;
+                $json['sequence'] = $sequence;
+                MtUniCreditStorefrontRuntime::respondJson($this, $json);
+                return;
+            }
+
+            $calculation = $presenter->presentSchemeCalculation(
+                $shop,
+                $cart->total,
+                $scheme,
+                $firstInstallment
+            );
+
+            MtUniCreditStorefrontRuntime::respondJson($this, array(
+                'success' => true,
+                'sequence' => $sequence,
+                'calculation' => $calculation,
+            ));
+        } catch (Exception $exception) {
+            MtUniCreditStorefrontRuntime::respondJson($this, $json);
+        }
+    }
+
     public function submit()
     {
         $this->load->language('extension/mt_uni_credit/cart');
@@ -246,6 +316,8 @@ class ControllerExtensionMtUniCreditCart extends Controller
         $assets = MtUniCreditStorefrontRuntime::assetUrls($this);
         $csrf = MtUniCreditStorefrontCsrf::issue($this->session->data);
 
+        $modalMeta = MtUniCreditStorefrontModalPresenter::present($shop, $currency);
+
         $data = array();
         $data['heading'] = $this->language->get('heading_title');
         $data['text_apply'] = $this->language->get('button_apply');
@@ -254,9 +326,22 @@ class ControllerExtensionMtUniCreditCart extends Controller
         $data['text_consent'] = $this->language->get('text_consent');
         $data['text_cancel'] = $this->language->get('button_cancel');
         $data['text_back'] = $this->language->get('button_back');
+        $data['text_processing_title'] = $this->language->get('text_processing_title');
         $data['text_processing'] = $this->language->get('text_processing');
+        $data['text_modal_title_scheme'] = $this->language->get('text_modal_title_scheme');
+        $data['text_modal_title_customer'] = $this->language->get('text_modal_title_customer');
+        $data['text_price'] = $this->language->get('text_price');
+        $data['text_months'] = $this->language->get('text_months');
+        $data['text_first_installment'] = $modalMeta['text_first_installment'];
+        $data['text_financed_amount'] = $this->language->get('text_financed_amount');
+        $data['text_monthly_installment'] = $this->language->get('text_monthly_installment');
+        $data['text_total_payable'] = $this->language->get('text_total_payable');
+        $data['text_glp'] = $this->language->get('text_glp');
+        $data['text_gpr'] = $this->language->get('text_gpr');
         $data['error_generic'] = $this->language->get('error_generic');
         $data['calculator'] = $calculator;
+        $data['modal_meta'] = $modalMeta;
+        $data['badge_url'] = $assets['badge'];
         $data['product_id'] = 0;
         $data['button_action'] = '';
         $data['top_spacing'] = 0;
@@ -267,6 +352,7 @@ class ControllerExtensionMtUniCreditCart extends Controller
         $data['logo_standard_url'] = $assets['logo_standard'];
         $data['logo_alternative_url'] = $assets['logo_alternative'];
         $data['route_calculate'] = $this->url->link(MtUniCreditConstants::CART_ROUTE . '/calculate', '', true);
+        $data['route_recalculate'] = $this->url->link(MtUniCreditConstants::CART_ROUTE . '/recalculate', '', true);
         $data['route_submit'] = $this->url->link(MtUniCreditConstants::CART_ROUTE . '/submit', '', true);
         $data['route_stash'] = '';
         $data['checkout_url'] = $this->url->link('checkout/checkout', '', true);

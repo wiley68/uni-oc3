@@ -15,6 +15,7 @@ $required = array(
     'product_line.php',
     'oc3_product_line_resolver.php',
     'storefront_calculator_presenter.php',
+    'storefront_modal_presenter.php',
     'storefront_order_draft_builder.php',
     'storefront_operation_identity.php',
     'storefront_financing_submission_service.php',
