@@ -90,7 +90,10 @@
 }
 
 #mt-uni-credit-product-root button.mt-uni-credit-storefront__button:focus,
-#mt-uni-credit-cart-root button.mt-uni-credit-storefront__button:focus,
+#mt-uni-credit-cart-root button.mt-uni-credit-storefront__button:focus {
+  outline: none;
+}
+
 #mt-uni-credit-product-root button.mt-uni-credit-storefront__button:focus-visible,
 #mt-uni-credit-cart-root button.mt-uni-credit-storefront__button:focus-visible {
   outline: 2px solid var(--mtuc-red-text);

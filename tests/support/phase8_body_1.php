@@ -1,4 +1,13 @@
 <?php
+
+/**
+ * Included from mtuc8_run() — inherits that function scope.
+ *
+ * @var string $root
+ * @var string $lib
+ * @var string $catalog
+ */
+
 $required = array(
     'storefront_asset_urls.php',
     'storefront_csrf.php',
@@ -110,4 +119,3 @@ $eligibleResolution = $cartResolver->resolve($shop, $eligibleCart);
 $cartPresented = $presenter->presentCart($shop, $eligibleCart, $eligibleResolution, 'BGN');
 mtuc8_assert(is_array($cartPresented) && !empty($cartPresented['hide_secondary']), 'cart presenter eligible + hide_secondary');
 mtuc8_assert(isset($cartPresented['cart_fingerprint']) && $cartPresented['cart_fingerprint'] !== '', 'cart fingerprint present');
-

@@ -747,7 +747,8 @@ CP fields (via fresh shop cache → presenter): `uni_type_button`, `uni_button_r
 
 1. [ ] Product and Cart buttons: white background, 2px red border (`#ee2e24`), pill `border-radius: 9999px`.
 2. [ ] Title red/bold; monthly/interest secondary text dark; logo (standard) or `0%` badge (promo) at right.
-3. [ ] Hover: subtle red-tinted background; focus outline visible without relying only on color.
+3. [ ] Hover: subtle red-tinted background.
+4. [ ] Mouse click: single 2px border only (no concentric double outline). Keyboard Tab: visible `:focus-visible` indicator.
 
 #### Dark (`uni_type_button = 1`)
 

@@ -1,4 +1,18 @@
 <?php
+
+/**
+ * Included from mtuc8_run() — inherits that function scope (continues body_2).
+ *
+ * @var string $root
+ * @var string $lib
+ * @var string $catalog
+ * @var MtUniCreditStorefrontCalculatorPresenter $presenter
+ * @var MtUniCreditProductContext $product
+ * @var string $css
+ * @var string $productSrc
+ * @var string $cartSrc
+ */
+
 // Button visual parity — CP mapping via presenter + shared Product/Cart CSS contract
 $buttonShopLight = mtuc3_golden_shop(array(
     'uni_eur' => 0,
@@ -88,6 +102,27 @@ mtuc8_assert(
     'CSS scopes Product and Cart roots together'
 );
 mtuc8_assert(strpos($css, 'border: 2px solid var(--mtuc-red)') !== false, 'CSS 2px UniCredit red border');
+mtuc8_assert(
+    preg_match(
+        '/button\.mt-uni-credit-storefront__button:focus\s*,\s*\n#mt-uni-credit-cart-root button\.mt-uni-credit-storefront__button:focus\s*\{\s*outline:\s*none\s*;/m',
+        $css
+    ) === 1,
+    'CSS :focus clears outline (no mouse double border)'
+);
+mtuc8_assert(
+    preg_match(
+        '/button\.mt-uni-credit-storefront__button:focus-visible[\s\S]*?outline:\s*2px solid var\(--mtuc-red-text\)/',
+        $css
+    ) === 1,
+    'CSS :focus-visible keeps keyboard focus indicator'
+);
+mtuc8_assert(
+    !preg_match(
+        '/button\.mt-uni-credit-storefront__button:focus\s*,\s*\n#mt-uni-credit-cart-root button\.mt-uni-credit-storefront__button:focus\s*,\s*\n#mt-uni-credit-product-root button\.mt-uni-credit-storefront__button:focus-visible/',
+        $css
+    ),
+    'CSS :focus no longer shares outline rule with :focus-visible'
+);
 mtuc8_assert(strpos($css, 'border-radius: 9999px') !== false, 'CSS pill radius 9999px');
 mtuc8_assert(strpos($css, '--mtuc-button-width:') !== false, 'CSS configured width variable');
 mtuc8_assert(strpos($css, '--mtuc-button-height:') !== false, 'CSS configured height variable');
@@ -206,4 +241,3 @@ if (is_file($distZip) && class_exists('ZipArchive')) {
 } else {
     mtuc8_assert(true, 'dist package ZIP check skipped until rebuild');
 }
-

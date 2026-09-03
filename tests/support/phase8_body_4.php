@@ -1,4 +1,13 @@
 <?php
+
+/**
+ * Included from mtuc8_run() — inherits that function scope (continues body_3).
+ *
+ * @var string $root
+ * @var string $lib
+ * @var string $catalog
+ */
+
 // OCMOD anchors — frozen Product template strategy
 $installXml = (string) file_get_contents($root . DIRECTORY_SEPARATOR . 'install.xml');
 mtuc8_assert(strpos($installXml, 'mt_uni_credit:product') !== false, 'OCMOD product marker');
@@ -150,4 +159,3 @@ $transport->enqueueJson(200, $payloads['login']);
 $transport->enqueueJson(201, $payloads['order']);
 $result2 = $service->submit($input2);
 mtuc8_assert($addCount === 1, 'storefront submission idempotent addOrder counted once');
-

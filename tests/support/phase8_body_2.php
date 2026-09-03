@@ -1,4 +1,16 @@
 <?php
+
+/**
+ * Included from mtuc8_run() — inherits that function scope (continues body_1).
+ *
+ * @var string $root
+ * @var string $lib
+ * @var string $catalog
+ * @var MtUniCreditStorefrontCalculatorPresenter $presenter
+ * @var MtUniCreditProductContext $product
+ * @var array<string, mixed> $eligible
+ */
+
 // EUR display uses word "евро", never the € symbol (buttons + popup source labels)
 $eurShop = mtuc3_golden_shop(array('uni_eur' => 3, 'uni_vnoska' => 1));
 $eurPresented = $presenter->presentProduct($eurShop, $product, 'EUR');
@@ -130,4 +142,3 @@ $cssPath = $catalog . DIRECTORY_SEPARATOR . 'view' . DIRECTORY_SEPARATOR . 'them
     . 'mt_uni_credit' . DIRECTORY_SEPARATOR . 'storefront.css';
 $css = (string) file_get_contents($cssPath);
 mtuc8_assert(!preg_match('/(^|\\n)\\s*\\.btn\\s*\\{/', $css), 'CSS does not style bare .btn {');
-
