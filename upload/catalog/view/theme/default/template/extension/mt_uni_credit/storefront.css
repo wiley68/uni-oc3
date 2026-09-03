@@ -488,31 +488,230 @@
   outline-offset: 3px;
 }
 
-#mt-uni-credit-product-modal .mt-uni-credit-storefront__field,
-#mt-uni-credit-cart-modal .mt-uni-credit-storefront__field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-bottom: 12px;
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__customer-form,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__customer-form {
+  display: grid;
+  gap: 20px;
+  margin: 0 0 20px;
+}
+
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__customer-field,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__customer-field {
+  margin: 0;
+}
+
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__customer-label,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__customer-label {
+  display: block;
+  margin: 0 0 4px;
+  padding: 0;
+  color: #000;
+  font-family: var(--mtuc-font-family);
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.2;
+  text-align: left;
+}
+
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__required,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__required {
+  margin-left: 2px;
+  color: var(--mtuc-popup-red);
+}
+
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__field-error,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__field-error {
+  display: block;
+  margin-top: 4px;
+  color: var(--mtuc-popup-red);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.3;
+}
+
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__field-error:empty,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__field-error:empty {
+  display: none;
 }
 
 #mt-uni-credit-product-modal .mt-uni-credit-storefront__customer-input,
 #mt-uni-credit-cart-modal .mt-uni-credit-storefront__customer-input {
+  display: block;
   box-sizing: border-box;
   width: 100%;
+  min-width: 0;
+  max-width: none;
+  margin: 0;
+  padding: 0 0 0 16px;
   border: 0;
   border-bottom: 1px solid #b0b0b0;
   border-radius: 0;
-  padding: 0 0 0 16px;
-  background: #fff;
+  outline: none;
+  background-color: #fff;
+  box-shadow: none;
   color: #000;
+  font: inherit;
+  font-family: var(--mtuc-font-family);
   font-size: 20px;
   line-height: 1.2;
+  text-align: left;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__customer-input:focus,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__customer-input:focus,
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__customer-input:focus-visible,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__customer-input:focus-visible {
+  outline: none;
+  outline-offset: 0;
+  background-color: #fff;
+  box-shadow: none;
+  color: #000;
+}
+
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__customer-input[aria-invalid="true"],
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__customer-input[aria-invalid="true"] {
+  border-bottom-color: var(--mtuc-popup-red);
+}
+
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__customer-input:-webkit-autofill,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__customer-input:-webkit-autofill,
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__customer-input:-webkit-autofill:hover,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__customer-input:-webkit-autofill:hover,
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__customer-input:-webkit-autofill:focus,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__customer-input:-webkit-autofill:focus,
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__customer-input:-webkit-autofill:active,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__customer-input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px #fff inset;
+  box-shadow: 0 0 0 1000px #fff inset;
+  -webkit-text-fill-color: #000;
+  caret-color: #000;
+  transition: background-color 9999s ease-out 0s;
+}
+
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__consents,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__consents {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 20px;
 }
 
 #mt-uni-credit-product-modal .mt-uni-credit-storefront__consent,
 #mt-uni-credit-cart-modal .mt-uni-credit-storefront__consent {
-  margin: 12px 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0;
+}
+
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__consent--info,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__consent--info {
+  padding-left: 28px;
+}
+
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__consent-checkbox,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__consent-checkbox {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  accent-color: var(--mtuc-popup-red, #ed1c24);
+  cursor: pointer;
+}
+
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__consent-label,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__consent-label,
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__consent-text,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__consent-text {
+  margin: 0;
+  color: #000;
+  font-family: var(--mtuc-font-family);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__consent-label a,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__consent-label a,
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__consent-text a,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__consent-text a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__consent-label a:hover,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__consent-label a:hover,
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__consent-text a:hover,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__consent-text a:hover,
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__consent-label a:focus,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__consent-label a:focus,
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__consent-text a:focus,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__consent-text a:focus {
+  color: var(--mtuc-popup-red);
+}
+
+#mt-uni-credit-product-modal .mt-uni-credit-storefront__popup-actions--step2,
+#mt-uni-credit-cart-modal .mt-uni-credit-storefront__popup-actions--step2 {
+  justify-content: space-between;
+  align-items: center;
+}
+
+#mt-uni-credit-product-modal button.mt-uni-credit-storefront__popup-button.is-disabled,
+#mt-uni-credit-cart-modal button.mt-uni-credit-storefront__popup-button.is-disabled,
+#mt-uni-credit-product-modal button.mt-uni-credit-storefront__popup-button:disabled,
+#mt-uni-credit-cart-modal button.mt-uni-credit-storefront__popup-button:disabled,
+#mt-uni-credit-product-modal button.mt-uni-credit-storefront__popup-button[aria-disabled="true"],
+#mt-uni-credit-cart-modal button.mt-uni-credit-storefront__popup-button[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: .93;
+}
+
+#mt-uni-credit-product-modal button.mt-uni-credit-storefront__popup-button--primary:disabled,
+#mt-uni-credit-cart-modal button.mt-uni-credit-storefront__popup-button--primary:disabled,
+#mt-uni-credit-product-modal button.mt-uni-credit-storefront__popup-button--primary[aria-disabled="true"],
+#mt-uni-credit-cart-modal button.mt-uni-credit-storefront__popup-button--primary[aria-disabled="true"],
+#mt-uni-credit-product-modal button.mt-uni-credit-storefront__popup-button--primary.is-disabled,
+#mt-uni-credit-cart-modal button.mt-uni-credit-storefront__popup-button--primary.is-disabled {
+  --mtuc-btn-disabled-bg: #d4d4d8;
+  --mtuc-btn-disabled-text: #52525b;
+  background: var(--mtuc-btn-disabled-bg);
+  color: var(--mtuc-btn-disabled-text);
+}
+
+#mt-uni-credit-product-modal button.mt-uni-credit-storefront__popup-button--primary:disabled > span,
+#mt-uni-credit-cart-modal button.mt-uni-credit-storefront__popup-button--primary:disabled > span,
+#mt-uni-credit-product-modal button.mt-uni-credit-storefront__popup-button--primary[aria-disabled="true"] > span,
+#mt-uni-credit-cart-modal button.mt-uni-credit-storefront__popup-button--primary[aria-disabled="true"] > span,
+#mt-uni-credit-product-modal button.mt-uni-credit-storefront__popup-button--primary.is-disabled > span,
+#mt-uni-credit-cart-modal button.mt-uni-credit-storefront__popup-button--primary.is-disabled > span {
+  border-color: #e4e4e7;
+  background: var(--mtuc-btn-disabled-bg);
+  box-shadow: none;
+}
+
+#mt-uni-credit-product-modal button.mt-uni-credit-storefront__popup-button--primary:disabled b,
+#mt-uni-credit-cart-modal button.mt-uni-credit-storefront__popup-button--primary:disabled b,
+#mt-uni-credit-product-modal button.mt-uni-credit-storefront__popup-button--primary[aria-disabled="true"] b,
+#mt-uni-credit-cart-modal button.mt-uni-credit-storefront__popup-button--primary[aria-disabled="true"] b,
+#mt-uni-credit-product-modal button.mt-uni-credit-storefront__popup-button--primary.is-disabled b,
+#mt-uni-credit-cart-modal button.mt-uni-credit-storefront__popup-button--primary.is-disabled b {
+  background: var(--mtuc-btn-disabled-bg);
+  color: var(--mtuc-btn-disabled-text);
+  text-shadow: none;
+  -webkit-text-fill-color: var(--mtuc-btn-disabled-text);
+  opacity: 1;
+  visibility: visible;
+}
+
+#mt-uni-credit-product-modal button.mt-uni-credit-storefront__popup-button--primary:disabled i,
+#mt-uni-credit-cart-modal button.mt-uni-credit-storefront__popup-button--primary:disabled i,
+#mt-uni-credit-product-modal button.mt-uni-credit-storefront__popup-button--primary[aria-disabled="true"] i,
+#mt-uni-credit-cart-modal button.mt-uni-credit-storefront__popup-button--primary[aria-disabled="true"] i,
+#mt-uni-credit-product-modal button.mt-uni-credit-storefront__popup-button--primary.is-disabled i,
+#mt-uni-credit-cart-modal button.mt-uni-credit-storefront__popup-button--primary.is-disabled i {
+  opacity: .4;
+  filter: grayscale(1);
 }
 
 #mt-uni-credit-product-modal .mt-uni-credit-storefront__submit-error,

@@ -712,15 +712,22 @@ Automated gate: `php tests/phase8_check.php` (no live network).
 7. [ ] Fresh shop cache only; stale/missing cache hides UI (fail soft).
 8. [ ] Assets load via fragment-local `<link>`/`<script>` with guarded `filemtime` (Journal-compatible).
 
-### Product dynamic recalculation + optional heading
+### Popup Step 2 (Process 1 / Process 2)
 
-1. [ ] CP `uni_zaglavie` non-empty → heading text exact; empty/whitespace → **no** heading DOM and no reserved gap.
-2. [ ] Change price-affecting option without reload → UniCredit buttons refresh (labels, preferred keys, count/eligibility).
-3. [ ] Change quantity (type / +/- / theme controls) → financing refreshes for `unitWithTax × qty`.
-4. [ ] Open popup after option/qty change → Step 1 uses refreshed price/schemes/preferred identity (not page-load state).
-5. [ ] Rapid option switching → final UI matches final selection (sequence/abort stale guard).
-6. [ ] Failed calculate → no infinite loader; buttons not submit-ready on stale data; next change retries.
-7. [ ] Repeated refreshes do not multiply click/modal handlers (`data-mtuc-bound` / document-once).
+1. [ ] Process 1 (`uni_proces !== 1`): exactly Име/Фамилия/Адрес/Мобилен телефон/E-Mail — no Втори телефон/ЕГН.
+2. [ ] Process 2 (`uni_proces === 1`): same five + Втори телефон + ЕГН; all required.
+3. [ ] Labels black + `*` required marker; larger Roboto Condensed inputs; focus without blue Bootstrap frame.
+4. [ ] Consent checkbox/link matches OC4; Submit `Изпрати` disabled until all required + consent.
+5. [ ] Logged customer prefills available fields; missing telephone stays empty.
+6. [ ] Product and Cart share the same Step 2 form contract.
+
+7. [ ] CP `uni_zaglavie` non-empty → heading text exact; empty/whitespace → **no** heading DOM and no reserved gap.
+8. [ ] Change price-affecting option without reload → UniCredit buttons refresh (labels, preferred keys, count/eligibility).
+9. [ ] Change quantity (type / +/- / theme controls) → financing refreshes for `unitWithTax × qty`.
+10. [ ] Open popup after option/qty change → Step 1 uses refreshed price/schemes/preferred identity (not page-load state).
+11. [ ] Rapid option switching → final UI matches final selection (sequence/abort stale guard).
+12. [ ] Failed calculate → no infinite loader; buttons not submit-ready on stale data; next change retries.
+13. [ ] Repeated refreshes do not multiply click/modal handlers (`data-mtuc-bound` / document-once).
 
 ### Cart page
 

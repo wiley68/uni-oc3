@@ -1,6 +1,10 @@
 {% set modal_id = entry_point == 'cart' ? 'mt-uni-credit-cart-modal' : 'mt-uni-credit-product-modal' %}
 {% set form_id = entry_point == 'cart' ? 'mt-uni-credit-cart-form' : 'mt-uni-credit-product-form' %}
 {% set modal_meta = modal_meta is defined ? modal_meta : {} %}
+{% set customer = modal_meta.customer is defined ? modal_meta.customer : (customer is defined ? customer : {}) %}
+{% set process2 = modal_meta.process2 is defined ? modal_meta.process2 : false %}
+{% set consents = modal_meta.consents is defined ? modal_meta.consents : [] %}
+{% set field_suffix = entry_point ~ '-' ~ (product_id is defined ? product_id : 'cart') %}
 <div id="{{ modal_id }}"
      class="mt-uni-credit-storefront__modal"
      role="dialog"
@@ -83,56 +87,82 @@
 
         <div class="mt-uni-credit-storefront__step" data-mtuc-step="2" hidden>
           <h2 class="mt-uni-credit-storefront__popup-title">{{ text_modal_title_customer|default(heading) }}</h2>
-          <form id="{{ form_id }}" data-mtuc-form novalidate>
-            <div class="mt-uni-credit-storefront__field">
-              <label>Име</label>
-              <input class="mt-uni-credit-storefront__customer-input" name="firstname" type="text" value="{{ customer.firstname }}" required autocomplete="given-name">
+          <form id="{{ form_id }}" data-mtuc-form data-mtuc-process="{{ process2 ? '2' : '1' }}" novalidate>
+            {% if customer.address_id %}
+              <input type="hidden" name="address_id" value="{{ customer.address_id }}">
+            {% endif %}
+            <div class="mt-uni-credit-storefront__customer-form" data-mtuc-customer-form>
+              <div class="mt-uni-credit-storefront__customer-field">
+                <label class="mt-uni-credit-storefront__customer-label" for="mtuc-firstname-{{ field_suffix }}">{{ text_firstname }} <span class="mt-uni-credit-storefront__required" aria-hidden="true">{{ text_required }}</span></label>
+                <input class="mt-uni-credit-storefront__customer-input" id="mtuc-firstname-{{ field_suffix }}" name="firstname" type="text" value="{{ customer.firstname }}" required aria-required="true" autocomplete="given-name" data-mtuc-required="1">
+                <span class="mt-uni-credit-storefront__field-error" data-mtuc-field-error="firstname" role="alert"></span>
+              </div>
+              <div class="mt-uni-credit-storefront__customer-field">
+                <label class="mt-uni-credit-storefront__customer-label" for="mtuc-lastname-{{ field_suffix }}">{{ text_lastname }} <span class="mt-uni-credit-storefront__required" aria-hidden="true">{{ text_required }}</span></label>
+                <input class="mt-uni-credit-storefront__customer-input" id="mtuc-lastname-{{ field_suffix }}" name="lastname" type="text" value="{{ customer.lastname }}" required aria-required="true" autocomplete="family-name" data-mtuc-required="1">
+                <span class="mt-uni-credit-storefront__field-error" data-mtuc-field-error="lastname" role="alert"></span>
+              </div>
+              <div class="mt-uni-credit-storefront__customer-field">
+                <label class="mt-uni-credit-storefront__customer-label" for="mtuc-address-{{ field_suffix }}">{{ text_address }} <span class="mt-uni-credit-storefront__required" aria-hidden="true">{{ text_required }}</span></label>
+                <input class="mt-uni-credit-storefront__customer-input" id="mtuc-address-{{ field_suffix }}" name="address" type="text" value="{{ customer.address }}" required aria-required="true" autocomplete="street-address" data-mtuc-required="1">
+                <span class="mt-uni-credit-storefront__field-error" data-mtuc-field-error="address" role="alert"></span>
+              </div>
+              <div class="mt-uni-credit-storefront__customer-field">
+                <label class="mt-uni-credit-storefront__customer-label" for="mtuc-phone-{{ field_suffix }}">{{ text_telephone }} <span class="mt-uni-credit-storefront__required" aria-hidden="true">{{ text_required }}</span></label>
+                <input class="mt-uni-credit-storefront__customer-input" id="mtuc-phone-{{ field_suffix }}" name="phone" type="tel" value="{{ customer.telephone }}" required aria-required="true" autocomplete="tel" inputmode="tel" data-mtuc-required="1">
+                <span class="mt-uni-credit-storefront__field-error" data-mtuc-field-error="phone" role="alert"></span>
+              </div>
+              <div class="mt-uni-credit-storefront__customer-field">
+                <label class="mt-uni-credit-storefront__customer-label" for="mtuc-email-{{ field_suffix }}">{{ text_email }} <span class="mt-uni-credit-storefront__required" aria-hidden="true">{{ text_required }}</span></label>
+                <input class="mt-uni-credit-storefront__customer-input" id="mtuc-email-{{ field_suffix }}" name="email" type="email" value="{{ customer.email }}" required aria-required="true" autocomplete="email" data-mtuc-required="1">
+                <span class="mt-uni-credit-storefront__field-error" data-mtuc-field-error="email" role="alert"></span>
+              </div>
+              {% if process2 %}
+              <div class="mt-uni-credit-storefront__customer-field">
+                <label class="mt-uni-credit-storefront__customer-label" for="mtuc-phone2-{{ field_suffix }}">{{ text_phone2 }} <span class="mt-uni-credit-storefront__required" aria-hidden="true">{{ text_required }}</span></label>
+                <input class="mt-uni-credit-storefront__customer-input" id="mtuc-phone2-{{ field_suffix }}" name="phone2" type="tel" value="" required aria-required="true" autocomplete="tel" inputmode="tel" data-mtuc-required="1">
+                <span class="mt-uni-credit-storefront__field-error" data-mtuc-field-error="phone2" role="alert"></span>
+              </div>
+              <div class="mt-uni-credit-storefront__customer-field">
+                <label class="mt-uni-credit-storefront__customer-label" for="mtuc-egn-{{ field_suffix }}">{{ text_egn }} <span class="mt-uni-credit-storefront__required" aria-hidden="true">{{ text_required }}</span></label>
+                <input class="mt-uni-credit-storefront__customer-input" id="mtuc-egn-{{ field_suffix }}" name="egn" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="10" value="" required aria-required="true" autocomplete="off" data-mtuc-required="1">
+                <span class="mt-uni-credit-storefront__field-error" data-mtuc-field-error="egn" role="alert"></span>
+              </div>
+              {% endif %}
+              <span class="mt-uni-credit-storefront__field-error" data-mtuc-submit-error role="alert"></span>
             </div>
-            <div class="mt-uni-credit-storefront__field">
-              <label>Фамилия</label>
-              <input class="mt-uni-credit-storefront__customer-input" name="lastname" type="text" value="{{ customer.lastname }}" required autocomplete="family-name">
-            </div>
-            <div class="mt-uni-credit-storefront__field">
-              <label>Адрес</label>
-              <input class="mt-uni-credit-storefront__customer-input" name="address_1" type="text" value="{{ customer.address_1 }}" required autocomplete="street-address">
-            </div>
-            <div class="mt-uni-credit-storefront__field">
-              <label>Град</label>
-              <input class="mt-uni-credit-storefront__customer-input" name="city" type="text" value="{{ customer.city }}" required autocomplete="address-level2">
-            </div>
-            <div class="mt-uni-credit-storefront__field">
-              <label>Пощенски код</label>
-              <input class="mt-uni-credit-storefront__customer-input" name="postcode" type="text" value="{{ customer.postcode }}" autocomplete="postal-code">
-            </div>
-            <div class="mt-uni-credit-storefront__field">
-              <label>Държава ID</label>
-              <input class="mt-uni-credit-storefront__customer-input" name="country_id" type="number" value="{{ customer.country_id }}" required>
-            </div>
-            <div class="mt-uni-credit-storefront__field">
-              <label>Област ID</label>
-              <input class="mt-uni-credit-storefront__customer-input" name="zone_id" type="number" value="{{ customer.zone_id }}" required>
-            </div>
-            <div class="mt-uni-credit-storefront__field">
-              <label>Телефон</label>
-              <input class="mt-uni-credit-storefront__customer-input" name="telephone" type="tel" value="{{ customer.telephone }}" required autocomplete="tel">
-            </div>
-            <div class="mt-uni-credit-storefront__field">
-              <label>Имейл</label>
-              <input class="mt-uni-credit-storefront__customer-input" name="email" type="email" value="{{ customer.email }}" required autocomplete="email">
-            </div>
-            <div class="mt-uni-credit-storefront__consent">
-              <label>
-                <input type="checkbox" name="consent" value="1" data-mtuc-consent required>
-                {{ text_consent }}
-              </label>
-            </div>
-            <div class="mt-uni-credit-storefront__submit-error" data-mtuc-submit-error role="alert"></div>
+            {% if consents %}
+              <div class="mt-uni-credit-storefront__consents" data-mtuc-consents aria-label="{{ text_consents }}">
+                {% for consent in consents %}
+                  <div class="mt-uni-credit-storefront__consent{% if not consent.has_checkbox %} mt-uni-credit-storefront__consent--info{% endif %}">
+                    {% if consent.has_checkbox %}
+                      <input type="checkbox" class="mt-uni-credit-storefront__consent-checkbox" id="mtuc-consent-{{ field_suffix }}-{{ consent.id }}" name="consent[]" value="{{ consent.id }}" data-mtuc-consent-checkbox>
+                      <label class="mt-uni-credit-storefront__consent-label" for="mtuc-consent-{{ field_suffix }}-{{ consent.id }}">
+                        {% if consent.url %}<a href="{{ consent.url }}" target="_blank" rel="noopener noreferrer">{{ consent.name }}</a>{% else %}{{ consent.name }}{% endif %}
+                      </label>
+                    {% else %}
+                      <p class="mt-uni-credit-storefront__consent-text">
+                        {% if consent.url %}<a href="{{ consent.url }}" target="_blank" rel="noopener noreferrer">{{ consent.name }}</a>{% else %}{{ consent.name }}{% endif %}
+                      </p>
+                    {% endif %}
+                    <span class="mt-uni-credit-storefront__field-error" data-mtuc-field-error="consent-{{ consent.id }}" role="alert"></span>
+                  </div>
+                {% endfor %}
+              </div>
+            {% else %}
+              <div class="mt-uni-credit-storefront__consents" data-mtuc-consents>
+                <div class="mt-uni-credit-storefront__consent">
+                  <input type="checkbox" class="mt-uni-credit-storefront__consent-checkbox" id="mtuc-consent-{{ field_suffix }}" name="consent" value="1" data-mtuc-consent-checkbox data-mtuc-consent>
+                  <label class="mt-uni-credit-storefront__consent-label" for="mtuc-consent-{{ field_suffix }}">{{ text_consent }}</label>
+                </div>
+              </div>
+            {% endif %}
             <div class="mt-uni-credit-storefront__popup-actions mt-uni-credit-storefront__popup-actions--step2">
               <div class="mt-uni-credit-storefront__popup-actions-group">
                 <button type="button" class="mt-uni-credit-storefront__popup-button mt-uni-credit-storefront__popup-button--secondary" data-mtuc-back><span><b>{{ text_back }}</b></span></button>
                 <button type="button" class="mt-uni-credit-storefront__popup-button mt-uni-credit-storefront__popup-button--secondary" data-mtuc-dismiss><span><b>{{ text_cancel }}</b></span></button>
               </div>
-              <button type="button" class="mt-uni-credit-storefront__popup-button mt-uni-credit-storefront__popup-button--primary" data-mtuc-submit>
+              <button type="button" class="mt-uni-credit-storefront__popup-button mt-uni-credit-storefront__popup-button--primary is-disabled" data-mtuc-submit disabled aria-disabled="true">
                 <span><b>{{ text_submit }}</b></span>
                 <i style="background-image:url('{{ badge_url }}')" aria-hidden="true"></i>
               </button>

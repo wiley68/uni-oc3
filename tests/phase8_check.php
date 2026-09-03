@@ -57,6 +57,7 @@ function mtuc8_run($root, $lib, $catalog)
     require __DIR__ . '/support/phase8_body_3.php';
     require __DIR__ . '/support/phase8_body_4.php';
     require __DIR__ . '/support/phase8_body_5.php';
+    require __DIR__ . '/support/phase8_body_6.php';
 }
 
 mtuc8_run($root, $lib, $catalog);

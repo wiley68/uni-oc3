@@ -245,7 +245,169 @@
           .filter(":visible")
           .first()
           .trigger("focus");
+        updateSubmitState(false);
       }, 0);
+    }
+
+    var PHONE_VALID_PATTERN = /^[-0-9+() ]+$/;
+    var PHONE_ALLOWED_PATTERN = /[-0-9+() ]/;
+    var EMAIL_VALID_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    function isNonEmpty(value) {
+      return String(value || "").replace(/^\s+|\s+$/g, "") !== "";
+    }
+
+    function sanitizePhoneValue(value) {
+      return String(value || "")
+        .split("")
+        .filter(function (char) {
+          return PHONE_ALLOWED_PATTERN.test(char);
+        })
+        .join("");
+    }
+
+    function isValidPhone(value) {
+      var phone = String(value || "").replace(/^\s+|\s+$/g, "");
+      return (
+        phone !== "" && PHONE_VALID_PATTERN.test(phone) && /\d/.test(phone)
+      );
+    }
+
+    function isValidEmail(value) {
+      var email = String(value || "").replace(/^\s+|\s+$/g, "");
+      return email !== "" && EMAIL_VALID_PATTERN.test(email);
+    }
+
+    function isValidEgn(digits) {
+      if (!/^\d{10}$/.test(digits)) {
+        return false;
+      }
+      var year = parseInt(digits.slice(0, 4), 10);
+      var month = parseInt(digits.slice(4, 6), 10);
+      var day = parseInt(digits.slice(6, 8), 10);
+      var date = new Date(year, month - 1, day);
+      return (
+        date.getFullYear() === year &&
+        date.getMonth() === month - 1 &&
+        date.getDate() === day
+      );
+    }
+
+    function customerField(name) {
+      return $modal.find('[data-mtuc-form] [name="' + name + '"]').get(0);
+    }
+
+    function consentCheckboxes() {
+      return $modal.find("[data-mtuc-consent-checkbox]");
+    }
+
+    function areMandatoryConsentsChecked() {
+      var $boxes = consentCheckboxes();
+      if (!$boxes.length) {
+        return false;
+      }
+      var ok = true;
+      $boxes.each(function () {
+        if (!this.checked) {
+          ok = false;
+          return false;
+        }
+      });
+      return ok;
+    }
+
+    function getStep2FieldErrors() {
+      var errors = {};
+      if (
+        !isNonEmpty(
+          customerField("firstname") && customerField("firstname").value,
+        )
+      ) {
+        errors.firstname = "required";
+      }
+      if (
+        !isNonEmpty(
+          customerField("lastname") && customerField("lastname").value,
+        )
+      ) {
+        errors.lastname = "required";
+      }
+      if (
+        !isNonEmpty(customerField("address") && customerField("address").value)
+      ) {
+        errors.address = "required";
+      }
+      var phoneEl = customerField("phone");
+      var phone = phoneEl ? phoneEl.value : "";
+      if (!isNonEmpty(phone)) {
+        errors.phone = "required";
+      } else if (!isValidPhone(phone)) {
+        errors.phone = "invalid";
+      }
+      var emailEl = customerField("email");
+      var email = emailEl ? emailEl.value : "";
+      if (!isNonEmpty(email)) {
+        errors.email = "required";
+      } else if (!isValidEmail(email)) {
+        errors.email = "invalid";
+      }
+      var egnField = customerField("egn");
+      if (egnField) {
+        var egn = String(egnField.value || "").replace(/\D/g, "");
+        if (egn === "") {
+          errors.egn = "required";
+        } else if (!isValidEgn(egn)) {
+          errors.egn = "invalid";
+        }
+      }
+      var phone2Field = customerField("phone2");
+      if (phone2Field) {
+        var phone2 = phone2Field.value;
+        if (!isNonEmpty(phone2)) {
+          errors.phone2 = "required";
+        } else if (!isValidPhone(phone2)) {
+          errors.phone2 = "invalid";
+        }
+      }
+      return errors;
+    }
+
+    function isStep2FormValid() {
+      return (
+        Object.keys(getStep2FieldErrors()).length === 0 &&
+        areMandatoryConsentsChecked()
+      );
+    }
+
+    function updateSubmitState() {
+      var valid = isStep2FormValid();
+      var $submit = $modal.find("[data-mtuc-submit]");
+      $submit.prop("disabled", !valid);
+      $submit.attr("aria-disabled", valid ? "false" : "true");
+      $submit.toggleClass("is-disabled", !valid);
+      return valid;
+    }
+
+    function bindStep2ReadinessListeners() {
+      var $form = $modal.find("[data-mtuc-form]");
+      if (!$form.length || $form.data("mtucStep2Bound") === 1) {
+        return;
+      }
+      $form.data("mtucStep2Bound", 1);
+      $form.on("input.mtucStep2 change.mtucStep2", function (event) {
+        var target = event.target;
+        if (!target || !target.getAttribute) {
+          return;
+        }
+        var name = target.getAttribute("name") || "";
+        if (name === "phone" || name === "phone2") {
+          var sanitized = sanitizePhoneValue(target.value);
+          if (target.value !== sanitized) {
+            target.value = sanitized;
+          }
+        }
+        updateSubmitState();
+      });
     }
 
     /**
@@ -273,6 +435,7 @@
           .addClass("mt-uni-credit-storefront__step--active")
           .css("opacity", "");
         if (step === 2) {
+          bindStep2ReadinessListeners();
           focusStep2Field();
         }
       }
@@ -307,6 +470,7 @@
         window.setTimeout(function () {
           $target.removeClass("is-transitioning-in").css("opacity", "");
           if (step === 2) {
+            bindStep2ReadinessListeners();
             focusStep2Field();
           }
         }, 350);
@@ -801,23 +965,42 @@
         if (!$form.length) {
           return;
         }
-        var consent = $form.find("[data-mtuc-consent]").is(":checked");
-        if (!consent) {
+        if (!updateSubmitState()) {
           $modal
             .find("[data-mtuc-submit-error]")
-            .text("Моля, приемете условията.");
+            .text(
+              "Моля, попълнете всички задължителни полета и приемете условията.",
+            );
           return;
         }
         setProcessing(true);
-        var payload = $form.serializeArray();
+        var process = $form.attr("data-mtuc-process") || "1";
         var data = {
           csrf: $root.attr("data-csrf"),
           scheme_key: selectedSchemeKey,
-          consent: "1",
+          first_installment: $modal.find("[data-mtuc-first]").val() || "0",
         };
+        var payload = $form.serializeArray();
         $.each(payload, function (_, item) {
-          data[item.name] = item.value;
+          var name = item.name;
+          if (process === "1" && (name === "egn" || name === "phone2")) {
+            return;
+          }
+          if (name === "consent[]") {
+            if (!data.consent) {
+              data.consent = [];
+            }
+            if (!$.isArray(data.consent)) {
+              data.consent = [data.consent];
+            }
+            data.consent.push(item.value);
+            return;
+          }
+          data[name] = item.value;
         });
+        if (!data.consent && $form.find("[data-mtuc-consent]").is(":checked")) {
+          data.consent = "1";
+        }
         if (entryPoint === "product") {
           var form = productFormData();
           data.product_id = $root.attr("data-product-id");
@@ -855,8 +1038,11 @@
         );
       },
       scheduleCalculate: scheduleCalculate,
+      updateSubmitState: updateSubmitState,
     });
 
+    bindStep2ReadinessListeners();
+    updateSubmitState();
     if (entryPoint === "product") {
       $root.data("mtucScheduleCalculate", scheduleCalculate);
     }

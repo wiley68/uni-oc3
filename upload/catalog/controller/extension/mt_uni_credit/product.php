@@ -175,10 +175,20 @@ class ControllerExtensionMtUniCreditProduct extends Controller
                 return;
             }
 
-            $consent = $this->posted('consent');
-            if (!$this->consentAccepted($consent)) {
+            $shop = MtUniCreditStorefrontRuntime::loadFreshShop($this);
+            $consent = isset($this->request->post['consent']) ? $this->request->post['consent'] : array();
+            if (!$this->consentAccepted($consent, $shop)) {
                 $json['error'] = 'consent';
                 $json['message'] = $this->language->get('error_consent');
+                MtUniCreditStorefrontRuntime::respondJson($this, $json);
+                return;
+            }
+
+            $customerValidation = $this->validateStep2Customer($shop);
+            if (!$customerValidation['ok']) {
+                $json['error'] = 'validation';
+                $json['message'] = $customerValidation['message'];
+                $json['errors'] = $customerValidation['errors'];
                 MtUniCreditStorefrontRuntime::respondJson($this, $json);
                 return;
             }
@@ -329,7 +339,8 @@ class ControllerExtensionMtUniCreditProduct extends Controller
             $topSpacing = MtUniCreditConstants::MAX_BUTTON_TOP_SPACING;
         }
 
-        $modalMeta = MtUniCreditStorefrontModalPresenter::present($shop, $currency);
+        $prefill = $this->prefillCustomer();
+        $modalMeta = MtUniCreditStorefrontModalPresenter::present($shop, $currency, $prefill);
 
         $data = array();
         $data['heading'] = $this->language->get('heading_title');
@@ -340,6 +351,15 @@ class ControllerExtensionMtUniCreditProduct extends Controller
             ? $this->language->get('button_buy')
             : $this->language->get('button_add_to_cart');
         $data['text_consent'] = $this->language->get('text_consent');
+        $data['text_consents'] = $this->language->get('text_consents');
+        $data['text_firstname'] = $this->language->get('text_firstname');
+        $data['text_lastname'] = $this->language->get('text_lastname');
+        $data['text_address'] = $this->language->get('text_address');
+        $data['text_telephone'] = $this->language->get('text_telephone');
+        $data['text_email'] = $this->language->get('text_email');
+        $data['text_phone2'] = $this->language->get('text_phone2');
+        $data['text_egn'] = $this->language->get('text_egn');
+        $data['text_required'] = $this->language->get('text_required');
         $data['text_cancel'] = $this->language->get('button_cancel');
         $data['text_back'] = $this->language->get('button_back');
         $data['text_processing_title'] = $this->language->get('text_processing_title');
@@ -357,6 +377,7 @@ class ControllerExtensionMtUniCreditProduct extends Controller
         $data['error_generic'] = $this->language->get('error_generic');
         $data['calculator'] = $calculator;
         $data['modal_meta'] = $modalMeta;
+        $data['customer'] = $prefill;
         $data['badge_url'] = $assets['badge'];
         $data['product_id'] = $productId;
         $data['button_action'] = $buttonAction;
@@ -374,7 +395,6 @@ class ControllerExtensionMtUniCreditProduct extends Controller
         $data['checkout_url'] = $this->url->link('checkout/checkout', '', true);
         $data['hide_secondary'] = false;
         $data['entry_point'] = 'product';
-        $data['customer'] = $this->prefillCustomer();
         $data['modal'] = $this->load->view('extension/mt_uni_credit/modal', $data);
 
         return $this->load->view('extension/mt_uni_credit/product_widget', $data);
@@ -385,64 +405,184 @@ class ControllerExtensionMtUniCreditProduct extends Controller
      */
     private function customerPayload()
     {
-        return array(
+        $shop = MtUniCreditStorefrontRuntime::loadFreshShop($this);
+        $shopData = is_array($shop) ? $shop : array();
+        $process2 = ((int) (isset($shopData['uni_proces']) ? $shopData['uni_proces'] : 0)) === 1;
+        $normalized = (new MtUniCreditStorefrontPopupFormNormalizer())->normalize(
+            $this->request->post,
+            $this->storeAddressDefaults()
+        );
+
+        $firstname = trim((string) (isset($normalized['firstname']) ? $normalized['firstname'] : ''));
+        $lastname = trim((string) (isset($normalized['lastname']) ? $normalized['lastname'] : ''));
+        $email = trim((string) (isset($normalized['email']) ? $normalized['email'] : ''));
+        $telephone = trim((string) (isset($normalized['telephone']) ? $normalized['telephone'] : ''));
+        $address1 = trim((string) (isset($normalized['address_1']) ? $normalized['address_1'] : ''));
+
+        $payload = array(
             'customer_id' => $this->customer->isLogged() ? (int) $this->customer->getId() : 0,
             'customer_group_id' => (int) $this->config->get('config_customer_group_id'),
-            'firstname' => trim((string) $this->posted('firstname', '')),
-            'lastname' => trim((string) $this->posted('lastname', '')),
-            'email' => trim((string) $this->posted('email', '')),
-            'telephone' => trim((string) $this->posted('telephone', '')),
-            'address_1' => trim((string) $this->posted('address_1', '')),
-            'city' => trim((string) $this->posted('city', '')),
-            'postcode' => trim((string) $this->posted('postcode', '')),
-            'country_id' => (int) $this->posted('country_id', 0),
-            'zone_id' => (int) $this->posted('zone_id', 0),
+            'firstname' => $firstname,
+            'lastname' => $lastname,
+            'email' => $email,
+            'telephone' => $telephone,
+            'address_1' => $address1,
+            'city' => trim((string) (isset($normalized['city']) ? $normalized['city'] : '')),
+            'postcode' => trim((string) (isset($normalized['postcode']) ? $normalized['postcode'] : '')),
+            'country_id' => (int) (isset($normalized['country_id']) ? $normalized['country_id'] : 0),
+            'zone_id' => (int) (isset($normalized['zone_id']) ? $normalized['zone_id'] : 0),
+            'country' => trim((string) (isset($normalized['country']) ? $normalized['country'] : '')),
+            'zone' => trim((string) (isset($normalized['zone']) ? $normalized['zone'] : '')),
         );
+
+        // Process 1 privacy: never attach EGN / second phone.
+        if ($process2) {
+            $p2 = (new MtUniCreditStorefrontProcessTwoFieldValidator())->validate($this->request->post);
+            if ($p2['ok']) {
+                $payload['phone2'] = $p2['phone2'];
+                $payload['egn'] = $p2['egn'];
+            }
+        }
+
+        return $payload;
     }
 
     /**
-     * @return array<string, string>
+     * @return array<string, mixed>
      */
     private function prefillCustomer()
     {
-        $data = array(
+        $addresses = array();
+        $defaultAddressId = 0;
+        $customerRow = array(
             'firstname' => '',
             'lastname' => '',
             'email' => '',
             'telephone' => '',
-            'address_1' => '',
-            'city' => '',
-            'postcode' => '',
-            'country_id' => (int) $this->config->get('config_country_id'),
-            'zone_id' => (int) $this->config->get('config_zone_id'),
         );
         if ($this->customer->isLogged()) {
-            $data['firstname'] = (string) $this->customer->getFirstName();
-            $data['lastname'] = (string) $this->customer->getLastName();
-            $data['email'] = (string) $this->customer->getEmail();
-            $data['telephone'] = (string) $this->customer->getTelephone();
+            $customerRow['firstname'] = (string) $this->customer->getFirstName();
+            $customerRow['lastname'] = (string) $this->customer->getLastName();
+            $customerRow['email'] = (string) $this->customer->getEmail();
+            $customerRow['telephone'] = (string) $this->customer->getTelephone();
+            $defaultAddressId = (int) $this->customer->getAddressId();
+            $this->load->model('account/address');
+            if (isset($this->model_account_address) && method_exists($this->model_account_address, 'getAddresses')) {
+                $raw = $this->model_account_address->getAddresses();
+                if (is_array($raw)) {
+                    $addresses = array_values($raw);
+                }
+            }
         }
 
-        return $data;
+        return (new MtUniCreditStorefrontCustomerPrefill())->present(
+            (bool) $this->customer->isLogged(),
+            $customerRow,
+            $addresses,
+            $defaultAddressId
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function storeAddressDefaults()
+    {
+        $countryId = (int) $this->config->get('config_country_id');
+        $zoneId = (int) $this->config->get('config_zone_id');
+        $country = '';
+        $zone = '';
+        $this->load->model('localisation/country');
+        $this->load->model('localisation/zone');
+        if (isset($this->model_localisation_country) && method_exists($this->model_localisation_country, 'getCountry')) {
+            $row = $this->model_localisation_country->getCountry($countryId);
+            if (is_array($row) && isset($row['name'])) {
+                $country = (string) $row['name'];
+            }
+        }
+        if (isset($this->model_localisation_zone) && method_exists($this->model_localisation_zone, 'getZone')) {
+            $row = $this->model_localisation_zone->getZone($zoneId);
+            if (is_array($row) && isset($row['name'])) {
+                $zone = (string) $row['name'];
+            }
+        }
+
+        return array(
+            'country_id' => $countryId > 0 ? $countryId : 33,
+            'zone_id' => $zoneId > 0 ? $zoneId : 0,
+            'country' => $country !== '' ? $country : 'Bulgaria',
+            'zone' => $zone,
+            'city' => $zone !== '' ? $zone : 'Sofia',
+            'postcode' => '1000',
+        );
+    }
+
+    /**
+     * @param array<string, mixed>|null $shop
+     * @return array{ok:bool,message:string,errors:array<string,string>}
+     */
+    private function validateStep2Customer($shop)
+    {
+        $shopData = is_array($shop) ? $shop : array();
+        $process2 = ((int) (isset($shopData['uni_proces']) ? $shopData['uni_proces'] : 0)) === 1;
+        $normalized = (new MtUniCreditStorefrontPopupFormNormalizer())->normalize(
+            $this->request->post,
+            $this->storeAddressDefaults()
+        );
+        $errors = array();
+        $firstname = trim((string) (isset($normalized['firstname']) ? $normalized['firstname'] : ''));
+        $lastname = trim((string) (isset($normalized['lastname']) ? $normalized['lastname'] : ''));
+        $email = trim((string) (isset($normalized['email']) ? $normalized['email'] : ''));
+        $telephone = trim((string) (isset($normalized['telephone']) ? $normalized['telephone'] : ''));
+        $address1 = trim((string) (isset($normalized['address_1']) ? $normalized['address_1'] : ''));
+
+        if ($firstname === '') {
+            $errors['firstname'] = 'Полето е задължително.';
+        }
+        if ($lastname === '') {
+            $errors['lastname'] = 'Полето е задължително.';
+        }
+        if ($address1 === '') {
+            $errors['address'] = 'Полето е задължително.';
+        }
+        if ($telephone === '') {
+            $errors['phone'] = 'Полето е задължително.';
+        } elseif (!(new MtUniCreditStorefrontProcessTwoFieldValidator())->isValidPhone($telephone)) {
+            $errors['phone'] = 'Въведете валиден телефонен номер.';
+        }
+        if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $errors['email'] = 'Въведете валиден e-mail адрес.';
+        }
+
+        if ($process2) {
+            $p2 = (new MtUniCreditStorefrontProcessTwoFieldValidator())->validate($this->request->post);
+            foreach ($p2['errors'] as $key => $message) {
+                $errors[$key] = $message;
+            }
+        } else {
+            // Process 1 privacy: reject accidental EGN/phone2 leakage as customer fields.
+            if (trim((string) $this->posted('egn', '')) !== '' || trim((string) $this->posted('phone2', '')) !== '') {
+                $errors['privacy'] = 'Невалидни полета за Process 1.';
+            }
+        }
+
+        return array(
+            'ok' => $errors === array(),
+            'message' => $errors === array() ? '' : 'Моля, коригирайте данните.',
+            'errors' => $errors,
+        );
     }
 
     /**
      * @param mixed $consent
+     * @param array<string, mixed>|null $shop
      * @return bool
      */
-    private function consentAccepted($consent)
+    private function consentAccepted($consent, $shop = null)
     {
-        if (is_array($consent)) {
-            foreach ($consent as $value) {
-                if ($value === '1' || $value === 1 || $value === true || $value === 'on') {
-                    return true;
-                }
-            }
+        $shopData = is_array($shop) ? $shop : array();
 
-            return false;
-        }
-
-        return $consent === '1' || $consent === 1 || $consent === true || $consent === 'on' || $consent === 'yes';
+        return (new MtUniCreditStorefrontConsentResolver())->isSatisfied($shopData, $consent);
     }
 
     /**
