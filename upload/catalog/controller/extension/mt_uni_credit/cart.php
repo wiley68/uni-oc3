@@ -320,6 +320,7 @@ class ControllerExtensionMtUniCreditCart extends Controller
 
         $data = array();
         $data['heading'] = $this->language->get('heading_title');
+        $data['text_button_financing'] = $this->language->get('heading_title');
         $data['text_apply'] = $this->language->get('button_apply');
         $data['text_submit'] = $this->language->get('button_submit');
         $data['text_secondary'] = '';

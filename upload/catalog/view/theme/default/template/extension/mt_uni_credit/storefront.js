@@ -287,9 +287,7 @@
         return;
       }
 
-      $current
-        .addClass("is-transitioning-out")
-        .css("opacity", "0");
+      $current.addClass("is-transitioning-out").css("opacity", "0");
       window.setTimeout(function () {
         $current
           .attr("hidden", true)
@@ -344,36 +342,233 @@
       restoreModal();
     }
 
+    /**
+     * OC3 default theme: #product (not #form-product). Journal/custom may use either.
+     * Jet binds [name=quantity] + [id^=input-option]; OC4 UniCredit also accepts #form-product.
+     */
+    function productContainer() {
+      var $c = $("#product");
+      if ($c.length) {
+        return $c;
+      }
+      return $("#form-product");
+    }
+
+    function escapeHtml(text) {
+      return String(text)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function escapeAttr(text) {
+      return escapeHtml(text).replace(/'/g, "&#39;");
+    }
+
     function productFormData() {
-      var $form = $("#form-product");
+      var $container = productContainer();
       var quantity = 1;
       var option = {};
-      if ($form.length) {
-        quantity = parseInt($form.find('[name="quantity"]').val(), 10) || 1;
-        $form.find('[name^="option"]').each(function () {
-          var $el = $(this);
-          var name = $el.attr("name") || "";
-          var match = name.match(/^option\[(\d+)\](\[\])?$/);
-          if (!match) {
-            return;
-          }
-          var id = match[1];
-          if ($el.is(":checkbox") || $el.is(":radio")) {
-            if (!$el.is(":checked")) {
-              return;
-            }
-          }
-          if (match[2]) {
-            if (!option[id]) {
-              option[id] = [];
-            }
-            option[id].push($el.val());
-          } else {
-            option[id] = $el.val();
-          }
-        });
+      var $qty = $("#input-quantity");
+      if (!$qty.length) {
+        $qty = $('[name="quantity"]').eq(0);
       }
+      if ($qty.length) {
+        quantity = parseInt($qty.val(), 10) || 1;
+      }
+      if (quantity < 1) {
+        quantity = 1;
+      }
+      var $fields = $container.length
+        ? $container.find(
+            "input[name^='option['], select[name^='option['], textarea[name^='option[']",
+          )
+        : $(
+            "input[name^='option['], select[name^='option['], textarea[name^='option[']",
+          );
+      $fields.each(function () {
+        var $el = $(this);
+        var name = $el.attr("name") || "";
+        var match = name.match(/^option\[(\d+)\](\[\])?$/);
+        if (!match) {
+          return;
+        }
+        var id = match[1];
+        var type = ($el.attr("type") || "").toLowerCase();
+        if (type === "file") {
+          return;
+        }
+        if ((type === "checkbox" || type === "radio") && !$el.is(":checked")) {
+          return;
+        }
+        var val = $el.val();
+        if (val === null || val === undefined || String(val) === "") {
+          return;
+        }
+        if (match[2] || type === "checkbox") {
+          if (!option[id]) {
+            option[id] = [];
+          }
+          option[id].push(val);
+        } else {
+          option[id] = val;
+        }
+      });
       return { quantity: quantity, option: option };
+    }
+
+    function setEntryError(message) {
+      var $err = $root.find("[data-mtuc-entry-error]");
+      if (!message) {
+        $err.text("").attr("hidden", true);
+        return;
+      }
+      $err.text(message).removeAttr("hidden");
+    }
+
+    function setOffersBusy(busy) {
+      var $calc = $root.find(".mt-uni-credit-storefront__calculator").first();
+      $calc.attr("aria-busy", busy ? "true" : "false");
+      $root.find("[data-mtuc-offer]").prop("disabled", !!busy);
+    }
+
+    function syncHeading(calc) {
+      var headingText =
+        calc && calc.heading
+          ? String(calc.heading).replace(/^\s+|\s+$/g, "")
+          : "";
+      var $calc = $root.find(".mt-uni-credit-storefront__calculator").first();
+      var $existing = $calc.find("[data-mtuc-heading]");
+      if (!headingText) {
+        $existing.remove();
+        return;
+      }
+      if ($existing.length) {
+        $existing.text(headingText);
+        return;
+      }
+      $("<p/>", {
+        class: "mt-uni-credit-storefront__heading",
+        "data-mtuc-heading": "",
+        text: headingText,
+      }).prependTo($calc);
+    }
+
+    function applyRootLayout(calc) {
+      $root.toggleClass("mt-uni-credit-storefront--dark", !!calc.dark_button);
+      $root.toggleClass(
+        "mt-uni-credit-storefront--stacked",
+        calc.buttons_in_row === false || calc.buttons_in_row === 0,
+      );
+      if (calc.button_width) {
+        $root.css("--mtuc-button-width", calc.button_width + "px");
+        $root.attr("data-mtuc-button-width", calc.button_width);
+      }
+      if (calc.button_height) {
+        $root.css("--mtuc-button-height", calc.button_height + "px");
+        $root.attr("data-mtuc-button-height", calc.button_height);
+      }
+    }
+
+    function renderOfferButtons(calc) {
+      var $wrap = $root.find("[data-mtuc-buttons]");
+      if (!$wrap.length) {
+        $wrap = $root.find(".mt-uni-credit-storefront__buttons");
+      }
+      if (!$wrap.length || !calc || !calc.offers) {
+        return;
+      }
+      var dark = !!calc.dark_button;
+      var logoUrl = dark
+        ? bootstrap.logo_alternative_url || ""
+        : bootstrap.logo_standard_url || "";
+      var buttonTitle = bootstrap.button_title || "Купи на изплащане";
+      var html = "";
+      $.each(calc.offers, function (offerType, offer) {
+        html +=
+          '<button type="button" class="mt-uni-credit-storefront__button mt-uni-credit-storefront__button--' +
+          escapeAttr(offerType) +
+          '" data-mtuc-offer="' +
+          escapeAttr(offerType) +
+          '" data-preferred-key="' +
+          escapeAttr(offer.preferred_scheme_key || "") +
+          '">';
+        html +=
+          '<span class="mt-uni-credit-storefront__button-content">' +
+          '<span class="mt-uni-credit-storefront__button-title">' +
+          escapeHtml(buttonTitle) +
+          "</span>" +
+          '<span class="mt-uni-credit-storefront__button-price" data-mtuc-preferred-price>' +
+          escapeHtml(offer.installment_label || "") +
+          "</span></span>";
+        if (offerType === "promo") {
+          html +=
+            '<span class="mt-uni-credit-storefront__badge" aria-hidden="true">0%</span>';
+        } else {
+          html +=
+            '<span class="mt-uni-credit-storefront__logo"><img src="' +
+            escapeAttr(logoUrl) +
+            '" alt="UniCredit" data-mtuc-logo /></span>';
+        }
+        html += "</button>";
+      });
+      $wrap.html(html);
+    }
+
+    function syncBootstrapJson() {
+      var $el = $root.find("[data-mtuc-bootstrap]").first();
+      if (!$el.length) {
+        $el = $root.nextAll("[data-mtuc-bootstrap]").first();
+      }
+      if (!$el.length) {
+        return;
+      }
+      try {
+        var payload = {
+          calculator: state,
+          entry_point: entryPoint,
+          button_title: bootstrap.button_title || "",
+          logo_standard_url: bootstrap.logo_standard_url || "",
+          logo_alternative_url: bootstrap.logo_alternative_url || "",
+        };
+        if (bootstrap.cart_fingerprint) {
+          payload.cart_fingerprint = bootstrap.cart_fingerprint;
+        }
+        $el.text(JSON.stringify(payload));
+      } catch (e) {}
+    }
+
+    function applyCalculator(calc) {
+      if (!calc || !calc.offers) {
+        return;
+      }
+      state = calc;
+      bootstrap.calculator = calc;
+      if (!state.offers[selectedOfferType]) {
+        selectedOfferType = Object.keys(state.offers)[0] || "standard";
+      }
+      var offer = currentOffer();
+      var schemes = (offer && offer.schemes) || [];
+      var previousKey = selectedSchemeKey;
+      var previousStillValid = !!(
+        previousKey && findScheme(schemes, previousKey)
+      );
+      if (previousStillValid) {
+        selectedSchemeKey = previousKey;
+      } else if (offer && offer.preferred_scheme_key) {
+        selectedSchemeKey = offer.preferred_scheme_key;
+      } else {
+        selectedSchemeKey = schemes.length ? schemes[0].key : "";
+      }
+      syncHeading(calc);
+      applyRootLayout(calc);
+      renderOfferButtons(calc);
+      syncBootstrapJson();
+      $root.removeData("mtucStale");
+      $root.show();
+      setEntryError("");
+      setOffersBusy(false);
     }
 
     function postJson(url, data, done) {
@@ -409,6 +604,7 @@
         return;
       }
       window.clearTimeout(calcTimer);
+      // OC4 UniCredit Product refresh debounce (250ms); covers quantity typing.
       calcTimer = window.setTimeout(runCalculate, 250);
     }
 
@@ -420,6 +616,8 @@
       sequence += 1;
       var localSeq = sequence;
       var form = productFormData();
+      setOffersBusy(true);
+      setEntryError("");
       postJson(
         routes,
         {
@@ -434,29 +632,28 @@
             return;
           }
           if (
-            err ||
-            !response ||
-            !response.success ||
+            response &&
+            response.sequence != null &&
             response.sequence !== localSeq
           ) {
-            if (response && response.unavailable) {
-              $root
-                .find("[data-mtuc-entry-error]")
-                .text("")
-                .attr("hidden", true);
-              $root.hide();
-            }
             return;
           }
-          state = response.calculator || state;
-          $root.find("[data-mtuc-preferred-price]").each(function () {
-            var type = $(this)
-              .closest("[data-mtuc-offer]")
-              .attr("data-mtuc-offer");
-            if (state.offers && state.offers[type]) {
-              $(this).text(state.offers[type].installment_label);
-            }
-          });
+          if (response && response.unavailable) {
+            setOffersBusy(false);
+            setEntryError("");
+            $root.hide();
+            return;
+          }
+          if (err || !response || !response.success || !response.calculator) {
+            setOffersBusy(false);
+            $root.data("mtucStale", 1);
+            $root.find("[data-mtuc-offer]").prop("disabled", true);
+            setEntryError(
+              "Неуспешно обновяване на финансирането. Променете опциите или количеството отново.",
+            );
+            return;
+          }
+          applyCalculator(response.calculator);
           if (!$modal.attr("hidden")) {
             fillSchemes();
             scheduleRecalculate(true);
@@ -535,6 +732,9 @@
 
     $root.off("click.mtuc").on("click.mtuc", "[data-mtuc-offer]", function (e) {
       e.preventDefault();
+      if ($root.data("mtucStale") === 1 || $(this).prop("disabled")) {
+        return;
+      }
       var $btn = $(this);
       openModal(
         $btn.attr("data-mtuc-offer"),
@@ -774,12 +974,24 @@
       );
     });
 
+    // Jet OC3: [name=quantity] + [id^=input-option]. OC3 core uses #product / #input-quantity.
     $(document).on(
-      "change.mtuc input.mtuc",
-      "#form-product [name='quantity'], #form-product [name^='option']",
-      function () {
-        var $root = $("#mt-uni-credit-product-root");
-        var schedule = $root.data("mtucScheduleCalculate");
+      "change.mtucProduct input.mtucProduct",
+      '#input-quantity, [name="quantity"], [id^="input-option"], [name^="option["]',
+      function (e) {
+        var $target = $(e.target);
+        if (
+          $target.closest(
+            "#mt-uni-credit-product-root, #mt-uni-credit-product-modal, #mt-uni-credit-cart-root, #mt-uni-credit-cart-modal",
+          ).length
+        ) {
+          return;
+        }
+        var $productRoot = $("#mt-uni-credit-product-root");
+        if (!$productRoot.length) {
+          return;
+        }
+        var schedule = $productRoot.data("mtucScheduleCalculate");
         if (typeof schedule === "function") {
           schedule();
         }

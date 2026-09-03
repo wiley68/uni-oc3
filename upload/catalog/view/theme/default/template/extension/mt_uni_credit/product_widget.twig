@@ -17,18 +17,16 @@
      style="--mtuc-button-width: {{ calc.button_width }}px; --mtuc-button-height: {{ calc.button_height }}px;">
   <div class="mt-uni-credit-storefront__calculator" aria-live="polite">
     {% if calc.heading %}
-      <p class="mt-uni-credit-storefront__heading">{{ calc.heading }}</p>
-    {% else %}
-      <p class="mt-uni-credit-storefront__heading">{{ heading }}</p>
+      <p class="mt-uni-credit-storefront__heading" data-mtuc-heading>{{ calc.heading }}</p>
     {% endif %}
-    <div class="mt-uni-credit-storefront__buttons">
+    <div class="mt-uni-credit-storefront__buttons" data-mtuc-buttons>
       {% for offer_type, offer in calc.offers %}
         <button type="button"
                 class="mt-uni-credit-storefront__button mt-uni-credit-storefront__button--{{ offer_type }}"
                 data-mtuc-offer="{{ offer_type }}"
                 data-preferred-key="{{ offer.preferred_scheme_key }}">
           <span class="mt-uni-credit-storefront__button-content">
-            <span class="mt-uni-credit-storefront__button-title">{{ heading }}</span>
+            <span class="mt-uni-credit-storefront__button-title">{{ text_button_financing|default(heading) }}</span>
             <span class="mt-uni-credit-storefront__button-price" data-mtuc-preferred-price>{{ offer.installment_label }}</span>
           </span>
           {% if offer_type == 'promo' %}
@@ -45,7 +43,13 @@
   </div>
   {{ modal }}
 </div>
-<script type="application/json" data-mtuc-bootstrap>{{ {calculator: calc, entry_point: 'product'}|json_encode }}</script>
+<script type="application/json" data-mtuc-bootstrap>{{ {
+  calculator: calc,
+  entry_point: 'product',
+  button_title: text_button_financing|default(heading),
+  logo_standard_url: logo_standard_url,
+  logo_alternative_url: logo_alternative_url
+}|json_encode }}</script>
 {% if asset_fonts %}
 <link rel="stylesheet" href="{{ asset_fonts }}" />
 {% endif %}

@@ -712,6 +712,16 @@ Automated gate: `php tests/phase8_check.php` (no live network).
 7. [ ] Fresh shop cache only; stale/missing cache hides UI (fail soft).
 8. [ ] Assets load via fragment-local `<link>`/`<script>` with guarded `filemtime` (Journal-compatible).
 
+### Product dynamic recalculation + optional heading
+
+1. [ ] CP `uni_zaglavie` non-empty → heading text exact; empty/whitespace → **no** heading DOM and no reserved gap.
+2. [ ] Change price-affecting option without reload → UniCredit buttons refresh (labels, preferred keys, count/eligibility).
+3. [ ] Change quantity (type / +/- / theme controls) → financing refreshes for `unitWithTax × qty`.
+4. [ ] Open popup after option/qty change → Step 1 uses refreshed price/schemes/preferred identity (not page-load state).
+5. [ ] Rapid option switching → final UI matches final selection (sequence/abort stale guard).
+6. [ ] Failed calculate → no infinite loader; buttons not submit-ready on stale data; next change retries.
+7. [ ] Repeated refreshes do not multiply click/modal handlers (`data-mtuc-bound` / document-once).
+
 ### Cart page
 
 1. [ ] Eligible cart shows `#mt-uni-credit-cart-root` with `data-hide-secondary=1`.
