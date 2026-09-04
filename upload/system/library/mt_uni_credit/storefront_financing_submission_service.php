@@ -305,8 +305,9 @@ final class MtUniCreditStorefrontFinancingSubmissionService
                     'order_id' => $orderId,
                     'control_panel_order_id' => $result->controlPanelOrderId,
                     'local_replay' => $result->localReplay,
+                    'cp_succeeded' => $result->cpSucceeded,
                     'attempt' => $fresh !== null ? $fresh : $attempt,
-                    'apply_native_order_status' => !$result->localReplay,
+                    'apply_native_order_status' => $result->applyNativeOrderStatus,
                     'cart_unchanged' => true,
                     'session' => $sessionData,
                 );
@@ -332,8 +333,9 @@ final class MtUniCreditStorefrontFinancingSubmissionService
                 'control_panel_order_id' => $result->controlPanelOrderId,
                 'recoverable' => $result->recoverable,
                 'ambiguous_blocked' => $result->ambiguousBlocked,
+                'cp_succeeded' => $result->cpSucceeded,
                 'attempt' => $fresh !== null ? $fresh : $attempt,
-                'apply_native_order_status' => $result->cpSucceeded && !$result->localReplay,
+                'apply_native_order_status' => $result->applyNativeOrderStatus,
                 'cart_unchanged' => true,
                 'session' => $sessionData,
             );

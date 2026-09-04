@@ -76,30 +76,30 @@ function mtuc9_cert_fixtures()
     );
 }
 
-function mtuc9_queue_ssl_metadata(Phase4FakeCpHttpTransport $transport, $certPem, $keyPem)
+function mtuc9_queue_ssl_metadata(Phase4FakeCpHttpTransport $transport, string $certPem, string $keyPem): void
 {
     $transport->enqueueJson(200, array(
         'success' => true,
         'data' => array(
             'available' => true,
             'ssl_revision' => 'revision-1',
-            'certificate_sha256' => hash('sha256', (string) $certPem),
-            'private_key_sha256' => hash('sha256', (string) $keyPem),
+            'certificate_sha256' => hash('sha256', $certPem),
+            'private_key_sha256' => hash('sha256', $keyPem),
         ),
     ));
 }
 
-function mtuc9_queue_ssl_bundle(Phase4FakeCpHttpTransport $transport, $certPem, $keyPem)
+function mtuc9_queue_ssl_bundle(Phase4FakeCpHttpTransport $transport, string $certPem, string $keyPem): void
 {
     $transport->enqueueJson(200, array(
         'success' => true,
         'data' => array(
             'available' => true,
             'ssl_revision' => 'revision-1',
-            'certificate_sha256' => hash('sha256', (string) $certPem),
-            'private_key_sha256' => hash('sha256', (string) $keyPem),
-            'certificate_pem' => (string) $certPem,
-            'private_key_pem' => (string) $keyPem,
+            'certificate_sha256' => hash('sha256', $certPem),
+            'private_key_sha256' => hash('sha256', $keyPem),
+            'certificate_pem' => $certPem,
+            'private_key_pem' => $keyPem,
         ),
     ));
 }
@@ -164,6 +164,8 @@ mtuc9_assert(Phase9TestHarness::smartUcfCallCount($stackP2['smartUcfProbe']) ===
 $bankP2 = Phase9TestHarness::bankStatusId($stackP2, $orderP2);
 mtuc9_assert($bankP2 !== MtUniCreditBankStatus::SENT_PROCESS1, 'Process2: bank status NOT bank_sent_process1');
 mtuc9_assert($bankP2 !== MtUniCreditBankStatus::SEND_FAILED_SMARTUCF, 'Process2: bank status NOT bank_send_failed_smartucf');
+mtuc9_assert(!empty($resultP2['apply_native_order_status']), 'Process2: apply_native after CP (no SmartUCF)');
+mtuc9_assert(empty($resultP2['bank_redirect']), 'Process2: no bank_redirect');
 
 // ---------------------------------------------------------------------------
 // Process1 success: CP + SmartUCF → bank_sent_process1, single call, trusted redirect
@@ -199,10 +201,20 @@ mtuc9_assert(
     'Process1 success: smartucf_state created'
 );
 mtuc9_assert(Phase7TestHarness::countOrderPosts($transportOk) === 1, 'Process1 success: CP POST /orders exactly once');
+mtuc9_assert(!empty($resultOk['bank_redirect']), 'Process1 success: bank_redirect flag');
+mtuc9_assert(!empty($resultOk['apply_native_order_status']), 'Process1 success: apply_native_order_status once-authorised');
+mtuc9_assert(!empty($resultOk['cp_succeeded']), 'Process1 success: cp_succeeded true');
 
-// ---------------------------------------------------------------------------
-// Product Step 2 equivalent wiring: storefront submit -> CP -> Process1 SmartUCF
-// ---------------------------------------------------------------------------
+// Replay after Process1 success: no duplicate native-status authorization
+$resultOkReplay = $stackOk['submission']->submit(Phase9TestHarness::submitInput($orderOk, $stackOk['storeId']));
+mtuc9_assert(!empty($resultOkReplay['success']), 'Process1 replay: still success');
+mtuc9_assert(empty($resultOkReplay['apply_native_order_status']), 'Process1 replay: no duplicate apply_native_order_status');
+mtuc9_assert(Phase9TestHarness::smartUcfCallCount($stackOk['smartUcfProbe']) === 1, 'Process1 replay: still one SmartUCF call');
+mtuc9_assert(Phase7TestHarness::countOrderPosts($transportOk) === 1, 'Process1 replay: still one CP POST');
+mtuc9_assert(
+    (string) $resultOkReplay['redirect'] === (string) $resultOk['redirect'],
+    'Process1 replay: stored bank redirect reused'
+);
 $transportStorefrontP1 = new Phase4FakeCpHttpTransport();
 Phase9TestHarness::enqueueCpCreateSuccess($transportStorefrontP1);
 $stackStorefrontP1 = Phase9TestHarness::stack($transportStorefrontP1, null, null, Phase5TestHarness::STORE_A, array('uni_proces' => 0));
@@ -281,6 +293,12 @@ mtuc9_assert(
     'SmartUCF reject: failed remote_reject'
 );
 mtuc9_assert(Phase9TestHarness::smartUcfCallCount($stackReject['smartUcfProbe']) === 1, 'SmartUCF reject: one HTTP call');
+mtuc9_assert(!empty($resultReject['cp_succeeded']), 'SmartUCF reject: cp_succeeded still true');
+mtuc9_assert(
+    !empty($resultReject['apply_native_order_status']),
+    'SmartUCF reject: apply_native authorised (OC4 terminal remote_reject)'
+);
+mtuc9_assert(empty($resultReject['bank_redirect']), 'SmartUCF reject: no bank_redirect');
 
 // ---------------------------------------------------------------------------
 // Timeout / transport ambiguous → outcome_unknown; second submit does not resend
@@ -332,6 +350,9 @@ mtuc9_assert(
     Phase9TestHarness::smartUcfCallCount($stackTimeout['smartUcfProbe']) === 1,
     'timeout replay: no fresh SmartUCF resend'
 );
+mtuc9_assert(!empty($resultTimeout['cp_succeeded']), 'timeout: cp_succeeded true');
+mtuc9_assert(empty($resultTimeout['apply_native_order_status']), 'timeout: no premature apply_native_order_status');
+mtuc9_assert(empty($secondTimeout['apply_native_order_status']), 'timeout replay: still no apply_native');
 
 // ---------------------------------------------------------------------------
 // Idempotent replay after success → 0 additional SmartUCF calls
@@ -566,6 +587,8 @@ $stackCertF = Phase9TestHarness::stack($transportCertF, null, null, Phase5TestHa
 Phase9TestHarness::seedBankOrder($stackCertF['memoryDb'], 9606, $stackCertF['storeId']);
 $resultCertF = $stackCertF['submission']->submit(Phase9TestHarness::submitInput(9606, $stackCertF['storeId']));
 mtuc9_assert(empty($resultCertF['success']), 'cert sync F: invalid downloaded cert fails');
+mtuc9_assert(empty($resultCertF['apply_native_order_status']), 'cert sync F: no premature apply_native');
+mtuc9_assert(!empty($resultCertF['cp_succeeded']), 'cert sync F: cp_succeeded does not imply apply_native');
 mtuc9_assert(Phase9TestHarness::smartUcfCallCount($stackCertF['smartUcfProbe']) === 0, 'cert sync F: no SmartUCF call');
 
 $transportCertG = new Phase4FakeCpHttpTransport();
@@ -585,6 +608,7 @@ $stackCertH = Phase9TestHarness::stack($transportCertH, null, null, Phase5TestHa
 Phase9TestHarness::seedBankOrder($stackCertH['memoryDb'], 9608, $stackCertH['storeId']);
 $resultCertH = $stackCertH['submission']->submit(Phase9TestHarness::submitInput(9608, $stackCertH['storeId']));
 mtuc9_assert(empty($resultCertH['success']), 'cert sync H: missing passphrase fails deterministically');
+mtuc9_assert(empty($resultCertH['apply_native_order_status']), 'cert sync H: no premature apply_native');
 mtuc9_assert(Phase9TestHarness::smartUcfCallCount($stackCertH['smartUcfProbe']) === 0, 'cert sync H: no SmartUCF call');
 @file_put_contents($pathsA->passphrasePath(), "<?php\nreturn array('passphrase' => 'phase2-fixture-secret');\n");
 @chmod($pathsA->passphrasePath(), 0600);
@@ -731,6 +755,34 @@ foreach ($phase9Files as $phase9File) {
         'PHP 7.3: ' . $phase9File . ' free of match expression'
     );
 }
+
+// Controllers must not apply native status from cp_succeeded alone.
+$storefrontSrc = mtuc9_read_source($lib . DIRECTORY_SEPARATOR . 'storefront_financing_submission_service.php');
+$checkoutSrc = mtuc9_read_source($lib . DIRECTORY_SEPARATOR . 'checkout_financing_submission_service.php');
+mtuc9_assert(
+    strpos($storefrontSrc, 'apply_native_order_status\' => $result->applyNativeOrderStatus') !== false
+        || strpos($storefrontSrc, "'apply_native_order_status' => \$result->applyNativeOrderStatus") !== false,
+    'storefront: apply_native from result.applyNativeOrderStatus'
+);
+mtuc9_assert(
+    strpos($storefrontSrc, 'cpSucceeded && !$result->localReplay') === false,
+    'storefront: does not map apply_native from cpSucceeded'
+);
+mtuc9_assert(
+    strpos($checkoutSrc, 'cpSucceeded && !$result->localReplay') === false,
+    'checkout: does not map apply_native from cpSucceeded'
+);
+$jsSrc = mtuc9_read_source(
+    $root . DIRECTORY_SEPARATOR . 'upload' . DIRECTORY_SEPARATOR . 'catalog' . DIRECTORY_SEPARATOR
+        . 'view' . DIRECTORY_SEPARATOR . 'theme' . DIRECTORY_SEPARATOR . 'default' . DIRECTORY_SEPARATOR
+        . 'template' . DIRECTORY_SEPARATOR . 'extension' . DIRECTORY_SEPARATOR . 'mt_uni_credit'
+        . DIRECTORY_SEPARATOR . 'storefront.js'
+);
+mtuc9_assert(strpos($jsSrc, 'response.redirect') !== false, 'storefront.js navigates via response.redirect');
+mtuc9_assert(
+    preg_match('/if\s*\(\s*response\.redirect\s*\)/', $jsSrc) === 1,
+    'storefront.js prioritises redirect before generic success close'
+);
 
 echo PHP_EOL . 'Phase 9 checks: ' . $passes . ' passed';
 if ($failures) {

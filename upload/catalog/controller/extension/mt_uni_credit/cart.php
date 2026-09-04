@@ -146,153 +146,203 @@ class ControllerExtensionMtUniCreditCart extends Controller
         );
 
         try {
-            if (!$this->isPost() || !MtUniCreditStorefrontCsrf::verify($this->session->data, $this->posted('csrf'))) {
-                $json['error'] = 'csrf';
-                MtUniCreditStorefrontRuntime::respondJson($this, $json);
-                return;
-            }
-
-            $shop = MtUniCreditStorefrontRuntime::loadFreshShop($this);
-            $consent = isset($this->request->post['consent']) ? $this->request->post['consent'] : array();
-            if (!$this->consentAccepted($consent, $shop)) {
-                $json['error'] = 'consent';
-                $json['message'] = $this->language->get('error_consent');
-                MtUniCreditStorefrontRuntime::respondJson($this, $json);
-                return;
-            }
-
-            $customerValidation = $this->validateStep2Customer($shop);
-            if (!$customerValidation['ok']) {
-                $json['error'] = 'validation';
-                $json['message'] = $customerValidation['message'];
-                $json['errors'] = $customerValidation['errors'];
-                MtUniCreditStorefrontRuntime::respondJson($this, $json);
-                return;
-            }
-
-            $cart = MtUniCreditStorefrontRuntime::resolveCartContext($this);
-            if ($cart === null) {
-                $json['error'] = 'unavailable';
-                MtUniCreditStorefrontRuntime::respondJson($this, $json);
-                return;
-            }
-
-            $currency = isset($this->session->data['currency'])
-                ? (string) $this->session->data['currency']
-                : (string) $this->config->get('config_currency');
-            $fingerprint = (string) $this->posted('cart_fingerprint', '');
-            if ($fingerprint === '') {
-                $fingerprint = MtUniCreditStorefrontOperationIdentity::cartFingerprintFromContext($cart, $currency);
-            }
-
-            $products = array();
-            foreach ($this->cart->getProducts() as $product) {
-                $tax = (float) $this->tax->calculate(
-                    (float) $product['price'],
-                    (int) $product['tax_class_id'],
-                    (bool) $this->config->get('config_tax')
-                ) - (float) $product['price'];
-                $products[] = array(
-                    'product_id' => (int) $product['product_id'],
-                    'name' => (string) $product['name'],
-                    'model' => (string) $product['model'],
-                    'quantity' => (int) $product['quantity'],
-                    'price' => (float) $product['price'],
-                    'total' => (float) $product['total'],
-                    'tax' => $tax,
-                    'reward' => isset($product['reward']) ? (int) $product['reward'] : 0,
-                    'option' => isset($product['option']) && is_array($product['option']) ? $product['option'] : array(),
-                );
-            }
-
-            $service = MtUniCreditStorefrontRuntime::submissionService($this);
-            $result = $service->submit(array(
-                'entry_point' => MtUniCreditOperationEntryPoint::CART,
-                'store_id' => (int) $this->config->get('config_store_id'),
-                'currency_code' => $currency,
-                'scheme_key' => (string) $this->posted('scheme_key', ''),
-                'cart_context' => $cart,
-                'cart_fingerprint' => $fingerprint,
-                'products' => $products,
-                'customer' => $this->customerPayload(),
-                'session' => $this->session->data,
-                'invoice_prefix' => (string) $this->config->get('config_invoice_prefix'),
-                'store_name' => (string) $this->config->get('config_name'),
-                'store_url' => MtUniCreditStorefrontRuntime::storeUrl($this),
-                'language_id' => (int) $this->config->get('config_language_id'),
-                'currency_id' => (int) $this->currency->getId($currency),
-                'currency_value' => (float) $this->currency->getValue($currency),
-                'ip' => isset($this->request->server['REMOTE_ADDR']) ? (string) $this->request->server['REMOTE_ADDR'] : '',
-                'forwarded_ip' => isset($this->request->server['HTTP_X_FORWARDED_FOR'])
-                    ? (string) $this->request->server['HTTP_X_FORWARDED_FOR']
-                    : '',
-                'user_agent' => isset($this->request->server['HTTP_USER_AGENT'])
-                    ? (string) $this->request->server['HTTP_USER_AGENT']
-                    : '',
-                'accept_language' => isset($this->request->server['HTTP_ACCEPT_LANGUAGE'])
-                    ? (string) $this->request->server['HTTP_ACCEPT_LANGUAGE']
-                    : '',
-                'add_order' => function ($orderData) {
-                    $this->load->model('checkout/order');
-
-                    return (int) $this->model_checkout_order->addOrder($orderData);
-                },
-                'load_order' => function ($orderId) {
-                    $this->load->model('checkout/order');
-
-                    return $this->model_checkout_order->getOrder((int) $orderId);
-                },
-            ));
-
-            if (isset($result['session']) && is_array($result['session'])) {
-                $this->session->data = $result['session'];
-            }
-
-            // Cart submit never clears the live cart.
-            if (!empty($result['success'])) {
-                if (!empty($result['apply_native_order_status']) && !empty($result['order_id'])) {
-                    $statusId = (int) $this->config->get(MtUniCreditConstants::PAYMENT_SETTING_ORDER_STATUS_ID);
-                    if ($statusId > 0) {
-                        $this->load->model('checkout/order');
-                        $this->model_checkout_order->addOrderHistory((int) $result['order_id'], $statusId);
-                    }
-                }
-                $this->session->data[MtUniCreditCheckoutConfirmPreparation::SESSION_PREPARED_ORDER_ID] = (int) $result['order_id'];
-                $redirect = !empty($result['redirect'])
-                    ? (string) $result['redirect']
-                    : $this->url->link(MtUniCreditConstants::CHECKOUT_PREPARED_ROUTE, '', true);
-                MtUniCreditStorefrontRuntime::respondJson($this, array(
-                    'success' => true,
-                    'order_id' => (int) $result['order_id'],
-                    'message' => isset($result['message']) ? (string) $result['message'] : $this->language->get('text_success'),
-                    'redirect' => $redirect,
-                    'bank_redirect' => !empty($result['bank_redirect']),
-                    'cart_unchanged' => true,
-                    'apply_native_order_status' => !empty($result['apply_native_order_status']),
-                ));
-                return;
-            }
-
-            if (!empty($result['apply_native_order_status']) && !empty($result['order_id'])) {
-                $statusId = (int) $this->config->get(MtUniCreditConstants::PAYMENT_SETTING_ORDER_STATUS_ID);
-                if ($statusId > 0) {
-                    $this->load->model('checkout/order');
-                    $this->model_checkout_order->addOrderHistory((int) $result['order_id'], $statusId);
-                }
-            }
-
-            $json['error'] = isset($result['error']) ? (string) $result['error'] : 'request_failed';
-            $json['message'] = isset($result['message']) ? (string) $result['message'] : $json['message'];
-            $json['cart_unchanged'] = true;
-            if (!empty($result['order_id'])) {
-                $json['order_id'] = (int) $result['order_id'];
-                $json['redirect'] = $this->url->link(MtUniCreditConstants::CHECKOUT_PREPARED_ROUTE, '', true);
-                $this->session->data[MtUniCreditCheckoutConfirmPreparation::SESSION_PREPARED_ORDER_ID] = (int) $result['order_id'];
-            }
-            MtUniCreditStorefrontRuntime::respondJson($this, $json);
+            $this->runCartSubmit($json);
         } catch (Exception $exception) {
             MtUniCreditStorefrontRuntime::respondJson($this, $json);
         }
+    }
+
+    /**
+     * Cart financing submit body (extracted so IDE type inference stays within limits).
+     *
+     * @param array<string, mixed> $json
+     * @return void
+     */
+    private function runCartSubmit(array $json)
+    {
+        if (!$this->isPost() || !MtUniCreditStorefrontCsrf::verify($this->session->data, $this->posted('csrf'))) {
+            $json['error'] = 'csrf';
+            MtUniCreditStorefrontRuntime::respondJson($this, $json);
+            return;
+        }
+
+        $shop = MtUniCreditStorefrontRuntime::loadFreshShop($this);
+        $consent = isset($this->request->post['consent']) ? $this->request->post['consent'] : array();
+        if (!$this->consentAccepted($consent, $shop)) {
+            $json['error'] = 'consent';
+            $json['message'] = $this->language->get('error_consent');
+            MtUniCreditStorefrontRuntime::respondJson($this, $json);
+            return;
+        }
+
+        $customerValidation = $this->validateStep2Customer($shop);
+        if (!$customerValidation['ok']) {
+            $json['error'] = 'validation';
+            $json['message'] = $customerValidation['message'];
+            $json['errors'] = $customerValidation['errors'];
+            MtUniCreditStorefrontRuntime::respondJson($this, $json);
+            return;
+        }
+
+        $cart = MtUniCreditStorefrontRuntime::resolveCartContext($this);
+        if ($cart === null) {
+            $json['error'] = 'unavailable';
+            MtUniCreditStorefrontRuntime::respondJson($this, $json);
+            return;
+        }
+
+        $currency = isset($this->session->data['currency'])
+            ? (string) $this->session->data['currency']
+            : (string) $this->config->get('config_currency');
+        $fingerprint = (string) $this->posted('cart_fingerprint', '');
+        if ($fingerprint === '') {
+            $fingerprint = MtUniCreditStorefrontOperationIdentity::cartFingerprintFromContext($cart, $currency);
+        }
+
+        $service = MtUniCreditStorefrontRuntime::submissionService($this);
+        $result = $service->submit($this->buildCartSubmissionInput($cart, $currency, $fingerprint));
+        $this->respondCartSubmitResult($result, $json);
+    }
+
+    /**
+     * @param MtUniCreditCartContext $cart
+     * @param string $currency
+     * @param string $fingerprint
+     * @return array<string, mixed>
+     */
+    private function buildCartSubmissionInput($cart, $currency, $fingerprint)
+    {
+        $controller = $this;
+
+        return array(
+            'entry_point' => MtUniCreditOperationEntryPoint::CART,
+            'store_id' => (int) $this->config->get('config_store_id'),
+            'currency_code' => $currency,
+            'scheme_key' => (string) $this->posted('scheme_key', ''),
+            'cart_context' => $cart,
+            'cart_fingerprint' => $fingerprint,
+            'products' => $this->cartOrderProductRows(),
+            'customer' => $this->customerPayload(),
+            'session' => $this->session->data,
+            'invoice_prefix' => (string) $this->config->get('config_invoice_prefix'),
+            'store_name' => (string) $this->config->get('config_name'),
+            'store_url' => MtUniCreditStorefrontRuntime::storeUrl($this),
+            'language_id' => (int) $this->config->get('config_language_id'),
+            'currency_id' => (int) $this->currency->getId($currency),
+            'currency_value' => (float) $this->currency->getValue($currency),
+            'ip' => isset($this->request->server['REMOTE_ADDR']) ? (string) $this->request->server['REMOTE_ADDR'] : '',
+            'forwarded_ip' => isset($this->request->server['HTTP_X_FORWARDED_FOR'])
+                ? (string) $this->request->server['HTTP_X_FORWARDED_FOR']
+                : '',
+            'user_agent' => isset($this->request->server['HTTP_USER_AGENT'])
+                ? (string) $this->request->server['HTTP_USER_AGENT']
+                : '',
+            'accept_language' => isset($this->request->server['HTTP_ACCEPT_LANGUAGE'])
+                ? (string) $this->request->server['HTTP_ACCEPT_LANGUAGE']
+                : '',
+            'add_order' => function ($orderData) use ($controller) {
+                $controller->load->model('checkout/order');
+
+                return (int) $controller->model_checkout_order->addOrder($orderData);
+            },
+            'load_order' => function ($orderId) use ($controller) {
+                $controller->load->model('checkout/order');
+
+                return $controller->model_checkout_order->getOrder((int) $orderId);
+            },
+        );
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function cartOrderProductRows()
+    {
+        $products = array();
+        foreach ($this->cart->getProducts() as $product) {
+            $tax = (float) $this->tax->calculate(
+                (float) $product['price'],
+                (int) $product['tax_class_id'],
+                (bool) $this->config->get('config_tax')
+            ) - (float) $product['price'];
+            $products[] = array(
+                'product_id' => (int) $product['product_id'],
+                'name' => (string) $product['name'],
+                'model' => (string) $product['model'],
+                'quantity' => (int) $product['quantity'],
+                'price' => (float) $product['price'],
+                'total' => (float) $product['total'],
+                'tax' => $tax,
+                'reward' => isset($product['reward']) ? (int) $product['reward'] : 0,
+                'option' => isset($product['option']) && is_array($product['option']) ? $product['option'] : array(),
+            );
+        }
+
+        return $products;
+    }
+
+    /**
+     * @param array<string, mixed> $result
+     * @param array<string, mixed> $json
+     * @return void
+     */
+    private function respondCartSubmitResult(array $result, array $json)
+    {
+        if (isset($result['session']) && is_array($result['session'])) {
+            $this->session->data = $result['session'];
+        }
+
+        // Cart submit never clears the live cart.
+        if (!empty($result['success'])) {
+            $this->maybeApplyNativeOrderStatus($result);
+            $this->session->data[MtUniCreditCheckoutConfirmPreparation::SESSION_PREPARED_ORDER_ID] = (int) $result['order_id'];
+            if (!empty($result['bank_redirect']) && !empty($result['redirect'])) {
+                $redirect = (string) $result['redirect'];
+            } elseif (!empty($result['redirect'])) {
+                $redirect = (string) $result['redirect'];
+            } else {
+                $redirect = $this->url->link(MtUniCreditConstants::CHECKOUT_PREPARED_ROUTE, '', true);
+            }
+            MtUniCreditStorefrontRuntime::respondJson($this, array(
+                'success' => true,
+                'order_id' => (int) $result['order_id'],
+                'message' => isset($result['message']) ? (string) $result['message'] : $this->language->get('text_success'),
+                'redirect' => $redirect,
+                'bank_redirect' => !empty($result['bank_redirect']),
+                'cart_unchanged' => true,
+                'apply_native_order_status' => !empty($result['apply_native_order_status']),
+            ));
+            return;
+        }
+
+        $this->maybeApplyNativeOrderStatus($result);
+
+        $json['error'] = isset($result['error']) ? (string) $result['error'] : 'request_failed';
+        $json['message'] = isset($result['message']) ? (string) $result['message'] : $json['message'];
+        $json['cart_unchanged'] = true;
+        if (!empty($result['order_id'])) {
+            $json['order_id'] = (int) $result['order_id'];
+            $json['redirect'] = $this->url->link(MtUniCreditConstants::CHECKOUT_PREPARED_ROUTE, '', true);
+            $this->session->data[MtUniCreditCheckoutConfirmPreparation::SESSION_PREPARED_ORDER_ID] = (int) $result['order_id'];
+        }
+        MtUniCreditStorefrontRuntime::respondJson($this, $json);
+    }
+
+    /**
+     * @param array<string, mixed> $result
+     * @return void
+     */
+    private function maybeApplyNativeOrderStatus(array $result)
+    {
+        if (empty($result['apply_native_order_status']) || empty($result['order_id'])) {
+            return;
+        }
+        $statusId = (int) $this->config->get(MtUniCreditConstants::PAYMENT_SETTING_ORDER_STATUS_ID);
+        if ($statusId <= 0) {
+            return;
+        }
+        $this->load->model('checkout/order');
+        $this->model_checkout_order->addOrderHistory((int) $result['order_id'], $statusId);
     }
 
     /**

@@ -858,29 +858,32 @@ Test Product and Cart separately after hard-refresh.
 
 ## Phase 9 — Process 1 / SmartUCF lifecycle (local PASS)
 
-Automated gate: `php tests/phase9_check.php` (189 checks, no live network).
+Automated gate: `php tests/phase9_check.php` (no live network).
 
 ### Process 1 success
 
 1. [ ] After CP `cp_created`, Process 1 (`uni_proces !== 1`) issues exactly one SmartUCF `sucfOnlineSessionStart`.
 2. [ ] Local bank status becomes `bank_sent_process1`.
-3. [ ] Customer redirect is the stored trusted application URL (allowlisted host + path + safe session id).
-4. [ ] Repeat submit / local replay does **not** issue a second SmartUCF session create.
+3. [ ] Customer redirect is the stored trusted application URL (`bank_redirect=true`, allowlisted host + path + safe session id) — **not** cart/prepared fallback.
+4. [ ] Configured native payment order status is applied **once** only after confirmed Process 1 success (or OC4-terminal remote reject); never solely because CP succeeded.
+5. [ ] Repeat submit / local replay does **not** issue a second SmartUCF session create and does **not** re-authorise `addOrderHistory`.
 
-### SmartUCF failure
+### SmartUCF failure / ambiguous / pre-call
 
-1. [ ] Definitive remote reject (`errorCode` JSON, HTTP 4xx) → `bank_send_failed_smartucf`; CP order id preserved; SmartUCF state failed/non-retryable.
-2. [ ] Timeout / transport ambiguous → `outcome_unknown`; **no** `bank_sent_process1`; **no** `bank_send_failed_smartucf`; second submit does **not** fresh-resend SmartUCF.
-3. [ ] Concurrent claim: while `submitting`, a second `claimForSubmitting` returns null.
+1. [ ] Definitive remote reject (`errorCode` JSON, HTTP 4xx) → `bank_send_failed_smartucf`; CP id preserved; `apply_native_order_status` may be true (OC4 Checkout terminal visibility) but result `success=false` / no bank redirect.
+2. [ ] Timeout / transport ambiguous → `outcome_unknown`; **no** `bank_sent_process1`; **no** `bank_send_failed_smartucf`; **no** premature native status; second submit does **not** fresh-resend SmartUCF.
+3. [ ] Certificate sync / validation failure before SmartUCF → 0 SmartUCF HTTP calls; CP preserved; **no** `bank_sent_process1`; **no** `apply_native_order_status`.
+4. [ ] Concurrent claim: while `submitting`, a second `claimForSubmitting` returns null.
 
 ### Process 2 no-call
 
 1. [ ] `uni_proces === 1` → Process 2 path: **0** SmartUCF HTTP calls; bank status is neither `bank_sent_process1` nor `bank_send_failed_smartucf`.
+2. [ ] Native payment status may be applied after successful CP (Process 2 has no SmartUCF gate).
 
-### Certificate / privacy / diagnostics
+### Certificate sync / privacy / diagnostics
 
-1. [ ] `uni_sertificat = 1` with missing local cert/passphrase → no SmartUCF HTTP call; no `bank_sent_process1` (pre-send / retryable; not terminal SmartUCF bank failure).
-2. [ ] Cert diagnostics remain **metadata-only** (no private-key PEM / passphrase in exception messages or logs).
+1. [ ] When `uni_sertificat` is enabled, `MtUniCreditCertificateSynchronizer` loads/refreshes local pair from CP SSL metadata/bundle under protected `keys/` + passphrase from `secrets/smartucf-key.php`.
+2. [ ] Missing/invalid pair or passphrase → fail closed before SmartUCF; diagnostics remain **metadata-only** (no private-key PEM / passphrase in logs).
 3. [ ] Debug log retrieval continues via the existing Phase 6 bridge (`extension/mt_uni_credit/api/smartucf_debug_log`); raw SmartUCF request body is not a required persisted log path.
 
 ### Explicit exclusions (Phase 9)
@@ -888,3 +891,4 @@ Automated gate: `php tests/phase9_check.php` (189 checks, no live network).
 - [ ] No Process 2 EGN/phone2 persistence, mail, or retention (Phase 10).
 - [ ] No Thank You / admin presentation / homepage ads (Phase 11).
 - [ ] No live SmartUCF or live CP calls in the automated gate.
+- [ ] Do not hack mail events to suppress native mails — fix `addOrderHistory` timing instead.

@@ -157,12 +157,7 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
         $this->load->model('checkout/order');
         $result = $this->model_extension_payment_mt_uni_credit->submitCheckoutFinancing((int) $context['order_id']);
 
-        if (!empty($result['success']) && !empty($result['apply_native_order_status'])) {
-            $statusId = (int) $this->config->get(MtUniCreditConstants::PAYMENT_SETTING_ORDER_STATUS_ID);
-            if ($statusId > 0 && method_exists($this->model_checkout_order, 'addOrderHistory')) {
-                $this->model_checkout_order->addOrderHistory((int) $context['order_id'], $statusId);
-            }
-        } elseif (empty($result['success']) && !empty($result['apply_native_order_status'])) {
+        if (!empty($result['apply_native_order_status'])) {
             $statusId = (int) $this->config->get(MtUniCreditConstants::PAYMENT_SETTING_ORDER_STATUS_ID);
             if ($statusId > 0 && method_exists($this->model_checkout_order, 'addOrderHistory')) {
                 $this->model_checkout_order->addOrderHistory((int) $context['order_id'], $statusId);
@@ -173,6 +168,10 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
             $this->session->data['mt_uni_credit_checkout_flash'] = (string) $result['message'];
         }
 
+        if (!empty($result['success']) && !empty($result['bank_redirect']) && !empty($result['redirect'])) {
+            $this->response->redirect((string) $result['redirect']);
+            return;
+        }
         if (!empty($result['success']) && !empty($result['redirect'])) {
             $this->response->redirect((string) $result['redirect']);
             return;

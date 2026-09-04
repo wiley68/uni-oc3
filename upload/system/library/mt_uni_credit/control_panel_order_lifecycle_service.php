@@ -542,19 +542,27 @@ final class MtUniCreditControlPanelOrderLifecycleService
                 true,
                 $process1->customerMessage() !== ''
                     ? $process1->customerMessage()
-                    : self::CUSTOMER_AMBIGUOUS_MESSAGE
+                    : self::CUSTOMER_AMBIGUOUS_MESSAGE,
+                false
             );
         }
+
+        $errorClass = $process1->errorClass() !== '' ? $process1->errorClass() : 'smartucf_submit_failed';
+        // OC4 Checkout: definitive SmartUCF remote_reject applies UniCredit payment status
+        // so the commerce order leaves Voided/0 — not because CP alone succeeded.
+        $applyNative = !$process1->isRetryable()
+            && $errorClass === MtUniCreditSmartUcfFailureClassification::CLASS_REMOTE_REJECT;
 
         return MtUniCreditControlPanelOrderSubmissionResult::failAfterCp(
             $cpId,
             $localReplay,
-            $process1->errorClass() !== '' ? $process1->errorClass() : 'smartucf_submit_failed',
+            $errorClass,
             $process1->isRetryable(),
             false,
             $process1->customerMessage() !== ''
                 ? $process1->customerMessage()
-                : MtUniCreditSmartUcfSessionCoordinator::CUSTOMER_FAILED
+                : MtUniCreditSmartUcfSessionCoordinator::CUSTOMER_FAILED,
+            $applyNative
         );
     }
 

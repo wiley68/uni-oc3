@@ -137,8 +137,9 @@ final class MtUniCreditCheckoutFinancingSubmissionService
                 'message' => MtUniCreditControlPanelOrderLifecycleService::CUSTOMER_SUCCESS_MESSAGE,
                 'control_panel_order_id' => $result->controlPanelOrderId,
                 'local_replay' => $result->localReplay,
+                'cp_succeeded' => $result->cpSucceeded,
                 'attempt' => $fresh !== null ? $fresh : $attempt,
-                'apply_native_order_status' => !$result->localReplay,
+                'apply_native_order_status' => $result->applyNativeOrderStatus,
             );
             if ($result->redirectUrl !== '') {
                 $out['redirect'] = $result->redirectUrl;
@@ -161,8 +162,9 @@ final class MtUniCreditCheckoutFinancingSubmissionService
             'control_panel_order_id' => $result->controlPanelOrderId,
             'recoverable' => $result->recoverable,
             'ambiguous_blocked' => $result->ambiguousBlocked,
+            'cp_succeeded' => $result->cpSucceeded,
             'attempt' => $fresh !== null ? $fresh : $attempt,
-            'apply_native_order_status' => $result->cpSucceeded && !$result->localReplay,
+            'apply_native_order_status' => $result->applyNativeOrderStatus,
         );
     }
 

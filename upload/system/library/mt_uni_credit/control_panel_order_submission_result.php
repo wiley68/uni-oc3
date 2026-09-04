@@ -2,6 +2,9 @@
 
 /**
  * Result of a CP order create/resume attempt (and optional Process 1 SmartUCF).
+ *
+ * applyNativeOrderStatus is independent of cpSucceeded: CP create alone never
+ * authorizes OpenCart addOrderHistory / native mail lifecycle for Process 1.
  */
 final class MtUniCreditControlPanelOrderSubmissionResult
 {
@@ -36,6 +39,14 @@ final class MtUniCreditControlPanelOrderSubmissionResult
     public $customerMessage;
 
     /**
+     * When true, controllers may call addOrderHistory with the configured payment status.
+     * Must not be inferred from cpSucceeded alone.
+     *
+     * @var bool
+     */
+    public $applyNativeOrderStatus;
+
+    /**
      * @param bool $success
      * @param int $controlPanelOrderId
      * @param bool $localReplay
@@ -46,6 +57,7 @@ final class MtUniCreditControlPanelOrderSubmissionResult
      * @param string $redirectUrl
      * @param bool $cpSucceeded
      * @param string|null $customerMessage
+     * @param bool $applyNativeOrderStatus
      */
     public function __construct(
         $success,
@@ -57,7 +69,8 @@ final class MtUniCreditControlPanelOrderSubmissionResult
         $ambiguousBlocked = false,
         $redirectUrl = '',
         $cpSucceeded = false,
-        $customerMessage = null
+        $customerMessage = null,
+        $applyNativeOrderStatus = false
     ) {
         $this->success = (bool) $success;
         $this->controlPanelOrderId = (int) $controlPanelOrderId;
@@ -69,6 +82,7 @@ final class MtUniCreditControlPanelOrderSubmissionResult
         $this->redirectUrl = (string) $redirectUrl;
         $this->cpSucceeded = (bool) $cpSucceeded;
         $this->customerMessage = $customerMessage;
+        $this->applyNativeOrderStatus = (bool) $applyNativeOrderStatus;
     }
 
     /**
@@ -79,7 +93,20 @@ final class MtUniCreditControlPanelOrderSubmissionResult
      */
     public static function ok($cpId, $localReplay = false, $redirectUrl = '')
     {
-        return new self(true, $cpId, $localReplay, null, false, null, false, $redirectUrl, true);
+        // Process 2 after CP, or Process 1 after confirmed SmartUCF session.
+        return new self(
+            true,
+            $cpId,
+            $localReplay,
+            null,
+            false,
+            null,
+            false,
+            $redirectUrl,
+            true,
+            null,
+            !$localReplay
+        );
     }
 
     /**
@@ -91,7 +118,7 @@ final class MtUniCreditControlPanelOrderSubmissionResult
      */
     public static function fail($errorClass, $recoverable, $httpStatus = null, $ambiguousBlocked = false)
     {
-        return new self(false, 0, false, $errorClass, $recoverable, $httpStatus, $ambiguousBlocked, '', false);
+        return new self(false, 0, false, $errorClass, $recoverable, $httpStatus, $ambiguousBlocked, '', false, null, false);
     }
 
     /**
@@ -103,6 +130,7 @@ final class MtUniCreditControlPanelOrderSubmissionResult
      * @param bool $recoverable
      * @param bool $ambiguousBlocked
      * @param string|null $customerMessage
+     * @param bool $applyNativeOrderStatus Only for terminal OC4 cases (e.g. definitive remote_reject)
      * @return self
      */
     public static function failAfterCp(
@@ -111,7 +139,8 @@ final class MtUniCreditControlPanelOrderSubmissionResult
         $errorClass,
         $recoverable,
         $ambiguousBlocked = false,
-        $customerMessage = null
+        $customerMessage = null,
+        $applyNativeOrderStatus = false
     ) {
         return new self(
             false,
@@ -123,7 +152,8 @@ final class MtUniCreditControlPanelOrderSubmissionResult
             $ambiguousBlocked,
             '',
             true,
-            $customerMessage
+            $customerMessage,
+            (bool) $applyNativeOrderStatus && !$localReplay
         );
     }
 }

@@ -257,9 +257,14 @@ class ControllerExtensionMtUniCreditProduct extends Controller
                     }
                 }
                 $this->session->data[MtUniCreditCheckoutConfirmPreparation::SESSION_PREPARED_ORDER_ID] = (int) $result['order_id'];
-                $redirect = !empty($result['redirect'])
-                    ? (string) $result['redirect']
-                    : $this->url->link(MtUniCreditConstants::CHECKOUT_PREPARED_ROUTE, '', true);
+                // Process 1 success must navigate to the trusted bank URL — never substitute cart/prepared.
+                if (!empty($result['bank_redirect']) && !empty($result['redirect'])) {
+                    $redirect = (string) $result['redirect'];
+                } elseif (!empty($result['redirect'])) {
+                    $redirect = (string) $result['redirect'];
+                } else {
+                    $redirect = $this->url->link(MtUniCreditConstants::CHECKOUT_PREPARED_ROUTE, '', true);
+                }
                 MtUniCreditStorefrontRuntime::respondJson($this, array(
                     'success' => true,
                     'order_id' => (int) $result['order_id'],
@@ -272,6 +277,7 @@ class ControllerExtensionMtUniCreditProduct extends Controller
                 return;
             }
 
+            // Native status only when lifecycle explicitly authorizes it (not CP-only success).
             if (!empty($result['apply_native_order_status']) && !empty($result['order_id'])) {
                 $statusId = (int) $this->config->get(MtUniCreditConstants::PAYMENT_SETTING_ORDER_STATUS_ID);
                 if ($statusId > 0) {
