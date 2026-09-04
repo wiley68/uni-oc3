@@ -505,3 +505,66 @@ mtuc11_assert(
 );
 mtuc11_assert(is_file($langEn), 'assets: language en-gb home.php');
 mtuc11_assert(is_file($langBg), 'assets: language bg-bg home.php');
+
+$twigSrc = mtuc11_read($themeDir . DIRECTORY_SEPARATOR . 'homepage_advertising.twig');
+$jsSrc = mtuc11_read($themeDir . DIRECTORY_SEPARATOR . 'mt_uni_credit_homepage_advertising.js');
+$cssSrc = mtuc11_read($themeDir . DIRECTORY_SEPARATOR . 'mt_uni_credit_homepage_advertising.css');
+$langBgSrc = mtuc11_read($langBg);
+$langEnSrc = mtuc11_read($langEn);
+$homeCtrlSrc = mtuc11_read($homeCtrlPath);
+
+$ctaExact = 'ИНФОРМАЦИЯ ЗА ОНЛАЙН ПАЗАРУВАНЕ НА КРЕДИТ!';
+mtuc11_assert(
+    strpos($langBgSrc, $ctaExact) !== false,
+    'advertising UX: BG CTA exact string in language file'
+);
+mtuc11_assert(
+    strpos($langBgSrc, 'Научете повече') === false,
+    'advertising UX: old BG CTA removed from language'
+);
+mtuc11_assert(
+    strpos($twigSrc, 'text_panel_cta') !== false,
+    'advertising UX: twig renders text_panel_cta'
+);
+mtuc11_assert(
+    strpos($twigSrc, 'text_panel_cta }}!') === false
+        && strpos($twigSrc, 'text_panel_cta}}!') === false,
+    'advertising UX: twig does not append extra bang after CTA'
+);
+
+mtuc11_assert(
+    strpos($twigSrc, 'mt-uni-credit-advertising__close') === false,
+    'advertising UX: twig has no close button class'
+);
+mtuc11_assert(
+    strpos($twigSrc, 'data-mt-uni-credit-advertising-close') === false,
+    'advertising UX: twig has no close data attribute'
+);
+mtuc11_assert(
+    strpos($twigSrc, '&times;') === false && strpos($twigSrc, '×') === false,
+    'advertising UX: twig has no X close glyph'
+);
+mtuc11_assert(
+    strpos($twigSrc, 'text_close') === false,
+    'advertising UX: twig has no text_close ARIA label'
+);
+mtuc11_assert(
+    strpos($jsSrc, 'data-mt-uni-credit-advertising-close') === false,
+    'advertising UX: JS has no close-button selector'
+);
+mtuc11_assert(
+    strpos($cssSrc, 'advertising__close') === false,
+    'advertising UX: CSS has no close-button rules'
+);
+mtuc11_assert(
+    strpos($homeCtrlSrc, 'text_close') === false,
+    'advertising UX: home controller does not pass text_close'
+);
+mtuc11_assert(
+    strpos($jsSrc, 'Escape') !== false || strpos($jsSrc, 'keyCode === 27') !== false,
+    'advertising UX: Escape close behaviour preserved'
+);
+mtuc11_assert(
+    strpos($langBgSrc, "text_close") === false && strpos($langEnSrc, "text_close") === false,
+    'advertising UX: language files drop unused text_close'
+);

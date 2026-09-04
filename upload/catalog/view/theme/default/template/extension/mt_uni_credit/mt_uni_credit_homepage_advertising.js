@@ -54,13 +54,6 @@
         return;
       }
 
-      var close = closest(target, "[data-mt-uni-credit-advertising-close]");
-      if (close) {
-        event.preventDefault();
-        closePanel();
-        return;
-      }
-
       var open = closest(target, "[data-mt-uni-credit-advertising-open]");
       if (!open) {
         return;

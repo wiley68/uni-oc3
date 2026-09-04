@@ -127,27 +127,6 @@
   border-radius: 3px;
 }
 
-#mt-uni-credit-advertising-root.mt-uni-credit-advertising .mt-uni-credit-advertising__close {
-  position: absolute;
-  top: 4px;
-  right: 6px;
-  width: 28px;
-  height: 28px;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: #d20210;
-  font-size: 22px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-#mt-uni-credit-advertising-root.mt-uni-credit-advertising .mt-uni-credit-advertising__close:focus-visible {
-  outline: 2px solid #d20210;
-  outline-offset: 2px;
-}
-
 #mt-uni-credit-advertising-root.mt-uni-credit-advertising .mt-uni-credit-advertising__spacer {
   padding-bottom: 5px;
 }

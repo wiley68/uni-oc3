@@ -74,7 +74,6 @@ class ControllerExtensionMtUniCreditHome extends Controller
             'text_float_alt' => $this->language->get('text_float_alt'),
             'text_panel_label' => $this->language->get('text_panel_label'),
             'text_panel_cta' => $this->language->get('text_panel_cta'),
-            'text_close' => $this->language->get('text_close'),
         );
         $fragment = $this->load->view('extension/mt_uni_credit/homepage_advertising', $viewData);
         if (!is_string($fragment) || trim($fragment) === '') {

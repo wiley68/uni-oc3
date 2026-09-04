@@ -14,7 +14,6 @@
     <div id="mt-uni-credit-advertising-panel" class="mt-uni-credit-advertising__panel" role="dialog" aria-modal="true" aria-label="{{ text_panel_label }}" aria-hidden="true" hidden>
       <div class="mt-uni-credit-advertising__arrow" aria-hidden="true"></div>
       <div class="mt-uni-credit-advertising__body">
-        <button type="button" class="mt-uni-credit-advertising__close" data-mt-uni-credit-advertising-close aria-label="{{ text_close }}">&times;</button>
         <div class="mt-uni-credit-advertising__spacer"></div>
         {% if mt_uni_credit_advertising.picture_url %}
           <img class="mt-uni-credit-advertising__picture" alt="" src="{{ mt_uni_credit_advertising.picture_url }}">
@@ -29,9 +28,9 @@
         {% endif %}
         <div class="mt-uni-credit-advertising__link">
           {% if mt_uni_credit_advertising.backurl %}
-            <a href="{{ mt_uni_credit_advertising.backurl }}" target="_blank" rel="noopener noreferrer">{{ text_panel_cta }}!</a>
+            <a href="{{ mt_uni_credit_advertising.backurl }}" target="_blank" rel="noopener noreferrer">{{ text_panel_cta }}</a>
           {% else %}
-            {{ text_panel_cta }}!
+            {{ text_panel_cta }}
           {% endif %}
         </div>
       </div>
