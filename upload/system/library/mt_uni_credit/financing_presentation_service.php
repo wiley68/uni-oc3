@@ -38,20 +38,39 @@ final class MtUniCreditFinancingPresentationService
             return array();
         }
         $status = $this->repository->findBankStatusLabel((int) $storeId, (int) $orderId);
+        $sensitive = null;
+        // OC4: decrypt only when audience may include EGN/phone2 (ADMIN_EMAIL / ADMIN_PANEL).
+        // Customer paths never decrypt process2_sensitive_enc.
+        if (
+            $audience === MtUniCreditFinancingPresentationAudience::ADMIN_EMAIL
+            || $audience === MtUniCreditFinancingPresentationAudience::ADMIN_PANEL
+        ) {
+            $sensitive = $this->decryptSensitive((int) $storeId, (int) $orderId);
+        }
 
-        return $this->presenter->rows($snapshot, $status, (string) $audience, null);
+        return $this->presenter->rows($snapshot, $status, (string) $audience, $sensitive);
     }
 
     /**
-     * Customer Thank You HTML — never EGN/phone2; omit CP internal ids from page body.
+     * Customer Thank You / customer native mail rows — never EGN/phone2/CP ids.
      *
      * @param int $storeId
      * @param int $orderId
-     * @return string
+     * @return array<int, array{label: string, value: string}>
      */
-    public function customerThankYouHtml($storeId, $orderId)
+    public function customerThankYouRows($storeId, $orderId)
     {
-        $rows = $this->rowsForOrder($storeId, $orderId, MtUniCreditFinancingPresentationAudience::CUSTOMER);
+        return $this->filterCustomerFacingRows(
+            $this->rowsForOrder($storeId, $orderId, MtUniCreditFinancingPresentationAudience::CUSTOMER)
+        );
+    }
+
+    /**
+     * @param array<int, array{label: string, value: string}> $rows
+     * @return array<int, array{label: string, value: string}>
+     */
+    public function filterCustomerFacingRows(array $rows)
+    {
         $safe = array();
         foreach ($rows as $row) {
             $label = (string) (isset($row['label']) ? $row['label'] : '');
@@ -65,10 +84,54 @@ final class MtUniCreditFinancingPresentationService
             }
             $safe[] = $row;
         }
-        if ($safe === array()) {
+
+        return $safe;
+    }
+
+    /**
+     * @param array<int, array{label: string, value: string}> $rows
+     * @return string
+     */
+    public function renderCustomerThankYouHtml(array $rows)
+    {
+        if ($rows === array()) {
             return '';
         }
 
-        return $this->presenter->renderHtml($safe, MtUniCreditFinancingLeasingPresenter::TITLE);
+        return $this->presenter->renderHtml($rows, MtUniCreditFinancingLeasingPresenter::TITLE);
+    }
+
+    /**
+     * @param int $storeId
+     * @param int $orderId
+     * @return string
+     */
+    public function customerThankYouHtml($storeId, $orderId)
+    {
+        return $this->renderCustomerThankYouHtml($this->customerThankYouRows($storeId, $orderId));
+    }
+
+    /**
+     * @param int $storeId
+     * @param int $orderId
+     * @return MtUniCreditProcessTwoSensitiveData|null
+     */
+    private function decryptSensitive($storeId, $orderId)
+    {
+        $row = $this->repository->findAttemptRowByOrderId((int) $storeId, (int) $orderId);
+        if ($row === null) {
+            return null;
+        }
+        $enc = (string) (isset($row['process2_sensitive_enc']) ? $row['process2_sensitive_enc'] : '');
+        if ($enc === '') {
+            return null;
+        }
+        try {
+            return (new MtUniCreditProcessTwoSensitiveCipher())->decrypt($enc);
+        } catch (Throwable $ignored) {
+            error_log('mt_uni_credit: leasing presentation sensitive decrypt failed order_id=' . (int) $orderId);
+
+            return null;
+        }
     }
 }

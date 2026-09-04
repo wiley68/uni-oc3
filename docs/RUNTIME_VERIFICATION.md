@@ -984,5 +984,19 @@ Automated gate: `php tests/phase10_check.php` (includes stale-binding + Thank Yo
 
 - Native route `checkout/success`
 - Session: `order_id` + `mt_uni_credit_success_order_id` before redirect
-- Events: `catalog/controller/checkout/success/before` stash; `catalog/view/common/success/before` inject leasing into `text_message`
+- Events (install/save upsert):
+  - `catalog/controller/checkout/success/before` → stash
+  - `catalog/view/common/success/before` → inject into `text_message`
+  - `catalog/view/common/success/after` → fallback inject into rendered HTML if marker missing
+  - `catalog/view/mail/order_add/after` → customer native HTML enrichment
+  - `catalog/view/mail/order_alert/after` → admin native text enrichment
 - Process 1 bank redirect unchanged
+- **Remote repair:** Module/Payment reinstall **or** Module admin Save (calls `ensureCatalogEvents` upsert). Events must exist in `oc_event` with `status=1`.
+
+### Expected Process 2 mail count
+
+```text
+2 native OC mails (customer order_add HTML + admin order_alert text, when config_mail_alert includes order)
++ 2 dedicated Process 2 leasing mails
+= 4
+```

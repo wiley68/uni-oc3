@@ -154,6 +154,9 @@ class ModelExtensionModuleMtUniCredit extends Model
             $storeId
         );
 
+        // Repair catalog events on every Module save (dev 2.0.2 reinstall/repair path).
+        MtUniCreditInstaller::ensureCatalogEvents($this);
+
         // Write/replace Secret AFTER editSetting so DELETE+reinsert cannot drop a fresh envelope.
         $secretChanged = false;
         if (array_key_exists(MtUniCreditConstants::MODULE_SETTING_SECRET, $post)) {

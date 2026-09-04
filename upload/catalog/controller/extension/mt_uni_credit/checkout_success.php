@@ -4,6 +4,9 @@ require_once DIR_SYSTEM . 'library/mt_uni_credit/bootstrap.php';
 
 /**
  * Native checkout/success hooks: stash order_id, inject customer leasing Thank You block.
+ *
+ * OC3 event callbacks receive (&$route, &$data) or (&$route, &$data, &$code|&$output)
+ * via Action::execute + call_user_func_array — reference params required.
  */
 class ControllerExtensionMtUniCreditCheckoutSuccess extends Controller
 {
@@ -11,17 +14,19 @@ class ControllerExtensionMtUniCreditCheckoutSuccess extends Controller
      * catalog/controller/checkout/success/before — stash before native unset.
      *
      * @param string $route
-     * @param array<string, mixed> $data
+     * @param mixed $data
      * @return void
      */
     public function before(&$route, &$data)
     {
-        if ($route !== 'checkout/success') {
+        error_log('mt_uni_credit: thankyou before entered route=' . (string) $route);
+        if ((string) $route !== 'checkout/success') {
             return;
         }
         $orderId = (int) (isset($this->session->data['order_id']) ? $this->session->data['order_id'] : 0);
         if ($orderId > 0) {
             $this->session->data[MtUniCreditFinancingTerminalNavigationSupport::SESSION_SUCCESS_ORDER_ID] = $orderId;
+            error_log('mt_uni_credit: thankyou stashed order_id=' . $orderId);
         }
     }
 
@@ -29,24 +34,82 @@ class ControllerExtensionMtUniCreditCheckoutSuccess extends Controller
      * catalog/view/common/success/before — append leasing inside text_message.
      *
      * @param string $route
-     * @param array<string, mixed> $data
+     * @param array $data
      * @param string $code
      * @return void
      */
     public function beforeView(&$route, &$data, &$code)
     {
-        if ($route !== 'common/success') {
+        if ((string) $route !== 'common/success') {
+            return;
+        }
+        if (!is_array($data)) {
             return;
         }
 
-        $orderId = $this->resolveSuccessOrderId();
-        if ($orderId <= 0) {
+        $html = $this->buildCustomerLeasingBlock();
+        if ($html === '') {
             return;
+        }
+        $existing = (string) (isset($data['text_message']) ? $data['text_message'] : '');
+        if (strpos($existing, 'mt-uni-credit-leasing-block') !== false) {
+            return;
+        }
+        $data['text_message'] = $existing . $html;
+        error_log('mt_uni_credit: thankyou beforeView injected');
+    }
+
+    /**
+     * catalog/view/common/success/after — belt-and-suspenders if before refs did not apply.
+     *
+     * @param string $route
+     * @param array $data
+     * @param string $output
+     * @return void
+     */
+    public function afterView(&$route, &$data, &$output)
+    {
+        if ((string) $route !== 'common/success') {
+            return;
+        }
+        if (!is_string($output) || $output === '') {
+            return;
+        }
+        if (strpos($output, 'mt-uni-credit-leasing-block') !== false) {
+            return;
+        }
+
+        $html = $this->buildCustomerLeasingBlock();
+        if ($html === '') {
+            return;
+        }
+
+        // Prefer insert before continue buttons; otherwise append before footer.
+        if (strpos($output, 'class="buttons"') !== false) {
+            $output = str_replace('<div class="buttons">', $html . '<div class="buttons">', $output);
+        } elseif (strpos($output, '{{ footer }}') === false && strpos($output, '</div>') !== false) {
+            $output .= $html;
+        } else {
+            $output .= $html;
+        }
+        error_log('mt_uni_credit: thankyou afterView injected');
+    }
+
+    /**
+     * @return string HTML block or empty
+     */
+    private function buildCustomerLeasingBlock()
+    {
+        $orderId = $this->resolveSuccessOrderId();
+        error_log('mt_uni_credit: thankyou resolve order_id=' . $orderId);
+        if ($orderId <= 0) {
+            return '';
         }
 
         $storeId = (int) $this->config->get('config_store_id');
         if (!$this->canPresentOrderToCurrentCustomer($storeId, $orderId)) {
-            return;
+            error_log('mt_uni_credit: thankyou ownership denied order_id=' . $orderId);
+            return '';
         }
 
         try {
@@ -54,28 +117,30 @@ class ControllerExtensionMtUniCreditCheckoutSuccess extends Controller
             $service = new MtUniCreditFinancingPresentationService(
                 new MtUniCreditFinancingPresentationRepository($db)
             );
-            $html = $service->customerThankYouHtml($storeId, $orderId);
-            if ($html === '') {
-                // Missing snapshot: keep native success message only.
-                unset(
-                    $this->session->data[MtUniCreditFinancingTerminalNavigationSupport::SESSION_SUCCESS_ORDER_ID]
-                );
-
-                return;
-            }
-            if (!$this->isCustomerPresentationSafe($html)) {
-                error_log('mt_uni_credit: blocked Thank You leasing HTML containing Process 2 sensitive fields');
-
-                return;
-            }
-
-            $block = '<div class="mt-uni-credit-checkout-success">' . $html . '</div>';
-            $data['text_message'] = (string) (isset($data['text_message']) ? $data['text_message'] : '') . $block;
-            unset(
-                $this->session->data[MtUniCreditFinancingTerminalNavigationSupport::SESSION_SUCCESS_ORDER_ID]
+            $rows = $service->customerThankYouRows($storeId, $orderId);
+            error_log(
+                'mt_uni_credit: thankyou row_count=' . count($rows)
+                    . ' customer_safe=1 order_id=' . $orderId
             );
+            if ($rows === array()) {
+                return '';
+            }
+            $html = $service->renderCustomerThankYouHtml($rows);
+            if ($html === '' || !$this->isCustomerPresentationSafe($html)) {
+                if (!$this->isCustomerPresentationSafe($html)) {
+                    error_log('mt_uni_credit: blocked Thank You leasing HTML containing Process 2 sensitive fields');
+                }
+
+                return '';
+            }
+
+            unset($this->session->data[MtUniCreditFinancingTerminalNavigationSupport::SESSION_SUCCESS_ORDER_ID]);
+
+            return '<div class="mt-uni-credit-checkout-success">' . $html . '</div>';
         } catch (Exception $exception) {
             error_log('mt_uni_credit: thank-you leasing block failed class=' . get_class($exception));
+
+            return '';
         }
     }
 
@@ -95,8 +160,6 @@ class ControllerExtensionMtUniCreditCheckoutSuccess extends Controller
     }
 
     /**
-     * Guest: allow session-owned presentation. Logged-in: order customer_id must match.
-     *
      * @param int $storeId
      * @param int $orderId
      * @return bool
@@ -133,6 +196,9 @@ class ControllerExtensionMtUniCreditCheckoutSuccess extends Controller
      */
     private function isCustomerPresentationSafe($html)
     {
+        if ($html === '') {
+            return true;
+        }
         if (strpos($html, MtUniCreditFinancingLeasingPresenter::LABEL_EGN) !== false) {
             return false;
         }

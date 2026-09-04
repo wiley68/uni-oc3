@@ -101,7 +101,8 @@ final class MtUniCreditInstaller
     }
 
     /**
-     * Idempotent catalog event registration for Thank You leasing injection.
+     * Idempotent catalog event registration for Thank You + native mail enrichment.
+     * Upserts trigger/action/status so older installs receive corrected rows.
      *
      * @param object $model OpenCart Model with $db
      * @return void
@@ -111,30 +112,30 @@ final class MtUniCreditInstaller
         if (!isset($model->db) || !is_object($model->db) || !method_exists($model->db, 'query')) {
             return;
         }
+        if (!class_exists('MtUniCreditCatalogEventRegistry', false)) {
+            require_once dirname(__FILE__) . DIRECTORY_SEPARATOR . 'catalog_event_registry.php';
+        }
 
-        $events = array(
-            array(
-                'code' => 'mt_uni_credit_checkout_success_order',
-                'trigger' => 'catalog/controller/checkout/success/before',
-                'action' => 'extension/mt_uni_credit/checkout_success/before',
-            ),
-            array(
-                'code' => 'mt_uni_credit_checkout_success_view',
-                'trigger' => 'catalog/view/common/success/before',
-                'action' => 'extension/mt_uni_credit/checkout_success/beforeView',
-            ),
-        );
+        $prefix = defined('DB_PREFIX') ? DB_PREFIX : 'oc_';
 
-        foreach ($events as $event) {
+        foreach (MtUniCreditCatalogEventRegistry::definitions() as $event) {
             $existing = $model->db->query(
-                "SELECT `event_id` FROM `" . DB_PREFIX . "event`"
+                "SELECT `event_id` FROM `" . $prefix . "event`"
                     . " WHERE `code` = '" . $model->db->escape($event['code']) . "' LIMIT 1"
             );
             if (is_object($existing) && !empty($existing->num_rows)) {
+                $model->db->query(
+                    "UPDATE `" . $prefix . "event` SET"
+                        . " `trigger` = '" . $model->db->escape($event['trigger']) . "',"
+                        . " `action` = '" . $model->db->escape($event['action']) . "',"
+                        . " `status` = '1',"
+                        . " `sort_order` = '0'"
+                        . " WHERE `code` = '" . $model->db->escape($event['code']) . "'"
+                );
                 continue;
             }
             $model->db->query(
-                "INSERT INTO `" . DB_PREFIX . "event` SET"
+                "INSERT INTO `" . $prefix . "event` SET"
                     . " `code` = '" . $model->db->escape($event['code']) . "',"
                     . " `trigger` = '" . $model->db->escape($event['trigger']) . "',"
                     . " `action` = '" . $model->db->escape($event['action']) . "',"
@@ -153,8 +154,13 @@ final class MtUniCreditInstaller
         if (!isset($model->db) || !is_object($model->db) || !method_exists($model->db, 'query')) {
             return;
         }
+        $prefix = defined('DB_PREFIX') ? DB_PREFIX : 'oc_';
         $model->db->query(
-            "DELETE FROM `" . DB_PREFIX . "event` WHERE `code` LIKE 'mt_uni_credit_checkout_success%'"
+            "DELETE FROM `" . $prefix . "event` WHERE `code` LIKE 'mt_uni_credit_%'"
+                . " AND ("
+                . " `code` LIKE 'mt_uni_credit_checkout_success%'"
+                . " OR `code` LIKE 'mt_uni_credit_mail_order%'"
+                . ")"
         );
     }
 }
