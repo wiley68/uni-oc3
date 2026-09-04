@@ -149,7 +149,8 @@ mtuc1_assert(strpos($moduleModel, 'secret_required') !== false, 'module validate
 mtuc1_assert(strpos($moduleModel, 'MtUniCreditLocalSettings::normalizeFlag') !== false, 'module model delegates flag normalization to local settings');
 mtuc1_assert(strpos($moduleModel, 'invalid_product_button_action') !== false, 'module validates product button action');
 mtuc1_assert(strpos($moduleModel, 'invalid_button_top_spacing') !== false, 'module validates button top spacing range');
-mtuc1_assert(strpos($moduleModel, 'buildPhase1JournalExport') !== false, 'module model provides Phase 1 journal placeholder');
+mtuc1_assert(strpos($moduleModel, 'buildPhase1JournalExport') !== false, 'module model provides journal export');
+mtuc1_assert(strpos($moduleModel, 'MtUniCreditDiagnosticJournal::fromDatabase') !== false, 'module journal export uses diagnostic journal');
 
 $moduleTwigPath = $root . DIRECTORY_SEPARATOR . 'upload/admin/view/template/extension/module/mt_uni_credit.twig';
 $moduleTwig = file_get_contents($moduleTwigPath);

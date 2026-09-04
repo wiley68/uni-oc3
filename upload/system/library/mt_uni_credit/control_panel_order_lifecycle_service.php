@@ -38,6 +38,9 @@ final class MtUniCreditControlPanelOrderLifecycleService
     /** @var MtUniCreditPhase9LifecycleLog|null */
     private $phase9Log;
 
+    /** @var MtUniCreditDiagnosticJournal|null */
+    private $diagnosticJournal;
+
     /**
      * @param MtUniCreditFinancingAttemptRepository $attempts
      * @param MtUniCreditOperationLockRepository $locks
@@ -66,6 +69,7 @@ final class MtUniCreditControlPanelOrderLifecycleService
         $this->bankStatuses = $bankStatuses instanceof MtUniCreditOrderBankStatusRepository ? $bankStatuses : null;
         $this->process2 = $process2 instanceof MtUniCreditProcessTwoLifecycleCoordinator ? $process2 : null;
         $this->phase9Log = null;
+        $this->diagnosticJournal = null;
     }
 
     /**
@@ -147,6 +151,13 @@ final class MtUniCreditControlPanelOrderLifecycleService
                 MtUniCreditControlPanelErrorClass::RECOVERY_FAILED,
                 false
             );
+        }
+
+        $storeId = (int) $row['store_id'];
+        $orderId = (int) $row['order_id'];
+        $entryPoint = isset($row['entry_point']) ? (string) $row['entry_point'] : MtUniCreditOperationEntryPoint::CHECKOUT;
+        if (!MtUniCreditOperationEntryPoint::isValid($entryPoint)) {
+            $entryPoint = MtUniCreditOperationEntryPoint::CHECKOUT;
         }
 
         $existingCpId = (int) $row['control_panel_order_id'];
@@ -260,6 +271,14 @@ final class MtUniCreditControlPanelOrderLifecycleService
                     MtUniCreditControlPanelErrorClass::INVALID_RESPONSE,
                     MtUniCreditFinancingAttemptState::CP_FAILED_RETRYABLE
                 );
+                $this->recordCpCreateDiagnostic(
+                    $storeId,
+                    $orderId,
+                    $entryPoint,
+                    MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_REJECTED,
+                    200,
+                    array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::INVALID_RESPONSE)
+                );
 
                 return MtUniCreditControlPanelOrderSubmissionResult::fail(
                     MtUniCreditControlPanelErrorClass::INVALID_RESPONSE,
@@ -290,6 +309,15 @@ final class MtUniCreditControlPanelOrderLifecycleService
             );
             $this->attempts->clearLastErrorClass($attemptId);
 
+            $this->recordCpCreateDiagnostic(
+                $storeId,
+                $orderId,
+                $entryPoint,
+                MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_SUCCESS,
+                201,
+                array('control_panel_order_id' => $cpId, 'attempt_id' => $attemptId)
+            );
+
             return $this->continueAfterCpCreated(
                 $attemptId,
                 $cpId,
@@ -305,6 +333,14 @@ final class MtUniCreditControlPanelOrderLifecycleService
                 MtUniCreditControlPanelErrorClass::AUTH_FAILED,
                 MtUniCreditFinancingAttemptState::CP_FAILED_RETRYABLE
             );
+            $this->recordCpCreateDiagnostic(
+                $storeId,
+                $orderId,
+                $entryPoint,
+                MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_REJECTED,
+                401,
+                array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::AUTH_FAILED)
+            );
 
             return MtUniCreditControlPanelOrderSubmissionResult::fail(
                 MtUniCreditControlPanelErrorClass::AUTH_FAILED,
@@ -316,6 +352,14 @@ final class MtUniCreditControlPanelOrderLifecycleService
                 $attemptId,
                 MtUniCreditControlPanelErrorClass::TIMEOUT,
                 MtUniCreditFinancingAttemptState::CP_OUTCOME_UNKNOWN
+            );
+            $this->recordCpCreateDiagnostic(
+                $storeId,
+                $orderId,
+                $entryPoint,
+                MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_TIMEOUT,
+                null,
+                array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::TIMEOUT)
             );
 
             return MtUniCreditControlPanelOrderSubmissionResult::fail(
@@ -329,6 +373,14 @@ final class MtUniCreditControlPanelOrderLifecycleService
                 $attemptId,
                 MtUniCreditControlPanelErrorClass::TRANSPORT_FAILED,
                 MtUniCreditFinancingAttemptState::CP_OUTCOME_UNKNOWN
+            );
+            $this->recordCpCreateDiagnostic(
+                $storeId,
+                $orderId,
+                $entryPoint,
+                MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_OUTCOME_UNKNOWN,
+                null,
+                array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::TRANSPORT_FAILED)
             );
 
             return MtUniCreditControlPanelOrderSubmissionResult::fail(
@@ -358,6 +410,14 @@ final class MtUniCreditControlPanelOrderLifecycleService
                     MtUniCreditControlPanelErrorClass::REJECTED,
                     MtUniCreditFinancingAttemptState::CP_FAILED_RETRYABLE
                 );
+                $this->recordCpCreateDiagnostic(
+                    $storeId,
+                    $orderId,
+                    $entryPoint,
+                    MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_REJECTED,
+                    $status,
+                    array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::REJECTED)
+                );
 
                 return MtUniCreditControlPanelOrderSubmissionResult::fail(
                     MtUniCreditControlPanelErrorClass::REJECTED,
@@ -369,6 +429,14 @@ final class MtUniCreditControlPanelOrderLifecycleService
                 $attemptId,
                 MtUniCreditControlPanelErrorClass::TRANSPORT_FAILED,
                 MtUniCreditFinancingAttemptState::CP_OUTCOME_UNKNOWN
+            );
+            $this->recordCpCreateDiagnostic(
+                $storeId,
+                $orderId,
+                $entryPoint,
+                MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_OUTCOME_UNKNOWN,
+                $status,
+                array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::TRANSPORT_FAILED)
             );
 
             return MtUniCreditControlPanelOrderSubmissionResult::fail(
@@ -507,7 +575,15 @@ final class MtUniCreditControlPanelOrderLifecycleService
         );
 
         $log->record($storeId, $localOrderId, $entryPoint, MtUniCreditPhase9LifecycleLog::EVENT_ENTER, $safeIds);
-        $coordinator->setLifecycleLog($log, $storeId, $localOrderId, $entryPoint, (int) $attemptId, (int) $cpId);
+        $coordinator->setLifecycleLog(
+            $log,
+            $storeId,
+            $localOrderId,
+            $entryPoint,
+            (int) $attemptId,
+            (int) $cpId,
+            $this->resolveDiagnosticJournal()
+        );
 
         try {
             $process1 = $coordinator->run(
@@ -665,6 +741,18 @@ final class MtUniCreditControlPanelOrderLifecycleService
                 'replay' => !empty($result['replay']),
             )
         ));
+        $this->recordCpCreateDiagnostic(
+            $storeId,
+            $localOrderId,
+            $entryPoint,
+            MtUniCreditDiagnosticJournal::EVENT_PROCESS2_PREPARED,
+            null,
+            array(
+                'attempt_id' => (int) $attemptId,
+                'control_panel_order_id' => (int) $cpId,
+                'bank_status' => MtUniCreditBankStatus::SENT_PROCESS2,
+            )
+        );
 
         $ok = MtUniCreditControlPanelOrderSubmissionResult::ok($cpId, $localReplay);
         if (!empty($result['message'])) {
@@ -751,6 +839,48 @@ final class MtUniCreditControlPanelOrderLifecycleService
         }
 
         return $this->phase9Log;
+    }
+
+    /**
+     * @return MtUniCreditDiagnosticJournal|null
+     */
+    private function resolveDiagnosticJournal()
+    {
+        if ($this->diagnosticJournal instanceof MtUniCreditDiagnosticJournal) {
+            return $this->diagnosticJournal;
+        }
+        try {
+            $this->diagnosticJournal = MtUniCreditDiagnosticJournal::fromDatabase($this->attempts->database());
+        } catch (Exception $exception) {
+            $this->diagnosticJournal = null;
+        }
+
+        return $this->diagnosticJournal;
+    }
+
+    /**
+     * @param int $storeId
+     * @param int $orderId
+     * @param string $entryPoint
+     * @param string $eventCode
+     * @param int|null $httpStatus
+     * @param array<string, mixed> $extra
+     * @return void
+     */
+    private function recordCpCreateDiagnostic($storeId, $orderId, $entryPoint, $eventCode, $httpStatus, array $extra)
+    {
+        $journal = $this->resolveDiagnosticJournal();
+        if (!$journal instanceof MtUniCreditDiagnosticJournal || (int) $orderId <= 0) {
+            return;
+        }
+        $journal->record(
+            (int) $storeId,
+            (int) $orderId,
+            $entryPoint !== '' ? $entryPoint : MtUniCreditOperationEntryPoint::CHECKOUT,
+            $eventCode,
+            $httpStatus,
+            $extra
+        );
     }
 
     /**

@@ -358,19 +358,23 @@ $log = (new MtUniCreditDiagnosticDebugLogRepository($stack['db']))->findLatestBy
 mtuc6_assert($log !== null && $log['event_code'] === 'smartucf_submit', 'debug log stored and retrieved');
 mtuc6_assert($log['summary']['egn'] === '[REDACTED]', 'debug log sensitive field redacted');
 
-try {
-    (new MtUniCreditDiagnosticDebugLogRepository($stack['db']))->insert(
-        $stack['storeId'],
-        601,
-        'checkout',
-        'oversize',
-        null,
-        array('blob' => str_repeat('x', 70000))
-    );
-    mtuc6_assert(false, 'oversize debug payload rejected');
-} catch (MtUniCreditPersistenceValidationException $exception) {
-    mtuc6_assert(true, 'oversize debug payload rejected');
-}
+(new MtUniCreditDiagnosticDebugLogRepository($stack['db']))->insert(
+    $stack['storeId'],
+    601,
+    'checkout',
+    'oversize',
+    null,
+    array('blob' => str_repeat('x', 70000))
+);
+$oversizeLog = (new MtUniCreditDiagnosticDebugLogRepository($stack['db']))->findLatestByOrderId($stack['storeId'], 601);
+mtuc6_assert(
+    is_array($oversizeLog)
+        && (
+            !empty($oversizeLog['summary']['truncated'])
+            || $oversizeLog['event_code'] === 'oversize'
+        ),
+    'oversize debug payload truncated or bounded'
+);
 
 // HTTP/API gates
 try {

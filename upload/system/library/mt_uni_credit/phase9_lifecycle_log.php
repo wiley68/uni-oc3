@@ -2,6 +2,7 @@
 
 /**
  * Safe Phase 9 lifecycle markers for remote verification (no secrets / PII).
+ * Also persists into the shared diagnostic journal table used by CP/admin.
  */
 final class MtUniCreditPhase9LifecycleLog
 {
@@ -47,10 +48,20 @@ final class MtUniCreditPhase9LifecycleLog
         if (!$this->repo instanceof MtUniCreditDiagnosticDebugLogRepository) {
             return;
         }
+        $orderId = (int) $orderId;
+        if ($orderId <= 0) {
+            return;
+        }
         try {
+            if (!isset($summary['outcome'])) {
+                $summary['outcome'] = (string) $eventCode;
+            }
+            if (!isset($summary['message'])) {
+                $summary['message'] = 'Phase 9 lifecycle marker.';
+            }
             $this->repo->insert(
                 (int) $storeId,
-                (int) $orderId,
+                $orderId,
                 (string) $entryPoint,
                 (string) $eventCode,
                 null,

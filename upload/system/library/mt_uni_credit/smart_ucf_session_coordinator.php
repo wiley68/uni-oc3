@@ -51,6 +51,9 @@ final class MtUniCreditSmartUcfSessionCoordinator
     /** @var MtUniCreditPhase9LifecycleLog|null */
     private $phase9Log;
 
+    /** @var MtUniCreditDiagnosticJournal|null */
+    private $diagnosticJournal;
+
     /** @var int */
     private $logStoreId = 0;
 
@@ -115,6 +118,7 @@ final class MtUniCreditSmartUcfSessionCoordinator
             ? $controlPanel
             : null;
         $this->phase9Log = null;
+        $this->diagnosticJournal = null;
     }
 
     /**
@@ -126,12 +130,16 @@ final class MtUniCreditSmartUcfSessionCoordinator
      * @param string $entryPoint
      * @param int $attemptId
      * @param int $cpOrderId
+     * @param MtUniCreditDiagnosticJournal|null $journal
      * @return void
      */
-    public function setLifecycleLog($log, $storeId, $orderId, $entryPoint, $attemptId, $cpOrderId)
+    public function setLifecycleLog($log, $storeId, $orderId, $entryPoint, $attemptId, $cpOrderId, $journal = null)
     {
         if ($log instanceof MtUniCreditPhase9LifecycleLog) {
             $this->phase9Log = $log;
+        }
+        if ($journal instanceof MtUniCreditDiagnosticJournal) {
+            $this->diagnosticJournal = $journal;
         }
         $this->logStoreId = (int) $storeId;
         $this->logOrderId = (int) $orderId;
@@ -214,6 +222,11 @@ final class MtUniCreditSmartUcfSessionCoordinator
                     'kind' => 'failed',
                     'error_class' => $errorClass,
                 ));
+                $this->recordSupportEvent(
+                    MtUniCreditDiagnosticJournal::EVENT_CERTIFICATE_SYNC_FAILED,
+                    null,
+                    array('error_class' => $errorClass)
+                );
                 try {
                     $this->lifecycle->markFailed($attemptId, $errorClass, true);
                 } catch (Throwable $ignored) {
@@ -229,6 +242,11 @@ final class MtUniCreditSmartUcfSessionCoordinator
                     $this->lifecycle->markFailed($attemptId, self::ERROR_CERTIFICATE_INVALID, true);
                 } catch (Throwable $ignored) {
                 }
+                $this->recordSupportEvent(
+                    MtUniCreditDiagnosticJournal::EVENT_CERTIFICATE_SYNC_FAILED,
+                    null,
+                    array('error_class' => self::ERROR_CERTIFICATE_INVALID)
+                );
 
                 // Local cert failure: retryable failed — do NOT write bank_send_failed_smartucf.
                 return MtUniCreditSmartUcfCoordinationResult::failed(
@@ -302,15 +320,31 @@ final class MtUniCreditSmartUcfSessionCoordinator
                 );
             } catch (Throwable $ignored) {
             }
+            $this->recordSmartUcfSupport(
+                MtUniCreditDiagnosticJournal::EVENT_TRANSPORT_AMBIGUOUS,
+                isset($session['endpoint']) ? (string) $session['endpoint'] : '',
+                null,
+                null,
+                (int) (isset($session['http_code']) ? $session['http_code'] : 0),
+                'markCreated failed after SmartUCF response'
+            );
 
             return MtUniCreditSmartUcfCoordinationResult::outcomeUnknown(self::CUSTOMER_OUTCOME_UNKNOWN);
         }
 
-        $this->persistProcess1BankStatus($attemptId, $storeId, $localOrderId, $bankStatuses);
         $this->logEvent(MtUniCreditPhase9LifecycleLog::EVENT_SMARTUCF_RESULT, array(
             'kind' => 'created',
             'bank_status' => MtUniCreditBankStatus::SENT_PROCESS1,
         ));
+        $this->recordSmartUcfSupport(
+            MtUniCreditDiagnosticJournal::EVENT_SUCCESS,
+            isset($session['endpoint']) ? (string) $session['endpoint'] : '',
+            null,
+            null,
+            (int) (isset($session['http_code']) ? $session['http_code'] : 0),
+            null
+        );
+        $this->persistProcess1BankStatus($attemptId, $storeId, $localOrderId, $bankStatuses);
 
         return MtUniCreditSmartUcfCoordinationResult::created(
             (string) $session['redirect_url'],
@@ -342,6 +376,61 @@ final class MtUniCreditSmartUcfSessionCoordinator
                 ),
                 $summary
             )
+        );
+    }
+
+    /**
+     * @param string $eventCode
+     * @param int|null $httpStatus
+     * @param array<string, mixed> $extra
+     * @return void
+     */
+    private function recordSupportEvent($eventCode, $httpStatus, array $extra = array())
+    {
+        if (!$this->diagnosticJournal instanceof MtUniCreditDiagnosticJournal || $this->logOrderId <= 0) {
+            return;
+        }
+        $this->diagnosticJournal->record(
+            $this->logStoreId,
+            $this->logOrderId,
+            $this->logEntryPoint !== '' ? $this->logEntryPoint : MtUniCreditOperationEntryPoint::CHECKOUT,
+            $eventCode,
+            $httpStatus,
+            array_merge(
+                array(
+                    'order_id' => $this->logOrderId,
+                    'attempt_id' => $this->logAttemptId,
+                    'control_panel_order_id' => $this->logCpOrderId,
+                ),
+                $extra
+            )
+        );
+    }
+
+    /**
+     * @param string $eventCode
+     * @param string $endpoint
+     * @param mixed $request
+     * @param mixed $response
+     * @param int $httpStatus
+     * @param string|null $transportError
+     * @return void
+     */
+    private function recordSmartUcfSupport($eventCode, $endpoint, $request, $response, $httpStatus, $transportError)
+    {
+        if (!$this->diagnosticJournal instanceof MtUniCreditDiagnosticJournal || $this->logOrderId <= 0) {
+            return;
+        }
+        $this->diagnosticJournal->recordSmartUcfSession(
+            $this->logStoreId,
+            $this->logOrderId,
+            $this->logEntryPoint !== '' ? $this->logEntryPoint : MtUniCreditOperationEntryPoint::CHECKOUT,
+            $endpoint,
+            $request,
+            $response,
+            $httpStatus,
+            $transportError,
+            $eventCode
         );
     }
 
@@ -391,6 +480,37 @@ final class MtUniCreditSmartUcfSessionCoordinator
     private function handleFailure($attemptId, $storeId, $localOrderId, $exception, $bankStatuses)
     {
         $classification = $this->classifier->classifyThrowable($exception);
+        $supportEvent = $classification->targetState() === MtUniCreditSmartUcfLifecycleStates::OUTCOME_UNKNOWN
+            ? MtUniCreditDiagnosticJournal::EVENT_TRANSPORT_AMBIGUOUS
+            : MtUniCreditDiagnosticJournal::EVENT_REMOTE_REJECT;
+
+        $transportError = null;
+        $httpCode = $classification->httpCode();
+        if ($exception instanceof MtUniCreditSmartUcfSessionException) {
+            $httpCode = $exception->httpCode() > 0 ? $exception->httpCode() : $httpCode;
+            if (
+                $classification->targetState() === MtUniCreditSmartUcfLifecycleStates::OUTCOME_UNKNOWN
+                || $exception->failureKind() === MtUniCreditSmartUcfSessionException::KIND_TRANSPORT
+            ) {
+                $transportError = $exception->getMessage();
+            }
+        }
+
+        $this->logEvent(MtUniCreditPhase9LifecycleLog::EVENT_SMARTUCF_RESULT, array(
+            'kind' => $classification->targetState() === MtUniCreditSmartUcfLifecycleStates::OUTCOME_UNKNOWN
+                ? 'outcome_unknown'
+                : 'failed',
+            'error_class' => $classification->errorClass(),
+        ));
+        $this->recordSmartUcfSupport(
+            $supportEvent,
+            '',
+            null,
+            null,
+            $httpCode,
+            $transportError
+        );
+
         if ($classification->targetState() === MtUniCreditSmartUcfLifecycleStates::OUTCOME_UNKNOWN) {
             try {
                 $this->lifecycle->markOutcomeUnknown(
@@ -423,13 +543,6 @@ final class MtUniCreditSmartUcfSessionCoordinator
             );
         }
 
-        $this->logEvent(MtUniCreditPhase9LifecycleLog::EVENT_SMARTUCF_RESULT, array(
-            'kind' => $classification->targetState() === MtUniCreditSmartUcfLifecycleStates::OUTCOME_UNKNOWN
-                ? 'outcome_unknown'
-                : 'failed',
-            'error_class' => $classification->errorClass(),
-        ));
-
         return MtUniCreditSmartUcfCoordinationResult::failed(
             self::CUSTOMER_FAILED,
             $classification->isRetryable(),
@@ -453,11 +566,7 @@ final class MtUniCreditSmartUcfSessionCoordinator
         $status = MtUniCreditBankStatus::process1Sent();
         $cpSynced = $this->persistBankStatusPair($attemptId, $storeId, $localOrderId, $status, $bankStatuses);
         if (!$cpSynced) {
-            $this->logEvent(MtUniCreditPhase9LifecycleLog::EVENT_SMARTUCF_RESULT, array(
-                'kind' => 'cp_bank_status_sync_pending',
-                'error_class' => self::ERROR_CP_BANK_STATUS_SYNC_PENDING,
-                'bank_status' => $status['status_id'],
-            ));
+            // Support journal already recorded cp_status_patch_failed inside persistBankStatusPair.
             error_log(
                 'mt_uni_credit: ' . self::ERROR_CP_BANK_STATUS_SYNC_PENDING
                     . ' attempt_id=' . (int) $attemptId
@@ -513,6 +622,11 @@ final class MtUniCreditSmartUcfSessionCoordinator
                 'kind' => 'cp_status_sync_success',
                 'bank_status' => $status['status_id'],
             ));
+            $this->recordSupportEvent(
+                MtUniCreditDiagnosticJournal::EVENT_CP_STATUS_PATCH_SUCCESS,
+                null,
+                array('bank_status' => $status['status_id'])
+            );
 
             return true;
         } catch (Throwable $exception) {
@@ -521,6 +635,15 @@ final class MtUniCreditSmartUcfSessionCoordinator
                 'bank_status' => $status['status_id'],
                 'error_class' => get_class($exception),
             ));
+            $patchHttp = ($exception instanceof MtUniCreditCpHttpException) ? $exception->getStatusCode() : null;
+            $this->recordSupportEvent(
+                MtUniCreditDiagnosticJournal::EVENT_CP_STATUS_PATCH_FAILED,
+                $patchHttp,
+                array(
+                    'bank_status' => $status['status_id'],
+                    'error_class' => get_class($exception),
+                )
+            );
             error_log(
                 'mt_uni_credit: Control Panel bank status PATCH failed: '
                     . get_class($exception)

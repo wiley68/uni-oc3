@@ -181,6 +181,10 @@ final class Phase2MemoryDb
             return $this->deleteShopCache($sql);
         }
 
+        if (stripos($sql, 'DELETE FROM') === 0 && strpos($sql, 'diagnostic_debug_log') !== false) {
+            return $this->deleteDiagnosticLogs($sql);
+        }
+
         if (stripos($sql, 'DELETE FROM') === 0 && strpos($sql, 'setting') !== false) {
             return $this->deleteSetting($sql);
         }
@@ -934,7 +938,39 @@ final class Phase2MemoryDb
      */
     private function selectDiagnosticLog($sql)
     {
+        if (stripos($sql, 'COUNT(*)') !== false) {
+            $storeId = (int) $this->extractWhereInt($sql, 'store_id');
+            $total = 0;
+            foreach ($this->diagnosticLogs as $row) {
+                if ((int) $row['store_id'] === $storeId) {
+                    $total++;
+                }
+            }
+
+            return $this->singleRow(array('total' => $total));
+        }
+
         $storeId = (int) $this->extractWhereInt($sql, 'store_id');
+        $hasOrder = (bool) preg_match('/`order_id`\s*=/i', $sql);
+
+        if (!$hasOrder) {
+            $rows = array();
+            foreach ($this->diagnosticLogs as $row) {
+                if ((int) $row['store_id'] === $storeId) {
+                    $rows[] = $row;
+                }
+            }
+            usort($rows, function ($a, $b) {
+                return (int) $a['diagnostic_debug_log_id'] - (int) $b['diagnostic_debug_log_id'];
+            });
+
+            return (object) array(
+                'num_rows' => count($rows),
+                'row' => $rows ? $rows[0] : array(),
+                'rows' => $rows,
+            );
+        }
+
         $orderId = (int) $this->extractWhereInt($sql, 'order_id');
         $latest = null;
         foreach ($this->diagnosticLogs as $row) {
@@ -951,6 +987,18 @@ final class Phase2MemoryDb
         }
 
         return $this->singleRow($latest);
+    }
+
+    /**
+     * @param string $sql
+     * @return object
+     */
+    private function deleteDiagnosticLogs($sql)
+    {
+        // Retention prune or scoped deletes — treat as no-op success for offline tests.
+        $this->affected = 0;
+
+        return $this->emptyResult();
     }
 
     /**

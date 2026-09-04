@@ -37,6 +37,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'order_ownership_resolver.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'order_bank_status_repository.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'diagnostic_payload_redactor.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'diagnostic_debug_log_repository.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'diagnostic_journal.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'inbound_api_runner.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'financing_attempt_state.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'control_panel_error_class.php';

@@ -393,19 +393,30 @@ class ModelExtensionModuleMtUniCredit extends Model
     }
 
     /**
-     * Phase 1 placeholder export for journal download parity.
+     * Operations journal export for the current store (same table as CP smartucf_debug_log).
      *
      * @param int $storeId
      * @return array<string, mixed>
      */
     public function buildPhase1JournalExport($storeId = 0)
     {
-        return array(
-            'module' => MtUniCreditConstants::EXTENSION_CODE,
-            'version' => MtUniCreditConstants::VERSION,
-            'store_id' => (int) $storeId,
-            'generated_at' => gmdate('c'),
-            'entries' => array(),
-        );
+        $storeId = (int) $storeId;
+        try {
+            $db = MtUniCreditBootstrap::dbFromRegistry($this->db);
+            $journal = MtUniCreditDiagnosticJournal::fromDatabase($db);
+
+            return $journal->buildExport($storeId);
+        } catch (Exception $exception) {
+            return array(
+                'module' => MtUniCreditConstants::EXTENSION_CODE,
+                'module_version' => MtUniCreditConstants::VERSION,
+                'exported_at_gmt' => gmdate('c'),
+                'store_id' => $storeId,
+                'debug_enabled' => false,
+                'total_entries' => 0,
+                'entries' => array(),
+                'export_error' => 'journal_unavailable',
+            );
+        }
     }
 }
