@@ -972,21 +972,36 @@ final class Phase2MemoryDb
         }
 
         $orderId = (int) $this->extractWhereInt($sql, 'order_id');
-        $latest = null;
+        $matched = array();
         foreach ($this->diagnosticLogs as $row) {
             if ((int) $row['store_id'] !== $storeId || (int) $row['order_id'] !== $orderId) {
                 continue;
             }
-            if ($latest === null || (int) $row['diagnostic_debug_log_id'] > (int) $latest['diagnostic_debug_log_id']) {
-                $latest = $row;
-            }
+            $matched[] = $row;
         }
 
-        if ($latest === null) {
+        if ($matched === array()) {
             return $this->emptyResult();
         }
 
-        return $this->singleRow($latest);
+        $desc = (bool) preg_match('/ORDER BY\s+`?diagnostic_debug_log_id`?\s+DESC/i', $sql);
+        usort($matched, function ($a, $b) use ($desc) {
+            $delta = (int) $a['diagnostic_debug_log_id'] - (int) $b['diagnostic_debug_log_id'];
+
+            return $desc ? -$delta : $delta;
+        });
+
+        $limit = 1;
+        if (preg_match('/LIMIT\s+(\d+)/i', $sql, $limitMatch)) {
+            $limit = max(1, (int) $limitMatch[1]);
+        }
+        $matched = array_slice($matched, 0, $limit);
+
+        return (object) array(
+            'num_rows' => count($matched),
+            'row' => $matched[0],
+            'rows' => $matched,
+        );
     }
 
     /**

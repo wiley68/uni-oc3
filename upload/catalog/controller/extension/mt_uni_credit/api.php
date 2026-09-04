@@ -124,7 +124,7 @@ class ControllerExtensionMtUniCreditApi extends Controller
                 );
             }
 
-            $log = (new MtUniCreditDiagnosticDebugLogRepository($db))->findLatestByOrderId($storeId, $orderId);
+            $log = (new MtUniCreditDiagnosticDebugLogRepository($db))->findLatestSmartUcfSessionByOrderId($storeId, $orderId);
             if ($log === null) {
                 throw new MtUniCreditInboundApiException(
                     'Не е намерена диагностична информация за тази поръчка.',

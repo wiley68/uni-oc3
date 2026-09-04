@@ -176,7 +176,7 @@ function mtuc115a_invoke($endpoint, array $payload, array $stack, array $headerO
                     'order_not_found'
                 );
             }
-            $log = (new MtUniCreditDiagnosticDebugLogRepository($db))->findLatestByOrderId($storeId, $orderId);
+            $log = (new MtUniCreditDiagnosticDebugLogRepository($db))->findLatestSmartUcfSessionByOrderId($storeId, $orderId);
             if ($log === null) {
                 throw new MtUniCreditInboundApiException(
                     'Не е намерена диагностична информация за тази поръчка.',
@@ -465,6 +465,8 @@ $stackDbg['memoryDb']->seedOrder(701, $stackDbg['storeId'], MtUniCreditConstants
     'smartucf_submit',
     200,
     array(
+        'type' => MtUniCreditDiagnosticJournal::TYPE_SMARTUCF_SESSION,
+        'operation' => MtUniCreditDiagnosticJournal::OPERATION_SESSION_START,
         'egn' => '1234567890',
         'phone2' => '0888123456',
         'password' => 'secret-value',
@@ -472,6 +474,8 @@ $stackDbg['memoryDb']->seedOrder(701, $stackDbg['storeId'], MtUniCreditConstants
         'Authorization' => 'Bearer abc.def',
         'outcome' => 'ok',
         'http_class' => '2xx',
+        'request' => array('orderNo' => '701', 'onlineProductCode' => 'KOP1'),
+        'response' => array('errorCode' => 0, 'errorText' => 'ok'),
     )
 );
 
@@ -513,22 +517,27 @@ mtuc115a_assert(
     'debug: unknown order → opaque 404'
 );
 
-// Bound: latest only
+// Bound: SmartUCF session preferred over later generic lifecycle rows (11.5A.4)
 (new MtUniCreditDiagnosticDebugLogRepository($stackDbg['db']))->insert(
     $stackDbg['storeId'],
     701,
     'checkout',
-    'smartucf_retry',
-    502,
-    array('outcome' => 'retry')
+    'cp_status_patch_success',
+    200,
+    array('outcome' => 'patched', 'message' => 'generic shadow')
 );
 $dbgLatest = mtuc115a_invoke('smartucf_debug_log', array(
     'unicid' => $stackDbg['unicid'],
     'order_id' => '701',
 ), $stackDbg, array('X-UniPayment-Nonce' => mtuc115a_nonce()));
 mtuc115a_assert(
-    $dbgLatest['payload']['data']['log']['event_code'] === 'smartucf_retry',
-    'debug: bounded response returns latest row only'
+    $dbgLatest['payload']['data']['log']['event_code'] === 'smartucf_submit',
+    'debug: SmartUCF session preferred over later generic row'
+);
+mtuc115a_assert(
+    isset($dbgLatest['payload']['data']['log']['request']['orderNo'])
+        && $dbgLatest['payload']['data']['log']['request']['orderNo'] === '701',
+    'debug: SmartUCF request body returned to CP'
 );
 
 // Cross-store
@@ -540,9 +549,15 @@ $dbgShared->seedOrder(801, $dbgA['storeId'], MtUniCreditConstants::EXTENSION_COD
     $dbgA['storeId'],
     801,
     'checkout',
-    'only_a',
+    'success',
     200,
-    array('outcome' => 'a')
+    array(
+        'type' => MtUniCreditDiagnosticJournal::TYPE_SMARTUCF_SESSION,
+        'operation' => MtUniCreditDiagnosticJournal::OPERATION_SESSION_START,
+        'outcome' => 'a',
+        'request' => array('orderNo' => '801'),
+        'response' => array('status' => 'ok'),
+    )
 );
 $cross = mtuc115a_invoke('smartucf_debug_log', array(
     'unicid' => $dbgB['unicid'],

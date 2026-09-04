@@ -1,15 +1,18 @@
 <?php
 
 /**
- * Support diagnostic journal writer (OC4 SmartUcfDiagnosticJournal parity).
+ * Support diagnostic journal writer (OC4 SmartUcfDiagnosticJournal + Woo Mtuc_Debug_Log parity).
  *
  * Compact operational rows are always written when order_id > 0.
- * Verbose request/response bodies are included only when module debug is enabled.
+ * SmartUCF session rows always include redacted request/response when captured at transport.
  * Journal write failures never alter financing outcomes.
  */
 final class MtUniCreditDiagnosticJournal
 {
     const OPERATION_SESSION_START = 'sucfOnlineSessionStart';
+
+    /** Woo Mtuc_Debug_Log::TYPE_SMARTUCF parity — used for CP record selection. */
+    const TYPE_SMARTUCF_SESSION = 'smartucf_session';
 
     const EVENT_SUCCESS = 'success';
 
@@ -142,7 +145,11 @@ final class MtUniCreditDiagnosticJournal
     }
 
     /**
-     * SmartUCF session capture. Compact outcome always; request/response only when debug on.
+     * SmartUCF session capture for CP 「Информация за заявка」.
+     *
+     * Always persists redacted request/response when provided (Woo stores them when
+     * journaling; OC3 already writes the session row without a debug gate so bodies
+     * must not be omitted or CP shows empty JSON).
      *
      * @param int $storeId
      * @param int $orderId
@@ -167,19 +174,19 @@ final class MtUniCreditDiagnosticJournal
         $eventCode
     ) {
         $summary = array(
+            'type' => self::TYPE_SMARTUCF_SESSION,
             'operation' => self::OPERATION_SESSION_START,
             'endpoint' => is_string($endpoint) ? $endpoint : '',
             'outcome' => (string) $eventCode,
             'message' => self::defaultMessage((string) $eventCode, $httpStatus),
+            'request' => MtUniCreditDiagnosticPayloadRedactor::redactMixed($request),
+            'response' => MtUniCreditDiagnosticPayloadRedactor::redactMixed($response),
         );
 
         if ($transportError !== null && $transportError !== '') {
-            $summary['transport_error'] = (string) $transportError;
-        }
-
-        if ($this->isDebugEnabled((int) $storeId)) {
-            $summary['request'] = $request;
-            $summary['response'] = $response;
+            $summary['transport_error'] = is_string($transportError)
+                ? MtUniCreditDiagnosticPayloadRedactor::redact($transportError)
+                : (string) $transportError;
         }
 
         return $this->record(

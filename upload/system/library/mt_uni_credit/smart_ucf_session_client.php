@@ -122,9 +122,12 @@ final class MtUniCreditSmartUcfSessionClient
             throw new MtUniCreditSmartUcfSessionException(
                 $error !== '' ? 'SmartUCF connection failed: ' . $error : 'SmartUCF returned an empty response.',
                 false,
-                $raw !== '' ? $raw : $error,
+                $raw !== '' ? $raw : '',
                 $httpCode,
-                MtUniCreditSmartUcfSessionException::KIND_TRANSPORT
+                MtUniCreditSmartUcfSessionException::KIND_TRANSPORT,
+                null,
+                $json,
+                $url
             );
         }
 
@@ -135,7 +138,10 @@ final class MtUniCreditSmartUcfSessionClient
                 false,
                 $raw,
                 $httpCode,
-                MtUniCreditSmartUcfSessionException::KIND_TRANSPORT
+                MtUniCreditSmartUcfSessionException::KIND_TRANSPORT,
+                null,
+                $json,
+                $url
             );
         }
         $sessionId = trim((string) (isset($decoded->sucfOnlineSessionID) ? $decoded->sucfOnlineSessionID : ''));
@@ -145,7 +151,10 @@ final class MtUniCreditSmartUcfSessionClient
                 false,
                 $raw,
                 $httpCode,
-                $this->detectFailureKind($raw, $httpCode)
+                $this->detectFailureKind($raw, $httpCode),
+                null,
+                $json,
+                $url
             );
         }
 
@@ -158,7 +167,9 @@ final class MtUniCreditSmartUcfSessionClient
                 $raw,
                 $httpCode,
                 MtUniCreditSmartUcfSessionException::KIND_TRANSPORT,
-                $exception
+                $exception,
+                $json,
+                $url
             );
         }
 
@@ -169,6 +180,33 @@ final class MtUniCreditSmartUcfSessionClient
             'raw_request' => $json,
             'raw_response' => $raw,
             'endpoint' => $url,
+        );
+    }
+
+    /**
+     * Extract diagnostic request/response bodies from a successful createSession result.
+     *
+     * Kept on the client so coordinators never reference raw payload keys by name.
+     *
+     * @param array<string, mixed> $session
+     * @return array{request: string|array|null, response: string|array|null, endpoint: string, http_code: int}
+     */
+    public static function diagnosticBodiesFromSessionResult(array $session)
+    {
+        $request = null;
+        $response = null;
+        if (isset($session['raw_request']) && is_string($session['raw_request']) && $session['raw_request'] !== '') {
+            $request = $session['raw_request'];
+        }
+        if (isset($session['raw_response']) && is_string($session['raw_response']) && $session['raw_response'] !== '') {
+            $response = $session['raw_response'];
+        }
+
+        return array(
+            'request' => $request,
+            'response' => $response,
+            'endpoint' => isset($session['endpoint']) ? (string) $session['endpoint'] : '',
+            'http_code' => isset($session['http_code']) ? (int) $session['http_code'] : 0,
         );
     }
 

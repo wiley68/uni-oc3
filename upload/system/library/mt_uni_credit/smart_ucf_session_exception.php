@@ -22,6 +22,12 @@ final class MtUniCreditSmartUcfSessionException extends RuntimeException
     /** @var string */
     private $failureKind;
 
+    /** @var string Actual JSON body sent to SmartUCF when HTTP was attempted; empty when pre-send. */
+    private $requestBody;
+
+    /** @var string Trusted session-start endpoint URL when known. */
+    private $endpoint;
+
     /**
      * @param string $message
      * @param bool $retryable
@@ -29,6 +35,8 @@ final class MtUniCreditSmartUcfSessionException extends RuntimeException
      * @param int $httpCode
      * @param string $failureKind
      * @param Throwable|null $previous
+     * @param string $requestBody
+     * @param string $endpoint
      */
     public function __construct(
         $message,
@@ -36,13 +44,17 @@ final class MtUniCreditSmartUcfSessionException extends RuntimeException
         $rawResponse = '',
         $httpCode = 0,
         $failureKind = self::KIND_REMOTE,
-        $previous = null
+        $previous = null,
+        $requestBody = '',
+        $endpoint = ''
     ) {
         parent::__construct($message, 0, $previous);
         $this->retryable = (bool) $retryable;
         $this->rawResponse = (string) $rawResponse;
         $this->httpCode = (int) $httpCode;
         $this->failureKind = (string) $failureKind;
+        $this->requestBody = (string) $requestBody;
+        $this->endpoint = (string) $endpoint;
     }
 
     /**
@@ -75,5 +87,21 @@ final class MtUniCreditSmartUcfSessionException extends RuntimeException
     public function failureKind()
     {
         return $this->failureKind;
+    }
+
+    /**
+     * @return string
+     */
+    public function requestBody()
+    {
+        return $this->requestBody;
+    }
+
+    /**
+     * @return string
+     */
+    public function endpoint()
+    {
+        return $this->endpoint;
     }
 }

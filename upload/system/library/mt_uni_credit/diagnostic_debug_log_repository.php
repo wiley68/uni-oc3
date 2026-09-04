@@ -122,6 +122,70 @@ final class MtUniCreditDiagnosticDebugLogRepository
     }
 
     /**
+     * CP 「Информация за заявка」 — Woo get_entry_for_wc_order_id(log_type=smartucf_session) parity.
+     *
+     * Prefer the latest SmartUCF session diagnostic; ignore later generic lifecycle rows
+     * (cp_status_patch_success, process2_*, etc.).
+     *
+     * @param int $storeId
+     * @param int $orderId
+     * @return array<string, mixed>|null
+     */
+    public function findLatestSmartUcfSessionByOrderId($storeId, $orderId)
+    {
+        MtUniCreditStoreScope::requireStoreId($storeId);
+        $orderId = (int) $orderId;
+        if ($orderId <= 0) {
+            return null;
+        }
+
+        $table = $this->tableName();
+        $result = $this->db->query(
+            "SELECT `diagnostic_debug_log_id`, `summary_json`, `entry_point`, `event_code`, `http_status`, `created_at`"
+                . " FROM `{$table}`"
+                . " WHERE `store_id` = " . (int) $storeId
+                . " AND `order_id` = " . (int) $orderId
+                . " ORDER BY `diagnostic_debug_log_id` DESC"
+                . " LIMIT 50"
+        );
+
+        if (!is_object($result) || empty($result->rows) || !is_array($result->rows)) {
+            return null;
+        }
+
+        foreach ($result->rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $summary = $this->decodeSummary(isset($row['summary_json']) ? (string) $row['summary_json'] : '');
+            if (!$this->isSmartUcfSessionSummary($summary)) {
+                continue;
+            }
+
+            return $this->formatCpPayload($orderId, $row);
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<string, mixed> $summary
+     * @return bool
+     */
+    private function isSmartUcfSessionSummary(array $summary)
+    {
+        if (
+            isset($summary['type'])
+            && (string) $summary['type'] === MtUniCreditDiagnosticJournal::TYPE_SMARTUCF_SESSION
+        ) {
+            return true;
+        }
+
+        return isset($summary['operation'])
+            && (string) $summary['operation'] === MtUniCreditDiagnosticJournal::OPERATION_SESSION_START;
+    }
+
+    /**
      * @param int $storeId
      * @return array<int, array<string, mixed>>
      */
@@ -223,15 +287,23 @@ final class MtUniCreditDiagnosticDebugLogRepository
             'order_id' => (int) $orderId,
             'entry_point' => isset($row['entry_point']) ? (string) $row['entry_point'] : '',
             'event_code' => $eventCode,
+            'type' => isset($summary['type'])
+                ? (string) $summary['type']
+                : (
+                    isset($summary['operation'])
+                    && (string) $summary['operation'] === MtUniCreditDiagnosticJournal::OPERATION_SESSION_START
+                    ? MtUniCreditDiagnosticJournal::TYPE_SMARTUCF_SESSION
+                    : ''
+                ),
             'http_status' => $httpStatus > 0 ? $httpStatus : null,
             'http_code' => $httpStatus > 0 ? $httpStatus : null,
             'operation' => isset($summary['operation'])
                 ? (string) $summary['operation']
-                : MtUniCreditDiagnosticJournal::OPERATION_SESSION_START,
+                : '',
             'endpoint' => isset($summary['endpoint']) ? $summary['endpoint'] : null,
             'outcome' => isset($summary['outcome']) ? (string) $summary['outcome'] : $eventCode,
-            'request' => isset($summary['request']) ? $summary['request'] : null,
-            'response' => isset($summary['response']) ? $summary['response'] : null,
+            'request' => array_key_exists('request', $summary) ? $summary['request'] : null,
+            'response' => array_key_exists('response', $summary) ? $summary['response'] : null,
             'transport_error' => isset($summary['transport_error']) ? $summary['transport_error'] : null,
             'summary' => $summary,
             'created_at' => $createdAt,
@@ -257,14 +329,22 @@ final class MtUniCreditDiagnosticDebugLogRepository
             'order_id' => isset($row['order_id']) ? (int) $row['order_id'] : 0,
             'entry_point' => isset($row['entry_point']) ? (string) $row['entry_point'] : '',
             'event_code' => $eventCode,
+            'type' => isset($summary['type'])
+                ? (string) $summary['type']
+                : (
+                    isset($summary['operation'])
+                    && (string) $summary['operation'] === MtUniCreditDiagnosticJournal::OPERATION_SESSION_START
+                    ? MtUniCreditDiagnosticJournal::TYPE_SMARTUCF_SESSION
+                    : ''
+                ),
             'http_code' => $httpStatus,
             'operation' => isset($summary['operation'])
                 ? (string) $summary['operation']
-                : MtUniCreditDiagnosticJournal::OPERATION_SESSION_START,
+                : '',
             'endpoint' => isset($summary['endpoint']) ? $summary['endpoint'] : null,
             'outcome' => isset($summary['outcome']) ? (string) $summary['outcome'] : $eventCode,
-            'request' => isset($summary['request']) ? $summary['request'] : null,
-            'response' => isset($summary['response']) ? $summary['response'] : null,
+            'request' => array_key_exists('request', $summary) ? $summary['request'] : null,
+            'response' => array_key_exists('response', $summary) ? $summary['response'] : null,
             'transport_error' => isset($summary['transport_error']) ? $summary['transport_error'] : null,
             'message' => isset($summary['message']) ? (string) $summary['message'] : '',
             'created_at_gmt' => isset($row['created_at']) ? (string) $row['created_at'] : '',

@@ -304,6 +304,8 @@ final class MtUniCreditSmartUcfSessionCoordinator
             $lease->release();
         }
 
+        $bodies = MtUniCreditSmartUcfSessionClient::diagnosticBodiesFromSessionResult($session);
+
         try {
             $this->lifecycle->markCreated(
                 $attemptId,
@@ -322,10 +324,10 @@ final class MtUniCreditSmartUcfSessionCoordinator
             }
             $this->recordSmartUcfSupport(
                 MtUniCreditDiagnosticJournal::EVENT_TRANSPORT_AMBIGUOUS,
-                isset($session['endpoint']) ? (string) $session['endpoint'] : '',
-                null,
-                null,
-                (int) (isset($session['http_code']) ? $session['http_code'] : 0),
+                $bodies['endpoint'],
+                $bodies['request'],
+                $bodies['response'],
+                $bodies['http_code'],
                 'markCreated failed after SmartUCF response'
             );
 
@@ -338,10 +340,10 @@ final class MtUniCreditSmartUcfSessionCoordinator
         ));
         $this->recordSmartUcfSupport(
             MtUniCreditDiagnosticJournal::EVENT_SUCCESS,
-            isset($session['endpoint']) ? (string) $session['endpoint'] : '',
-            null,
-            null,
-            (int) (isset($session['http_code']) ? $session['http_code'] : 0),
+            $bodies['endpoint'],
+            $bodies['request'],
+            $bodies['response'],
+            $bodies['http_code'],
             null
         );
         $this->persistProcess1BankStatus($attemptId, $storeId, $localOrderId, $bankStatuses);
@@ -486,13 +488,28 @@ final class MtUniCreditSmartUcfSessionCoordinator
 
         $transportError = null;
         $httpCode = $classification->httpCode();
+        $requestBody = null;
+        $responseBody = null;
+        $endpoint = '';
         if ($exception instanceof MtUniCreditSmartUcfSessionException) {
             $httpCode = $exception->httpCode() > 0 ? $exception->httpCode() : $httpCode;
+            $endpoint = $exception->endpoint();
+            $sentRequest = $exception->requestBody();
+            if ($sentRequest !== '') {
+                $requestBody = $sentRequest;
+            }
+            $rawResponse = $exception->rawResponse();
             if (
                 $classification->targetState() === MtUniCreditSmartUcfLifecycleStates::OUTCOME_UNKNOWN
                 || $exception->failureKind() === MtUniCreditSmartUcfSessionException::KIND_TRANSPORT
             ) {
                 $transportError = $exception->getMessage();
+                // Timeout / ambiguous transport: keep response null when body is empty (shared CP contract).
+                if ($rawResponse !== '') {
+                    $responseBody = $rawResponse;
+                }
+            } elseif ($rawResponse !== '') {
+                $responseBody = $rawResponse;
             }
         }
 
@@ -504,9 +521,9 @@ final class MtUniCreditSmartUcfSessionCoordinator
         ));
         $this->recordSmartUcfSupport(
             $supportEvent,
-            '',
-            null,
-            null,
+            $endpoint,
+            $requestBody,
+            $responseBody,
             $httpCode,
             $transportError
         );
