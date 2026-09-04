@@ -221,6 +221,7 @@ class ControllerExtensionMtUniCreditCart extends Controller
             'scheme_key' => (string) $this->posted('scheme_key', ''),
             'cart_context' => $cart,
             'cart_fingerprint' => $fingerprint,
+            'application_token' => (string) $this->posted('application_token', ''),
             'products' => $this->cartOrderProductRows(),
             'customer' => $this->customerPayload(),
             'session' => $this->session->data,
@@ -397,6 +398,7 @@ class ControllerExtensionMtUniCreditCart extends Controller
         $this->load->language('extension/mt_uni_credit/cart');
         $assets = MtUniCreditStorefrontRuntime::assetUrls($this);
         $csrf = MtUniCreditStorefrontCsrf::issue($this->session->data);
+        $applicationToken = MtUniCreditStorefrontApplicationToken::issue($this->session->data);
 
         $prefill = $this->prefillCustomer();
         $modalMeta = MtUniCreditStorefrontModalPresenter::present($shop, $currency, $prefill);
@@ -440,6 +442,7 @@ class ControllerExtensionMtUniCreditCart extends Controller
         $data['button_action'] = '';
         $data['top_spacing'] = 0;
         $data['csrf'] = $csrf;
+        $data['application_token'] = $applicationToken;
         $data['asset_css'] = $assets['css'];
         $data['asset_js'] = $assets['js'];
         $data['asset_fonts'] = $assets['fonts'];

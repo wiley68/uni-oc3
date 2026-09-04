@@ -193,7 +193,19 @@ final class MtUniCreditStorefrontFinancingSubmissionService
             ? (string) $input['lock_owner_token']
             : MtUniCreditLockOwnerTokenGenerator::generate();
 
+        $sessionData = isset($input['session']) && is_array($input['session']) ? $input['session'] : array();
+        $applicationToken = isset($input['application_token']) ? (string) $input['application_token'] : '';
+        if (!MtUniCreditStorefrontApplicationToken::accepts($sessionData, $applicationToken)) {
+            return $this->fail('validation', true);
+        }
+        // Product/cart selection identity stays stable; application token scopes ONE submit lifecycle.
+        $selectionIdentityHash = $operationKeyHash;
+        $operationKeyHash = MtUniCreditStorefrontApplicationToken::bindKey($selectionIdentityHash, $applicationToken);
+        $correlationId = substr(hash('sha256', $operationKeyHash . '|' . $lockOwnerToken), 0, 12);
+
         if (!$this->locks->acquire($storeId, $entryPoint, $operationKeyHash, $lockOwnerToken)) {
+            $this->logDecision($correlationId, $entryPoint, $operationKeyHash, 0, 0, '', 'reject_locked', 'lock_busy');
+
             return array(
                 'success' => false,
                 'error' => 'duplicate_request',
@@ -203,7 +215,6 @@ final class MtUniCreditStorefrontFinancingSubmissionService
         }
 
         try {
-            $sessionData = isset($input['session']) && is_array($input['session']) ? $input['session'] : array();
             $orderId = $this->resolveBoundOrderId($sessionData, $operationKeyHash);
             $addOrder = isset($input['add_order']) && is_callable($input['add_order'])
                 ? $input['add_order']
@@ -212,6 +223,8 @@ final class MtUniCreditStorefrontFinancingSubmissionService
                 ? $input['load_order']
                 : null;
 
+            $decision = 'fresh';
+            $reuseReason = '';
             $order = null;
             if ($orderId > 0) {
                 if ($loadOrder === null) {
@@ -224,9 +237,41 @@ final class MtUniCreditStorefrontFinancingSubmissionService
                         $this->unbindOrderId($sessionData, $operationKeyHash);
                         $orderId = 0;
                         $order = null;
+                        $reuseReason = 'stale_missing_order';
+                    } else {
+                        $existingAttempt = $this->attempts->findByStoreOrder($storeId, $orderId);
+                        if (
+                            $existingAttempt !== null
+                            && !hash_equals(
+                                (string) $existingAttempt['operation_key_hash'],
+                                (string) $operationKeyHash
+                            )
+                        ) {
+                            // Cross-operation guard: never resume unrelated attempt.
+                            $this->unbindOrderId($sessionData, $operationKeyHash);
+                            $this->logDecision(
+                                $correlationId,
+                                $entryPoint,
+                                $operationKeyHash,
+                                $orderId,
+                                (int) $existingAttempt['attempt_id'],
+                                (string) $existingAttempt['state'],
+                                'reject_stale',
+                                'attempt_operation_mismatch'
+                            );
+                            $orderId = 0;
+                            $order = null;
+                            $reuseReason = 'attempt_operation_mismatch';
+                        } else {
+                            $decision = 'replay';
+                            $reuseReason = 'session_bind_match';
+                        }
                     }
                 }
             }
+
+            // Ignore legacy product/cart-only binds from other applications.
+            $this->pruneLegacyBareBinds($sessionData, $selectionIdentityHash, $operationKeyHash);
 
             if ($orderId <= 0) {
                 if ($addOrder === null) {
@@ -265,6 +310,8 @@ final class MtUniCreditStorefrontFinancingSubmissionService
                     return $this->fail('order_missing', true);
                 }
                 $this->bindOrderId($sessionData, $operationKeyHash, $orderId);
+                $decision = 'fresh';
+                $reuseReason = $reuseReason !== '' ? $reuseReason : 'no_bind';
                 $order = null;
                 if ($loadOrder !== null) {
                     $loaded = call_user_func($loadOrder, $orderId);
@@ -286,14 +333,56 @@ final class MtUniCreditStorefrontFinancingSubmissionService
                 $calculation->scheme->kopCode . '|' . $calculation->scheme->months . '|' . $fingerprint
             );
 
-            $attempt = $this->attempts->findOrCreateAttempt(
-                $storeId,
-                $orderId,
-                $unicid,
+            try {
+                $attempt = $this->attempts->findOrCreateAttempt(
+                    $storeId,
+                    $orderId,
+                    $unicid,
+                    $operationKeyHash,
+                    $selectionHash,
+                    $fingerprint,
+                    $entryPoint
+                );
+            } catch (MtUniCreditPersistenceValidationException $exception) {
+                $this->logDecision(
+                    $correlationId,
+                    $entryPoint,
+                    $operationKeyHash,
+                    $orderId,
+                    0,
+                    '',
+                    'reject_stale',
+                    'find_or_create_identity_mismatch'
+                );
+
+                return $this->fail('conflict', true);
+            }
+
+            if (!hash_equals((string) $attempt['operation_key_hash'], (string) $operationKeyHash)) {
+                $this->logDecision(
+                    $correlationId,
+                    $entryPoint,
+                    $operationKeyHash,
+                    $orderId,
+                    (int) $attempt['attempt_id'],
+                    (string) $attempt['state'],
+                    'reject_stale',
+                    'attempt_hash_guard'
+                );
+
+                return $this->fail('conflict', true);
+            }
+
+            $this->logDecision(
+                $correlationId,
+                $entryPoint,
                 $operationKeyHash,
-                $selectionHash,
-                $fingerprint,
-                $entryPoint
+                $orderId,
+                (int) $attempt['attempt_id'],
+                (string) $attempt['state'],
+                $decision,
+                $reuseReason,
+                isset($attempt['control_panel_order_id']) ? (int) $attempt['control_panel_order_id'] : 0
             );
 
             if (MtUniCreditShopConfigurationFlags::isSecondaryProcess($shop)) {
@@ -428,10 +517,10 @@ final class MtUniCreditStorefrontFinancingSubmissionService
 
     /**
      * @param array<string, mixed> $sessionData
-     * @param string $operationKeyHash
+     * @param string $bindKey application-scoped bind key
      * @return int
      */
-    private function resolveBoundOrderId(array $sessionData, $operationKeyHash)
+    private function resolveBoundOrderId(array $sessionData, $bindKey)
     {
         if (
             !isset($sessionData[self::SESSION_ORDER_BIND_KEY])
@@ -440,17 +529,25 @@ final class MtUniCreditStorefrontFinancingSubmissionService
             return 0;
         }
         $bind = $sessionData[self::SESSION_ORDER_BIND_KEY];
+        if (!isset($bind[$bindKey])) {
+            return 0;
+        }
+        $value = $bind[$bindKey];
+        // Legacy bare int under product hash is ignored by callers via pruneLegacyBareBinds.
+        if (is_array($value) && isset($value['order_id'])) {
+            return (int) $value['order_id'];
+        }
 
-        return isset($bind[$operationKeyHash]) ? (int) $bind[$operationKeyHash] : 0;
+        return (int) $value;
     }
 
     /**
      * @param array<string, mixed> $sessionData
-     * @param string $operationKeyHash
+     * @param string $bindKey
      * @param int $orderId
      * @return void
      */
-    private function bindOrderId(array &$sessionData, $operationKeyHash, $orderId)
+    private function bindOrderId(array &$sessionData, $bindKey, $orderId)
     {
         if (
             !isset($sessionData[self::SESSION_ORDER_BIND_KEY])
@@ -458,17 +555,17 @@ final class MtUniCreditStorefrontFinancingSubmissionService
         ) {
             $sessionData[self::SESSION_ORDER_BIND_KEY] = array();
         }
-        $sessionData[self::SESSION_ORDER_BIND_KEY][$operationKeyHash] = (int) $orderId;
+        $sessionData[self::SESSION_ORDER_BIND_KEY][$bindKey] = (int) $orderId;
     }
 
     /**
-     * Remove only the binding for this operation hash — leave unrelated bindings intact.
+     * Remove only the binding for this bind key — leave unrelated session financing bindings.
      *
      * @param array<string, mixed> $sessionData
-     * @param string $operationKeyHash
+     * @param string $bindKey
      * @return void
      */
-    private function unbindOrderId(array &$sessionData, $operationKeyHash)
+    private function unbindOrderId(array &$sessionData, $bindKey)
     {
         if (
             !isset($sessionData[self::SESSION_ORDER_BIND_KEY])
@@ -476,7 +573,68 @@ final class MtUniCreditStorefrontFinancingSubmissionService
         ) {
             return;
         }
-        unset($sessionData[self::SESSION_ORDER_BIND_KEY][$operationKeyHash]);
+        unset($sessionData[self::SESSION_ORDER_BIND_KEY][$bindKey]);
+    }
+
+    /**
+     * Drop legacy product-hash→order_id binds that are not application-scoped.
+     *
+     * @param array<string, mixed> $sessionData
+     * @param string $operationKeyHash
+     * @param string $currentBindKey
+     * @return void
+     */
+    private function pruneLegacyBareBinds(array &$sessionData, $operationKeyHash, $currentBindKey)
+    {
+        if (
+            !isset($sessionData[self::SESSION_ORDER_BIND_KEY])
+            || !is_array($sessionData[self::SESSION_ORDER_BIND_KEY])
+        ) {
+            return;
+        }
+        if (
+            isset($sessionData[self::SESSION_ORDER_BIND_KEY][$operationKeyHash])
+            && (string) $operationKeyHash !== (string) $currentBindKey
+        ) {
+            unset($sessionData[self::SESSION_ORDER_BIND_KEY][$operationKeyHash]);
+        }
+    }
+
+    /**
+     * @param string $correlationId
+     * @param string $entryPoint
+     * @param string $operationKeyHash
+     * @param int $boundOrderId
+     * @param int $attemptId
+     * @param string $attemptState
+     * @param string $decision
+     * @param string $reuseReason
+     * @param int $cpOrderId
+     * @return void
+     */
+    private function logDecision(
+        $correlationId,
+        $entryPoint,
+        $operationKeyHash,
+        $boundOrderId,
+        $attemptId,
+        $attemptState,
+        $decision,
+        $reuseReason = '',
+        $cpOrderId = 0
+    ) {
+        error_log(
+            'mt_uni_credit: storefront_submit'
+                . ' correlation=' . $correlationId
+                . ' entry=' . $entryPoint
+                . ' op=' . substr((string) $operationKeyHash, 0, 12)
+                . ' order_id=' . (int) $boundOrderId
+                . ' attempt_id=' . (int) $attemptId
+                . ' attempt_state=' . (string) $attemptState
+                . ' cp_order_id=' . (int) $cpOrderId
+                . ' decision=' . (string) $decision
+                . ($reuseReason !== '' ? ' reuse_reason=' . $reuseReason : '')
+        );
     }
 
     /**

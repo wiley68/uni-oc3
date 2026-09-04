@@ -159,6 +159,8 @@ final class Phase9TestHarness
             array(),
             0
         );
+        $session = array();
+        $applicationToken = MtUniCreditStorefrontApplicationToken::issue($session);
 
         return array(
             'entry_point' => MtUniCreditOperationEntryPoint::PRODUCT,
@@ -166,6 +168,7 @@ final class Phase9TestHarness
             'currency_code' => 'BGN',
             'scheme_key' => 'standard|KOPSTD|12|0',
             'product_line' => $line,
+            'application_token' => $applicationToken,
             'customer' => array(
                 'firstname' => 'Example',
                 'lastname' => 'Customer',
@@ -181,7 +184,89 @@ final class Phase9TestHarness
                 'egn' => self::process2Fields()['egn'],
                 'phone2' => self::process2Fields()['phone2'],
             ),
-            'session' => array(),
+            'session' => $session,
+            'invoice_prefix' => 'INV',
+            'store_name' => 'Test',
+            'store_url' => 'https://example.test/',
+            'language_id' => 1,
+            'currency_id' => 1,
+            'currency_value' => 1.0,
+            'add_order' => function ($orderData) use ($stack, $orderId, $storeId) {
+                $stack['memoryDb']->seedOrder($orderId, $storeId, MtUniCreditConstants::EXTENSION_CODE);
+
+                return $orderId;
+            },
+            'load_order' => function ($loadedId) use ($storeId) {
+                return Phase7TestHarness::orderRow((int) $loadedId, $storeId);
+            },
+        );
+    }
+
+    /**
+     * Cart Step 2 equivalent input for MtUniCreditStorefrontFinancingSubmissionService.
+     *
+     * @param array<string, mixed> $stack
+     * @param int $orderId
+     * @param MtUniCreditCartContext|null $cart
+     * @return array<string, mixed>
+     */
+    public static function cartStorefrontInput(array $stack, $orderId, $cart = null)
+    {
+        $storeId = (int) $stack['storeId'];
+        $orderId = (int) $orderId;
+        if (!$cart instanceof MtUniCreditCartContext) {
+            $cart = new MtUniCreditCartContext(
+                array(
+                    new MtUniCreditCartLine(
+                        new MtUniCreditProductContext(42, array(7), 500.0),
+                        0,
+                        1,
+                        500.0
+                    ),
+                ),
+                500.0
+            );
+        }
+        $fingerprint = MtUniCreditStorefrontOperationIdentity::cartFingerprintFromContext($cart, 'BGN');
+        $session = array();
+        $applicationToken = MtUniCreditStorefrontApplicationToken::issue($session);
+
+        return array(
+            'entry_point' => MtUniCreditOperationEntryPoint::CART,
+            'store_id' => $storeId,
+            'currency_code' => 'BGN',
+            'scheme_key' => 'standard|KOPSTD|12|0',
+            'cart_context' => $cart,
+            'cart_fingerprint' => $fingerprint,
+            'application_token' => $applicationToken,
+            'products' => array(
+                array(
+                    'product_id' => 42,
+                    'name' => 'Example',
+                    'model' => 'EX',
+                    'quantity' => 1,
+                    'price' => 500.0,
+                    'total' => 500.0,
+                    'tax' => 0.0,
+                    'reward' => 0,
+                ),
+            ),
+            'customer' => array(
+                'firstname' => 'Example',
+                'lastname' => 'Customer',
+                'email' => 'example.customer@example.test',
+                'telephone' => '+359880000000',
+                'address_1' => 'ul. Example 1',
+                'city' => 'Sofia',
+                'postcode' => '1000',
+                'country' => 'Bulgaria',
+                'country_id' => 33,
+                'zone' => 'Sofia',
+                'zone_id' => 1,
+                'egn' => self::process2Fields()['egn'],
+                'phone2' => self::process2Fields()['phone2'],
+            ),
+            'session' => $session,
             'invoice_prefix' => 'INV',
             'store_name' => 'Test',
             'store_url' => 'https://example.test/',
@@ -385,6 +470,18 @@ final class Phase9TestHarness
     {
         $payloads = Phase7TestHarness::loginAndOrderSuccessPayloads();
         $transport->enqueueJson(200, $payloads['login']);
+        $transport->enqueueJson(201, $payloads['order']);
+    }
+
+    /**
+     * When a CP access token is already persisted, only the order create response is needed.
+     *
+     * @param Phase4FakeCpHttpTransport $transport
+     * @return void
+     */
+    public static function enqueueCpOrderCreateSuccess(Phase4FakeCpHttpTransport $transport): void
+    {
+        $payloads = Phase7TestHarness::loginAndOrderSuccessPayloads();
         $transport->enqueueJson(201, $payloads['order']);
     }
 

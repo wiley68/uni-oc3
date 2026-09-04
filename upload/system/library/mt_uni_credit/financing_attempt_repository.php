@@ -92,6 +92,12 @@ final class MtUniCreditFinancingAttemptRepository
 
         $existing = $this->findByStoreOrder($storeId, $orderId);
         if ($existing !== null) {
+            if (!hash_equals((string) $existing['operation_key_hash'], (string) $operationKeyHash)) {
+                throw new MtUniCreditPersistenceValidationException(
+                    'Financing attempt operation identity mismatch for store/order.'
+                );
+            }
+
             return $existing;
         }
 

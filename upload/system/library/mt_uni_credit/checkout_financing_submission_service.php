@@ -96,14 +96,30 @@ final class MtUniCreditCheckoutFinancingSubmissionService
         $selectionHash = hash('sha256', $calculation->scheme->kopCode . '|' . $calculation->scheme->months . '|' . $fingerprint);
         $operationKeyHash = hash('sha256', 'checkout|' . $storeId . '|' . $orderId);
 
-        $attempt = $this->attempts->findOrCreateCheckoutAttempt(
-            $storeId,
-            $orderId,
-            $unicid,
-            $operationKeyHash,
-            $selectionHash,
-            $fingerprint
-        );
+        try {
+            $attempt = $this->attempts->findOrCreateCheckoutAttempt(
+                $storeId,
+                $orderId,
+                $unicid,
+                $operationKeyHash,
+                $selectionHash,
+                $fingerprint
+            );
+        } catch (MtUniCreditPersistenceValidationException $exception) {
+            return array(
+                'success' => false,
+                'error' => 'conflict',
+                'message' => MtUniCreditControlPanelOrderLifecycleService::CUSTOMER_FAILURE_MESSAGE,
+            );
+        }
+
+        if (!hash_equals((string) $attempt['operation_key_hash'], (string) $operationKeyHash)) {
+            return array(
+                'success' => false,
+                'error' => 'conflict',
+                'message' => MtUniCreditControlPanelOrderLifecycleService::CUSTOMER_FAILURE_MESSAGE,
+            );
+        }
 
         if (MtUniCreditShopConfigurationFlags::isSecondaryProcess($shop)) {
             $posted = isset($input['process2']) && is_array($input['process2']) ? $input['process2'] : array();

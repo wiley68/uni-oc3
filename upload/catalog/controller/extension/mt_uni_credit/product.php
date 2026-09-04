@@ -235,6 +235,7 @@ class ControllerExtensionMtUniCreditProduct extends Controller
             'currency_code' => $currency,
             'scheme_key' => (string) $this->posted('scheme_key', ''),
             'product_line' => $line,
+            'application_token' => (string) $this->posted('application_token', ''),
             'customer' => $this->customerPayload(),
             'session' => $this->session->data,
             'invoice_prefix' => (string) $this->config->get('config_invoice_prefix'),
@@ -388,6 +389,7 @@ class ControllerExtensionMtUniCreditProduct extends Controller
         $this->load->language('extension/mt_uni_credit/product');
         $assets = MtUniCreditStorefrontRuntime::assetUrls($this);
         $csrf = MtUniCreditStorefrontCsrf::issue($this->session->data);
+        $applicationToken = MtUniCreditStorefrontApplicationToken::issue($this->session->data);
         $buttonAction = (string) $this->config->get(MtUniCreditConstants::MODULE_SETTING_PRODUCT_BUTTON_ACTION);
         if (
             $buttonAction !== MtUniCreditConstants::BUTTON_ACTION_BUY
@@ -447,6 +449,7 @@ class ControllerExtensionMtUniCreditProduct extends Controller
         $data['button_action'] = $buttonAction;
         $data['top_spacing'] = $topSpacing;
         $data['csrf'] = $csrf;
+        $data['application_token'] = $applicationToken;
         $data['asset_css'] = $assets['css'];
         $data['asset_js'] = $assets['js'];
         $data['asset_fonts'] = $assets['fonts'];

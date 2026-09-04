@@ -1018,6 +1018,7 @@
         var process = $form.attr("data-mtuc-process") || "1";
         var data = {
           csrf: $root.attr("data-csrf"),
+          application_token: $root.attr("data-application-token") || "",
           scheme_key: selectedSchemeKey,
           first_installment: $modal.find("[data-mtuc-first]").val() || "0",
         };
