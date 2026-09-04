@@ -72,6 +72,10 @@ final class MtUniCreditConstants
 
     const STOREFRONT_POPUP_CALC_BG_RELATIVE = 'catalog/view/theme/default/template/extension/mt_uni_credit/image/popup-calc-bg.png';
 
+    const HOMEPAGE_ADVERTISING_CSS_RELATIVE = 'catalog/view/theme/default/template/extension/mt_uni_credit/mt_uni_credit_homepage_advertising.css';
+
+    const HOMEPAGE_ADVERTISING_JS_RELATIVE = 'catalog/view/theme/default/template/extension/mt_uni_credit/mt_uni_credit_homepage_advertising.js';
+
     const MODULE_ADMIN_PERMISSION = 'extension/module/mt_uni_credit';
 
     const PAYMENT_ADMIN_PERMISSION = 'extension/payment/mt_uni_credit';

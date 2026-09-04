@@ -1009,3 +1009,37 @@ mail_admin: registered/enabled
 + 2 dedicated Process 2 leasing mails
 = 4
 ```
+
+---
+
+## Phase 11 — Results / admin / homepage (local PASS)
+
+Automated gate: `php tests/phase11_check.php`.
+
+### Admin Orders list + detail
+
+1. [ ] Events registered (install/save/self-heal): `admin/view/sale/order_list/before|after`, `admin/view/sale/order_info/after`
+2. [ ] List shows UniCredit bank-status column from `status_label` (empty for non-UniCredit rows)
+3. [ ] Labels resolve per row `store_id` (no cross-store leakage)
+4. [ ] Order info panel uses `htmlForOrder(..., ADMIN_PANEL)` — Process 2 may show EGN/phone2 when sensitive decrypt succeeds
+5. [ ] Customer Thank You / customer audience never shows EGN
+
+### Homepage advertising
+
+1. [ ] Events: `catalog/controller/common/home/before`, `catalog/view/common/footer/after`
+2. [ ] Assets (css/js) + footer fragment only on homepage route (`common/home` / empty)
+3. [ ] CP shop flags `uni_status` + `uni_container_status` required; graphic/back URLs http(s) only (`javascript:` / `data:` rejected)
+4. [ ] Language packs en-gb + bg-bg present for advertising strings
+
+### Event health (10 defs)
+
+```text
+thankyou_stash / thankyou_before / thankyou_after
+mail_customer / mail_admin
+admin_order_list_before / admin_order_list_after / admin_order_info_after
+home_controller_before / home_footer_after
+```
+
+### Explicit exclusions (Phase 11)
+
+- [ ] No Phase 12 package / matrix / audit freeze work

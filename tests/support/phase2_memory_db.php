@@ -899,6 +899,26 @@ final class Phase2MemoryDb
     private function selectOrderBankStatus($sql)
     {
         $storeId = (int) $this->extractWhereInt($sql, 'store_id');
+        if (preg_match('/`order_id`\s+IN\s*\(([^)]+)\)/i', $sql, $inMatch)) {
+            $rows = array();
+            foreach (preg_split('/\s*,\s*/', $inMatch[1]) as $part) {
+                $orderId = (int) trim($part);
+                if ($orderId <= 0) {
+                    continue;
+                }
+                $key = $storeId . '|' . $orderId;
+                if (isset($this->orderBankStatus[$key])) {
+                    $rows[] = $this->orderBankStatus[$key];
+                }
+            }
+
+            return (object) array(
+                'num_rows' => count($rows),
+                'row' => $rows ? $rows[0] : array(),
+                'rows' => $rows,
+            );
+        }
+
         $orderId = (int) $this->extractWhereInt($sql, 'order_id');
         $key = $storeId . '|' . $orderId;
         if (!isset($this->orderBankStatus[$key])) {

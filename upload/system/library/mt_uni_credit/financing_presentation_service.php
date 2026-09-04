@@ -112,6 +112,56 @@ final class MtUniCreditFinancingPresentationService
     }
 
     /**
+     * Admin order detail / shared HTML for an audience.
+     * Falls back to bank-status-only when snapshot is missing but local bank status exists.
+     *
+     * @param int $storeId
+     * @param int $orderId
+     * @param string $audience
+     * @param string|null $title
+     * @return string
+     */
+    public function htmlForOrder($storeId, $orderId, $audience, $title = null)
+    {
+        $storeId = (int) $storeId;
+        $orderId = (int) $orderId;
+        $rows = $this->rowsForOrder($storeId, $orderId, (string) $audience);
+        if ($rows === array()) {
+            $status = $this->repository->findBankStatusLabel($storeId, $orderId);
+            if ($status === '') {
+                return '';
+            }
+            $rows = array(
+                array(
+                    'label' => MtUniCreditFinancingLeasingPresenter::LABEL_BANK_STATUS,
+                    'value' => $status,
+                ),
+            );
+        }
+
+        $resolvedTitle = $title;
+        if ($resolvedTitle === null) {
+            $resolvedTitle = ((string) $audience === MtUniCreditFinancingPresentationAudience::ADMIN_PANEL)
+                ? MtUniCreditFinancingLeasingPresenter::ADMIN_TITLE
+                : MtUniCreditFinancingLeasingPresenter::TITLE;
+        }
+
+        return $this->presenter->renderHtml($rows, (string) $resolvedTitle);
+    }
+
+    /**
+     * @param int $storeId
+     * @param int $orderId
+     * @return bool
+     */
+    public function isUniCreditOrder($storeId, $orderId)
+    {
+        return $this->repository->findByOrderId((int) $storeId, (int) $orderId) !== null
+            || $this->repository->findAttemptRowByOrderId((int) $storeId, (int) $orderId) !== null
+            || $this->repository->findBankStatusLabel((int) $storeId, (int) $orderId) !== '';
+    }
+
+    /**
      * @param int $storeId
      * @param int $orderId
      * @return MtUniCreditProcessTwoSensitiveData|null

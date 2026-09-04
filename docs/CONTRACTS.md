@@ -631,8 +631,9 @@ Do not weaken privacy because OC3 is older.
 - CP frozen payload is the only durable customer snapshot needed for CP retry.
 - EGN/phone2 exist only as Process 2 ciphertext.
 - Customer email, customer Thank You: never EGN/phone2.
+- Admin order detail (`ADMIN_PANEL`) and admin native mail (`ADMIN_EMAIL`): EGN/phone2 only for Process 2 when decrypt succeeds (OC4 parity).
 - Thank You identity is session-only; GET `order_id` is never trusted.
-- Admin email and admin order detail may show EGN/phone2 for Process 2.
+- Admin Orders list / homepage advertising: local DB / cache-only; no CP HTTP on page render.
 - Logs: identifiers, state, error class, HTTP status only — never secrets, keys, EGN, email, phone, address, raw payloads.
 
 ### RETENTION-001 — Windows

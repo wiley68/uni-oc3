@@ -1,0 +1,40 @@
+<div id="mt-uni-credit-advertising-root" class="mt-uni-credit-advertising" data-mt-uni-credit-advertising>
+  {% if mt_uni_credit_advertising.is_mobile %}
+    <button type="button" class="mt-uni-credit-advertising__float"{% if mt_uni_credit_advertising.backurl %} data-mt-uni-credit-advertising-open="{{ mt_uni_credit_advertising.backurl }}"{% endif %}>
+      <span class="mt-uni-credit-advertising__logo">
+        <img src="{{ mt_uni_credit_advertising.float_image_url }}" alt="{{ text_float_alt }}">
+      </span>
+    </button>
+  {% else %}
+    <button type="button" class="mt-uni-credit-advertising__float" data-mt-uni-credit-advertising-toggle aria-controls="mt-uni-credit-advertising-panel" aria-expanded="false">
+      <span class="mt-uni-credit-advertising__logo">
+        <img src="{{ mt_uni_credit_advertising.float_image_url }}" alt="{{ text_float_alt }}">
+      </span>
+    </button>
+    <div id="mt-uni-credit-advertising-panel" class="mt-uni-credit-advertising__panel" role="dialog" aria-modal="true" aria-label="{{ text_panel_label }}" aria-hidden="true" hidden>
+      <div class="mt-uni-credit-advertising__arrow" aria-hidden="true"></div>
+      <div class="mt-uni-credit-advertising__body">
+        <button type="button" class="mt-uni-credit-advertising__close" data-mt-uni-credit-advertising-close aria-label="{{ text_close }}">&times;</button>
+        <div class="mt-uni-credit-advertising__spacer"></div>
+        {% if mt_uni_credit_advertising.picture_url %}
+          <img class="mt-uni-credit-advertising__picture" alt="" src="{{ mt_uni_credit_advertising.picture_url }}">
+        {% else %}
+          <img class="mt-uni-credit-advertising__picture" alt="" hidden>
+        {% endif %}
+        {% if mt_uni_credit_advertising.txt1 %}
+          <div class="mt-uni-credit-advertising__title">{{ mt_uni_credit_advertising.txt1 }}</div>
+        {% endif %}
+        {% if mt_uni_credit_advertising.txt2 %}
+          <p class="mt-uni-credit-advertising__copy">{{ mt_uni_credit_advertising.txt2 }}</p>
+        {% endif %}
+        <div class="mt-uni-credit-advertising__link">
+          {% if mt_uni_credit_advertising.backurl %}
+            <a href="{{ mt_uni_credit_advertising.backurl }}" target="_blank" rel="noopener noreferrer">{{ text_panel_cta }}!</a>
+          {% else %}
+            {{ text_panel_cta }}!
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  {% endif %}
+</div>

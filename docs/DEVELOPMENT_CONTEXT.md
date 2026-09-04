@@ -8,6 +8,8 @@ References:
 - reference-oc3-core → platform conventions
 - reference-oc3-store → optional runtime/debug reference
 
+Phase 11 (local): Admin Orders bank-status column + order-info financing panel (`ADMIN_PANEL`); homepage advertising from cache-only CP shop; shared presentation pipeline; 10 self-healing `oc_event` rows. See `docs/RUNTIME_VERIFICATION.md` Phase 11.
+
 Workflow:
 ChatGPT → Codex planning prompt
 Codex → implementation plan

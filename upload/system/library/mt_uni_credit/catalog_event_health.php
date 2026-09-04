@@ -123,6 +123,11 @@ final class MtUniCreditCatalogEventHealth
             'mt_uni_credit_checkout_success_view_after' => 'thankyou_after',
             'mt_uni_credit_mail_order_add' => 'mail_customer',
             'mt_uni_credit_mail_order_alert' => 'mail_admin',
+            'mt_uni_credit_admin_order_list_before' => 'admin_list_before',
+            'mt_uni_credit_admin_order_list_after' => 'admin_list_after',
+            'mt_uni_credit_admin_order_info_after' => 'admin_order_info',
+            'mt_uni_credit_home_controller_before' => 'home_controller',
+            'mt_uni_credit_home_footer_after' => 'home_footer',
         );
 
         return isset($map[$code]) ? $map[$code] : $code;
