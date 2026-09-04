@@ -74,6 +74,9 @@ $required = array(
     'financing_leasing_presenter.php',
     'financing_presentation_snapshot.php',
     'financing_presentation_audience.php',
+    'financing_presentation_repository.php',
+    'financing_presentation_service.php',
+    'financing_terminal_navigation_support.php',
 );
 foreach ($required as $file) {
     mtuc10_assert(is_file($lib . DIRECTORY_SEPARATOR . $file), 'required file: ' . $file);
@@ -321,16 +324,209 @@ mtuc10_assert(!empty($okFields['ok']), 'validator: valid EGN/phone2 accepted');
 $badDate = $validator->validate(array('egn' => '1990139912', 'phone2' => '+35988'));
 mtuc10_assert(empty($badDate['ok']), 'validator: invalid EGN date rejected');
 
+// ---------------------------------------------------------------------------
+// I. Stale bound order → unbind + fresh addOrder
+// ---------------------------------------------------------------------------
+$transportStale = new Phase4FakeCpHttpTransport();
+Phase9TestHarness::enqueueCpCreateSuccess($transportStale);
+$stackStale = Phase9TestHarness::stack($transportStale, null, null, Phase5TestHarness::STORE_A, array('uni_proces' => 1));
+$staleOrderId = 123;
+$freshOrderId = 456;
+$addOrderCalls = 0;
+$staleInput = Phase9TestHarness::productStorefrontInput($stackStale, $freshOrderId);
+$opHash = MtUniCreditStorefrontOperationIdentity::productHash(
+    (int) $stackStale['storeId'],
+    42,
+    array(),
+    1,
+    'BGN'
+);
+$staleInput['session'] = array(
+    MtUniCreditStorefrontFinancingSubmissionService::SESSION_ORDER_BIND_KEY => array(
+        $opHash => $staleOrderId,
+    ),
+);
+$staleInput['load_order'] = function ($orderId) use ($stackStale, $staleOrderId, $freshOrderId) {
+    if ((int) $orderId === (int) $staleOrderId) {
+        return null;
+    }
+    if ((int) $orderId === (int) $freshOrderId) {
+        return Phase7TestHarness::orderRow((int) $orderId, (int) $stackStale['storeId']);
+    }
+
+    return null;
+};
+$staleInput['add_order'] = function ($orderData) use (&$addOrderCalls, $stackStale, $freshOrderId) {
+    $addOrderCalls++;
+    $stackStale['memoryDb']->seedOrder($freshOrderId, $stackStale['storeId'], MtUniCreditConstants::EXTENSION_CODE);
+
+    return $freshOrderId;
+};
+$staleResult = $stackStale['storefront']->submit($staleInput);
+mtuc10_assert(!empty($staleResult['success']), 'stale binding: fresh submit succeeds');
+mtuc10_assert($addOrderCalls === 1, 'stale binding: new addOrder() call = 1');
+mtuc10_assert((int) $staleResult['order_id'] === $freshOrderId, 'stale binding: new order id used');
+mtuc10_assert(
+    isset($staleResult['session'][MtUniCreditStorefrontFinancingSubmissionService::SESSION_ORDER_BIND_KEY][$opHash])
+        && (int) $staleResult['session'][MtUniCreditStorefrontFinancingSubmissionService::SESSION_ORDER_BIND_KEY][$opHash] === $freshOrderId,
+    'stale binding: session rebound to fresh order'
+);
+$staleAttempt = $stackStale['attempts']->findByStoreOrder($stackStale['storeId'], $freshOrderId);
+mtuc10_assert($staleAttempt !== null, 'stale binding: attempt tied to fresh order');
+$oldAttempt = $stackStale['attempts']->findByStoreOrder($stackStale['storeId'], $staleOrderId);
+mtuc10_assert($oldAttempt === null, 'stale binding: old attempt not reused/migrated');
+
+// ---------------------------------------------------------------------------
+// J. Valid bound order replay — addOrder = 0
+// ---------------------------------------------------------------------------
+$transportValid = new Phase4FakeCpHttpTransport();
+Phase9TestHarness::enqueueCpCreateSuccess($transportValid);
+$stackValid = Phase9TestHarness::stack($transportValid, null, null, Phase5TestHarness::STORE_A, array('uni_proces' => 1));
+$validOrder = 10120;
+$validAdd = 0;
+$validInput = Phase9TestHarness::productStorefrontInput($stackValid, $validOrder);
+$validInput['add_order'] = function ($orderData) use (&$validAdd, $stackValid, $validOrder) {
+    $validAdd++;
+    $stackValid['memoryDb']->seedOrder($validOrder, $stackValid['storeId'], MtUniCreditConstants::EXTENSION_CODE);
+
+    return $validOrder;
+};
+$firstValid = $stackValid['storefront']->submit($validInput);
+mtuc10_assert(!empty($firstValid['success']), 'valid bind first: success');
+mtuc10_assert($validAdd === 1, 'valid bind first: addOrder = 1');
+$mailBeforeValidReplay = count($stackValid['process2Mailer']->sent);
+$validInput2 = $validInput;
+$validInput2['session'] = isset($firstValid['session']) ? $firstValid['session'] : array();
+$secondValid = $stackValid['storefront']->submit($validInput2);
+mtuc10_assert(!empty($secondValid['success']), 'valid bind replay: success');
+mtuc10_assert($validAdd === 1, 'valid bind replay: addOrder = 0 additional');
+mtuc10_assert(Phase7TestHarness::countOrderPosts($transportValid) === 1, 'valid bind replay: CP create = 1 total');
+mtuc10_assert(
+    count($stackValid['process2Mailer']->sent) === $mailBeforeValidReplay,
+    'valid bind replay: Process 2 mail additional = 0'
+);
+
+// ---------------------------------------------------------------------------
+// K. Thank You presentation privacy + missing snapshot safety
+// ---------------------------------------------------------------------------
+$presenter = new MtUniCreditFinancingLeasingPresenter();
+$snap = new MtUniCreditFinancingPresentationSnapshot(
+    10130,
+    999,
+    true,
+    12,
+    'KOPSTD',
+    100.0,
+    500.0,
+    45.0,
+    640.0,
+    5.5,
+    6.1
+);
+$svc = new MtUniCreditFinancingPresentationService(
+    new MtUniCreditFinancingPresentationRepository(
+        new MtUniCreditDbAdapter($stackValid['memoryDb'], 'oc_')
+    ),
+    $presenter
+);
+// Direct HTML path via service customerThankYouHtml against seeded attempt
+Phase9TestHarness::seedBankOrder($stackValid['memoryDb'], 10130, $stackValid['storeId']);
+$attemptRow = $stackValid['attempts']->findOrCreateAttempt(
+    $stackValid['storeId'],
+    10130,
+    Phase4TestHarness::TEST_UNICID,
+    hash('sha256', 'thankyou-test'),
+    hash('sha256', 'sel'),
+    hash('sha256', 'fp'),
+    MtUniCreditOperationEntryPoint::PRODUCT
+);
+(new MtUniCreditProcessTwoLifecycleRepository(new MtUniCreditDbAdapter($stackValid['memoryDb'], 'oc_')))
+    ->persistLeasingPresentationJson((int) $attemptRow['attempt_id'], json_encode($snap->toArray()));
+(new MtUniCreditOrderBankStatusRepository(new MtUniCreditDbAdapter($stackValid['memoryDb'], 'oc_')))
+    ->updateByOrderIdentifier(
+        $stackValid['storeId'],
+        (string) 10130,
+        MtUniCreditBankStatus::SENT_PROCESS2,
+        MtUniCreditBankStatus::LABEL_SENT_PROCESS2
+    );
+
+$thankHtml = $svc->customerThankYouHtml($stackValid['storeId'], 10130);
+mtuc10_assert($thankHtml !== '', 'thank you: leasing HTML present');
+mtuc10_assert(strpos($thankHtml, 'УниКредит лизинг') !== false, 'thank you: title present');
+mtuc10_assert(strpos($thankHtml, 'KOPSTD') !== false, 'thank you: scheme/KOP present');
+mtuc10_assert(strpos($thankHtml, MtUniCreditFinancingLeasingPresenter::LABEL_EGN) === false, 'thank you: EGN label absent');
+mtuc10_assert(strpos($thankHtml, MtUniCreditFinancingLeasingPresenter::LABEL_PHONE2) === false, 'thank you: phone2 label absent');
+mtuc10_assert(
+    strpos($thankHtml, MtUniCreditFinancingLeasingPresenter::LABEL_CP_INTERNAL_ID) === false,
+    'thank you: CP internal id absent'
+);
+mtuc10_assert(preg_match('/\b1990010112\b/', $thankHtml) !== 1, 'thank you: raw EGN digits absent');
+
+$missingHtml = $svc->customerThankYouHtml($stackValid['storeId'], 999999);
+mtuc10_assert($missingHtml === '', 'thank you: missing snapshot returns empty (generic success allowed)');
+
+$navSession = array();
+$navPayload = MtUniCreditFinancingTerminalNavigationSupport::enrichProcess2ThankYou(
+    array('success' => true),
+    $navSession,
+    10130,
+    'https://shop.example/index.php?route=checkout/success'
+);
+mtuc10_assert(
+    !empty($navPayload['redirect']) && strpos($navPayload['redirect'], 'checkout/success') !== false,
+    'thank you nav: redirect = checkout/success'
+);
+mtuc10_assert(empty($navPayload['bank_redirect']), 'thank you nav: bank_redirect = false');
+mtuc10_assert(
+    (int) $navSession[MtUniCreditFinancingTerminalNavigationSupport::SESSION_SUCCESS_ORDER_ID] === 10130,
+    'thank you nav: success order id stashed'
+);
+
+$p1Session = array();
+$p1Payload = MtUniCreditFinancingTerminalNavigationSupport::enrichProcess2ThankYou(
+    array(
+        'success' => true,
+        'bank_redirect' => true,
+        'redirect' => 'https://bank.example/app',
+    ),
+    $p1Session,
+    10130,
+    'https://shop.example/index.php?route=checkout/success'
+);
+mtuc10_assert(
+    $p1Payload['redirect'] === 'https://bank.example/app',
+    'Process 1 isolation: bank redirect unchanged by Thank You enrichment'
+);
+
+$productCtrl = mtuc10_read(
+    $root . DIRECTORY_SEPARATOR . 'upload' . DIRECTORY_SEPARATOR . 'catalog' . DIRECTORY_SEPARATOR
+        . 'controller' . DIRECTORY_SEPARATOR . 'extension' . DIRECTORY_SEPARATOR . 'mt_uni_credit'
+        . DIRECTORY_SEPARATOR . 'product.php'
+);
+mtuc10_assert(
+    strpos($productCtrl, 'CHECKOUT_SUCCESS_ROUTE') !== false
+        || strpos($productCtrl, 'checkout/success') !== false,
+    'wiring: Product Process 2 success uses checkout/success'
+);
+mtuc10_assert(
+    is_file(
+        $root . DIRECTORY_SEPARATOR . 'upload' . DIRECTORY_SEPARATOR . 'catalog' . DIRECTORY_SEPARATOR
+            . 'controller' . DIRECTORY_SEPARATOR . 'extension' . DIRECTORY_SEPARATOR . 'mt_uni_credit'
+            . DIRECTORY_SEPARATOR . 'checkout_success.php'
+    ),
+    'wiring: checkout_success event controller present'
+);
+
 echo PHP_EOL . 'Phase 10 checks: ' . $passes . ' passed';
 if ($failures) {
     echo ', ' . count($failures) . ' failed' . PHP_EOL;
     foreach ($failures as $failure) {
         echo '  - ' . $failure . PHP_EOL;
     }
-    echo 'PHASE 10 PROCESS 2 / MAIL / PRIVACY STOP GATE: BLOCKED' . PHP_EOL;
+    echo 'PHASE 10 FRESH ORDER / THANK YOU RUNTIME CLOSURE: BLOCKED' . PHP_EOL;
     exit(1);
 }
 
 echo ', 0 failed' . PHP_EOL;
-echo 'PHASE 10 PROCESS 2 / MAIL / PRIVACY STOP GATE: PASS — LOCAL' . PHP_EOL;
+echo 'PHASE 10 FRESH ORDER / THANK YOU RUNTIME CLOSURE: PASS — LOCAL' . PHP_EOL;
 exit(0);

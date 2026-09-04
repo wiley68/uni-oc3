@@ -232,8 +232,18 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
             $this->response->redirect((string) $result['redirect']);
             return;
         }
-        if (!empty($result['success']) && !empty($result['redirect'])) {
-            $this->response->redirect((string) $result['redirect']);
+        if (!empty($result['success'])) {
+            $payload = MtUniCreditFinancingTerminalNavigationSupport::enrichProcess2ThankYou(
+                array(
+                    'success' => true,
+                    'redirect' => isset($result['redirect']) ? (string) $result['redirect'] : '',
+                    'bank_redirect' => false,
+                ),
+                $this->session->data,
+                (int) $context['order_id'],
+                $this->url->link(MtUniCreditConstants::CHECKOUT_SUCCESS_ROUTE, '', true)
+            );
+            $this->response->redirect((string) $payload['redirect']);
             return;
         }
 

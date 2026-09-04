@@ -22,6 +22,7 @@ class ModelExtensionModuleMtUniCredit extends Model
             $this,
             MtUniCreditConstants::MODULE_SETTINGS_CODE
         );
+        MtUniCreditInstaller::ensureCatalogEvents($this);
     }
 
     /**
@@ -31,6 +32,7 @@ class ModelExtensionModuleMtUniCredit extends Model
      */
     public function uninstall()
     {
+        MtUniCreditInstaller::removeCatalogEvents($this);
         $this->load->model('setting/setting');
         $this->model_setting_setting->deleteSetting(MtUniCreditConstants::MODULE_SETTINGS_CODE);
     }

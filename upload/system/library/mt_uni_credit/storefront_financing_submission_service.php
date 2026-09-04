@@ -212,6 +212,22 @@ final class MtUniCreditStorefrontFinancingSubmissionService
                 ? $input['load_order']
                 : null;
 
+            $order = null;
+            if ($orderId > 0) {
+                if ($loadOrder === null) {
+                    $this->unbindOrderId($sessionData, $operationKeyHash);
+                    $orderId = 0;
+                } else {
+                    $loaded = call_user_func($loadOrder, $orderId);
+                    $order = is_array($loaded) ? $loaded : null;
+                    if (!$this->isReusableBoundOrder($order, $orderId, $storeId)) {
+                        $this->unbindOrderId($sessionData, $operationKeyHash);
+                        $orderId = 0;
+                        $order = null;
+                    }
+                }
+            }
+
             if ($orderId <= 0) {
                 if ($addOrder === null) {
                     return $this->fail('order_missing', true);
@@ -249,23 +265,16 @@ final class MtUniCreditStorefrontFinancingSubmissionService
                     return $this->fail('order_missing', true);
                 }
                 $this->bindOrderId($sessionData, $operationKeyHash, $orderId);
+                $order = null;
+                if ($loadOrder !== null) {
+                    $loaded = call_user_func($loadOrder, $orderId);
+                    $order = is_array($loaded) ? $loaded : null;
+                }
             }
 
-            $order = null;
-            if ($loadOrder !== null) {
-                $loaded = call_user_func($loadOrder, $orderId);
-                $order = is_array($loaded) ? $loaded : null;
-            }
-            if ($order === null) {
-                $order = array(
-                    'order_id' => $orderId,
-                    'store_id' => $storeId,
-                    'total' => $orderTotal,
-                    'payment_code' => MtUniCreditConstants::EXTENSION_CODE,
-                    'payment_method' => MtUniCreditConstants::DISPLAY_NAME,
-                    'order_status_id' => 0,
-                    'currency_code' => $currency,
-                );
+            // Never continue financing against a synthetic stand-in for a missing OC order.
+            if (!is_array($order) || !$this->isReusableBoundOrder($order, $orderId, $storeId)) {
+                return $this->fail('order_missing', true);
             }
             $order['order_id'] = $orderId;
             $order['store_id'] = $storeId;
@@ -450,6 +459,54 @@ final class MtUniCreditStorefrontFinancingSubmissionService
             $sessionData[self::SESSION_ORDER_BIND_KEY] = array();
         }
         $sessionData[self::SESSION_ORDER_BIND_KEY][$operationKeyHash] = (int) $orderId;
+    }
+
+    /**
+     * Remove only the binding for this operation hash — leave unrelated bindings intact.
+     *
+     * @param array<string, mixed> $sessionData
+     * @param string $operationKeyHash
+     * @return void
+     */
+    private function unbindOrderId(array &$sessionData, $operationKeyHash)
+    {
+        if (
+            !isset($sessionData[self::SESSION_ORDER_BIND_KEY])
+            || !is_array($sessionData[self::SESSION_ORDER_BIND_KEY])
+        ) {
+            return;
+        }
+        unset($sessionData[self::SESSION_ORDER_BIND_KEY][$operationKeyHash]);
+    }
+
+    /**
+     * Bound Product/Cart order_id is reusable only when the real OC order still exists.
+     *
+     * @param array<string, mixed>|null $order
+     * @param int $orderId
+     * @param int $storeId
+     * @return bool
+     */
+    private function isReusableBoundOrder($order, $orderId, $storeId)
+    {
+        $orderId = (int) $orderId;
+        $storeId = (int) $storeId;
+        if ($orderId <= 0 || !is_array($order) || $order === array()) {
+            return false;
+        }
+        $loadedId = (int) (isset($order['order_id']) ? $order['order_id'] : 0);
+        if ($loadedId > 0 && $loadedId !== $orderId) {
+            return false;
+        }
+        if ((int) (isset($order['store_id']) ? $order['store_id'] : -1) !== $storeId) {
+            return false;
+        }
+        $paymentCode = isset($order['payment_code']) ? $order['payment_code'] : null;
+        if ($paymentCode !== null && $paymentCode !== '' && !MtUniCreditPaymentIdentity::matchesStoredPayment($paymentCode)) {
+            return false;
+        }
+
+        return true;
     }
 
     /**

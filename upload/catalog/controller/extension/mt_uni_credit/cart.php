@@ -292,23 +292,33 @@ class ControllerExtensionMtUniCreditCart extends Controller
             $this->session->data = $result['session'];
         }
 
-        // Cart submit never clears the live cart.
+        // Cart submit never clears the live cart here — checkout/success clears after Process 2 Thank You.
         if (!empty($result['success'])) {
             $this->maybeApplyNativeOrderStatus($result);
             $this->session->data[MtUniCreditCheckoutConfirmPreparation::SESSION_PREPARED_ORDER_ID] = (int) $result['order_id'];
             if (!empty($result['bank_redirect']) && !empty($result['redirect'])) {
                 $redirect = (string) $result['redirect'];
-            } elseif (!empty($result['redirect'])) {
-                $redirect = (string) $result['redirect'];
+                $bankRedirect = true;
             } else {
-                $redirect = $this->url->link(MtUniCreditConstants::CHECKOUT_PREPARED_ROUTE, '', true);
+                $payload = MtUniCreditFinancingTerminalNavigationSupport::enrichProcess2ThankYou(
+                    array(
+                        'success' => true,
+                        'redirect' => isset($result['redirect']) ? (string) $result['redirect'] : '',
+                        'bank_redirect' => false,
+                    ),
+                    $this->session->data,
+                    (int) $result['order_id'],
+                    $this->url->link(MtUniCreditConstants::CHECKOUT_SUCCESS_ROUTE, '', true)
+                );
+                $redirect = (string) $payload['redirect'];
+                $bankRedirect = !empty($payload['bank_redirect']);
             }
             MtUniCreditStorefrontRuntime::respondJson($this, array(
                 'success' => true,
                 'order_id' => (int) $result['order_id'],
                 'message' => isset($result['message']) ? (string) $result['message'] : $this->language->get('text_success'),
                 'redirect' => $redirect,
-                'bank_redirect' => !empty($result['bank_redirect']),
+                'bank_redirect' => $bankRedirect,
                 'cart_unchanged' => true,
                 'apply_native_order_status' => !empty($result['apply_native_order_status']),
             ));

@@ -948,3 +948,41 @@ After Product/Cart/Checkout Process 2 submit (`uni_proces === 1`):
 - [ ] No Thank You / admin order-detail presentation redesign (Phase 11)
 - [ ] No homepage ads
 - [ ] Native OC order_add/order_alert HTML enrichment via events may follow Phase 11 presentation parity; Phase 10 ships dedicated Process 2 leasing mail + frozen presentation composer
+
+---
+
+## Phase 10 Runtime Closure — Fresh order + Process 2 Thank You (local PASS)
+
+Automated gate: `php tests/phase10_check.php` (includes stale-binding + Thank You fixtures).
+
+### Fresh Product Process 2 (remote)
+
+1. [ ] New local OC order = 1 (no reuse of deleted/missing bound order_id)
+2. [ ] New CP order = 1
+3. [ ] SmartUCF calls = 0
+4. [ ] Native status = configured payment status (once)
+5. [ ] Local bank status = `bank_sent_process2`
+6. [ ] CP bank status = `bank_sent_process2`
+7. [ ] Native OC customer/admin order mail = present (via `addOrderHistory`)
+8. [ ] Process 2 leasing mail(s) = present
+9. [ ] Customer leasing content: no EGN / no phone2
+10. [ ] Browser terminal = `checkout/success` (Thank You), not empty cart
+11. [ ] Thank You leasing block present (scheme/months/installments/totals/GLP/GPR + Process 2 message)
+12. [ ] Thank You: EGN / phone2 / CP internal ids absent
+
+### Stale binding
+
+1. [ ] Session bind to missing OC order → binding cleared → fresh `addOrder()` once
+2. [ ] Valid existing bind → `addOrder` = 0, CP create = 0, mail not duplicated
+
+### Expected mail count (Process 2 success)
+
+- Native OC: customer + admin order history mails (standard `addOrderHistory` behaviour)
+- Dedicated Process 2 leasing: admin/`uni_email` + customer (Phase 10 mailer; idempotent via `process2_mail_sent`)
+
+### Thank You strategy
+
+- Native route `checkout/success`
+- Session: `order_id` + `mt_uni_credit_success_order_id` before redirect
+- Events: `catalog/controller/checkout/success/before` stash; `catalog/view/common/success/before` inject leasing into `text_message`
+- Process 1 bank redirect unchanged

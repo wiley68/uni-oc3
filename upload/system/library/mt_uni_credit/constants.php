@@ -51,6 +51,9 @@ final class MtUniCreditConstants
 
     const CHECKOUT_SUBMIT_ROUTE = 'extension/payment/mt_uni_credit/submit';
 
+    /** Native OC3 Thank You — Process 2 terminal destination. */
+    const CHECKOUT_SUCCESS_ROUTE = 'checkout/success';
+
     const PRODUCT_ROUTE = 'extension/mt_uni_credit/product';
 
     const CART_ROUTE = 'extension/mt_uni_credit/cart';

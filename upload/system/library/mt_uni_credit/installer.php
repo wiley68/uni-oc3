@@ -99,4 +99,62 @@ final class MtUniCreditInstaller
             );
         }
     }
+
+    /**
+     * Idempotent catalog event registration for Thank You leasing injection.
+     *
+     * @param object $model OpenCart Model with $db
+     * @return void
+     */
+    public static function ensureCatalogEvents($model)
+    {
+        if (!isset($model->db) || !is_object($model->db) || !method_exists($model->db, 'query')) {
+            return;
+        }
+
+        $events = array(
+            array(
+                'code' => 'mt_uni_credit_checkout_success_order',
+                'trigger' => 'catalog/controller/checkout/success/before',
+                'action' => 'extension/mt_uni_credit/checkout_success/before',
+            ),
+            array(
+                'code' => 'mt_uni_credit_checkout_success_view',
+                'trigger' => 'catalog/view/common/success/before',
+                'action' => 'extension/mt_uni_credit/checkout_success/beforeView',
+            ),
+        );
+
+        foreach ($events as $event) {
+            $existing = $model->db->query(
+                "SELECT `event_id` FROM `" . DB_PREFIX . "event`"
+                    . " WHERE `code` = '" . $model->db->escape($event['code']) . "' LIMIT 1"
+            );
+            if (is_object($existing) && !empty($existing->num_rows)) {
+                continue;
+            }
+            $model->db->query(
+                "INSERT INTO `" . DB_PREFIX . "event` SET"
+                    . " `code` = '" . $model->db->escape($event['code']) . "',"
+                    . " `trigger` = '" . $model->db->escape($event['trigger']) . "',"
+                    . " `action` = '" . $model->db->escape($event['action']) . "',"
+                    . " `status` = '1',"
+                    . " `sort_order` = '0'"
+            );
+        }
+    }
+
+    /**
+     * @param object $model
+     * @return void
+     */
+    public static function removeCatalogEvents($model)
+    {
+        if (!isset($model->db) || !is_object($model->db) || !method_exists($model->db, 'query')) {
+            return;
+        }
+        $model->db->query(
+            "DELETE FROM `" . DB_PREFIX . "event` WHERE `code` LIKE 'mt_uni_credit_checkout_success%'"
+        );
+    }
 }
