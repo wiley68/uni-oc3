@@ -23,3 +23,5 @@ $_['error_order_changed'] = 'The order contents changed. Please reload checkout.
 $_['error_unavailable'] = 'UniCredit payment is not available at this time.';
 $_['error_duplicate_request'] = 'The request is already being processed. Please wait.';
 $_['error_submit_token'] = 'The request could not be verified. Please reload the page and try again.';
+$_['text_egn'] = 'Personal ID (EGN)';
+$_['text_phone2'] = 'Second phone';

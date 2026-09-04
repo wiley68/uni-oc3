@@ -47,6 +47,7 @@ final class MtUniCreditPersistenceSchema
             $this->db->query($sql);
         }
         $this->ensurePhase9Columns();
+        $this->ensurePhase10Columns();
     }
 
     /**
@@ -55,6 +56,25 @@ final class MtUniCreditPersistenceSchema
      * @return void
      */
     public function ensurePhase9Columns()
+    {
+        $this->ensureAlterColumns(self::createPhase9AlterStatements($this->db->getPrefix()));
+    }
+
+    /**
+     * Add Process 2 lifecycle columns when missing.
+     *
+     * @return void
+     */
+    public function ensurePhase10Columns()
+    {
+        $this->ensureAlterColumns(self::createPhase10AlterStatements($this->db->getPrefix()));
+    }
+
+    /**
+     * @param array<int, string> $statements
+     * @return void
+     */
+    private function ensureAlterColumns(array $statements)
     {
         $table = $this->db->getPrefix() . MtUniCreditPersistenceTableNames::FINANCING_ATTEMPT;
         $existing = array();
@@ -71,7 +91,7 @@ final class MtUniCreditPersistenceSchema
             $existing = array();
         }
 
-        foreach (self::createPhase9AlterStatements($this->db->getPrefix()) as $sql) {
+        foreach ($statements as $sql) {
             if (preg_match("/ADD COLUMN `([^`]+)`/", $sql, $match)) {
                 if (isset($existing[$match[1]])) {
                     continue;
@@ -79,8 +99,7 @@ final class MtUniCreditPersistenceSchema
             }
             try {
                 $this->db->query($sql);
-            } catch (Exception $exception) {
-                // Column may already exist on hosts that cannot SHOW COLUMNS consistently.
+            } catch (Exception $ignored) {
             }
         }
     }
@@ -137,6 +156,24 @@ final class MtUniCreditPersistenceSchema
             "ALTER TABLE `{$financingAttempt}` ADD COLUMN `smartucf_retryable` TINYINT(1) NOT NULL DEFAULT 0",
             "ALTER TABLE `{$financingAttempt}` ADD COLUMN `smartucf_claimed_at` DATETIME NULL",
             "ALTER TABLE `{$financingAttempt}` ADD COLUMN `smartucf_completed_at` DATETIME NULL",
+        );
+    }
+
+    /**
+     * Idempotent Phase 10 column upgrades for financing_attempt.
+     *
+     * @param string $prefix
+     * @return array<int, string>
+     */
+    public static function createPhase10AlterStatements($prefix)
+    {
+        $financingAttempt = $prefix . MtUniCreditPersistenceTableNames::FINANCING_ATTEMPT;
+
+        return array(
+            "ALTER TABLE `{$financingAttempt}` ADD COLUMN `process2_state` VARCHAR(32) NOT NULL DEFAULT 'not_started'",
+            "ALTER TABLE `{$financingAttempt}` ADD COLUMN `process2_sensitive_enc` MEDIUMTEXT NULL",
+            "ALTER TABLE `{$financingAttempt}` ADD COLUMN `process2_mail_sent` TINYINT(1) NOT NULL DEFAULT 0",
+            "ALTER TABLE `{$financingAttempt}` ADD COLUMN `leasing_presentation_json` MEDIUMTEXT NULL",
         );
     }
 

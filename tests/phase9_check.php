@@ -157,16 +157,22 @@ Phase9TestHarness::enqueueCpCreateSuccess($transportP2);
 $stackP2 = Phase9TestHarness::stack($transportP2, null, null, Phase5TestHarness::STORE_A, array('uni_proces' => 1));
 $orderP2 = 9101;
 Phase9TestHarness::seedBankOrder($stackP2['memoryDb'], $orderP2, $stackP2['storeId']);
-$resultP2 = $stackP2['submission']->submit(Phase9TestHarness::submitInput($orderP2, $stackP2['storeId']));
+$resultP2 = $stackP2['submission']->submit(Phase9TestHarness::submitInputProcess2($orderP2, $stackP2['storeId']));
 mtuc9_assert(!empty($resultP2['success']), 'Process2: CP submit succeeds');
 mtuc9_assert((int) $resultP2['control_panel_order_id'] === 555001, 'Process2: CP order id persisted');
 mtuc9_assert(Phase9TestHarness::smartUcfCallCount($stackP2['smartUcfProbe']) === 0, 'Process2: 0 SmartUCF HTTP calls');
 $bankP2 = Phase9TestHarness::bankStatusId($stackP2, $orderP2);
 mtuc9_assert($bankP2 !== MtUniCreditBankStatus::SENT_PROCESS1, 'Process2: bank status NOT bank_sent_process1');
 mtuc9_assert($bankP2 !== MtUniCreditBankStatus::SEND_FAILED_SMARTUCF, 'Process2: bank status NOT bank_send_failed_smartucf');
+mtuc9_assert($bankP2 === MtUniCreditBankStatus::SENT_PROCESS2, 'Process2: local bank_sent_process2');
 mtuc9_assert(!empty($resultP2['apply_native_order_status']), 'Process2: apply_native after CP (no SmartUCF)');
 mtuc9_assert(empty($resultP2['bank_redirect']), 'Process2: no bank_redirect');
-mtuc9_assert(Phase9TestHarness::countStatusPatches($transportP2) === 0, 'Process2: no Process1 bank status PATCH');
+mtuc9_assert(Phase9TestHarness::countStatusPatches($transportP2) === 1, 'Process2: CP bank_sent_process2 PATCH = 1');
+$patchP2 = Phase9TestHarness::lastStatusPatchPayload($transportP2);
+mtuc9_assert(
+    is_array($patchP2) && (string) $patchP2['status_id'] === MtUniCreditBankStatus::SENT_PROCESS2,
+    'Process2: CP PATCH status_id = bank_sent_process2'
+);
 
 // ---------------------------------------------------------------------------
 // Process1 success: CP + SmartUCF → bank_sent_process1, single call, trusted redirect
@@ -333,7 +339,11 @@ mtuc9_assert(
     Phase9TestHarness::bankStatusId($stackStorefrontP2, $storefrontP2OrderId) !== MtUniCreditBankStatus::SENT_PROCESS1,
     'storefront P2: no bank_sent_process1'
 );
-mtuc9_assert(Phase9TestHarness::countStatusPatches($transportStorefrontP2) === 0, 'storefront P2: no Process1 bank status PATCH');
+mtuc9_assert(
+    Phase9TestHarness::bankStatusId($stackStorefrontP2, $storefrontP2OrderId) === MtUniCreditBankStatus::SENT_PROCESS2,
+    'storefront P2: bank_sent_process2'
+);
+mtuc9_assert(Phase9TestHarness::countStatusPatches($transportStorefrontP2) === 1, 'storefront P2: CP bank status PATCH = 1');
 
 // ---------------------------------------------------------------------------
 // Definitive SmartUCF reject (errorCode JSON, HTTP 400)

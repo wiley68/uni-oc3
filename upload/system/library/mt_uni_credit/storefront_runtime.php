@@ -139,7 +139,8 @@ final class MtUniCreditStorefrontRuntime
             $stack['client'],
             null,
             MtUniCreditProcess1ServiceFactory::coordinator($db, null, null, $stack['client']),
-            MtUniCreditProcess1ServiceFactory::bankStatuses($db)
+            MtUniCreditProcess1ServiceFactory::bankStatuses($db),
+            MtUniCreditProcessTwoServiceFactory::coordinator($db, $stack['client'])
         );
 
         return new MtUniCreditStorefrontFinancingSubmissionService(

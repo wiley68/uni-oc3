@@ -970,6 +970,10 @@ final class Phase2MemoryDb
             'smartucf_retryable' => 0,
             'smartucf_claimed_at' => null,
             'smartucf_completed_at' => null,
+            'process2_state' => MtUniCreditProcessTwoLifecycleStates::NOT_STARTED,
+            'process2_sensitive_enc' => null,
+            'process2_mail_sent' => 0,
+            'leasing_presentation_json' => null,
             'created_at' => (string) $fields['created_at'],
             'updated_at' => (string) $fields['updated_at'],
         );
@@ -1007,6 +1011,22 @@ final class Phase2MemoryDb
                 $allowedSmart = $parts[1];
             }
             if (!in_array((string) $row['smartucf_state'], $allowedSmart, true)) {
+                return $this->emptyResult();
+            }
+        }
+
+        if (preg_match("/AND `process2_state` IN \\(([^)]+)\\)/", $sql, $p2StateMatch)) {
+            $allowedP2 = array();
+            if (preg_match_all("/'([^']+)'/", $p2StateMatch[1], $parts)) {
+                $allowedP2 = $parts[1];
+            }
+            if (!in_array((string) (isset($row['process2_state']) ? $row['process2_state'] : ''), $allowedP2, true)) {
+                return $this->emptyResult();
+            }
+        }
+
+        if (preg_match("/AND `process2_state` = '([^']+)'/", $sql, $p2ExactMatch)) {
+            if ((string) (isset($row['process2_state']) ? $row['process2_state'] : '') !== $p2ExactMatch[1]) {
                 return $this->emptyResult();
             }
         }
@@ -1051,6 +1071,9 @@ final class Phase2MemoryDb
             'smartucf_error_class',
             'smartucf_claimed_at',
             'smartucf_completed_at',
+            'process2_state',
+            'process2_sensitive_enc',
+            'leasing_presentation_json',
         );
         foreach ($stringColumns as $column) {
             if (stripos($sql, '`' . $column . '` = NULL') !== false) {
@@ -1074,6 +1097,9 @@ final class Phase2MemoryDb
         }
         if (preg_match('/`smartucf_retryable`\\s*=\\s*(\\d+)/', $sql, $retryMatch)) {
             $row['smartucf_retryable'] = (int) $retryMatch[1];
+        }
+        if (preg_match('/`process2_mail_sent`\\s*=\\s*(\\d+)/', $sql, $mailMatch)) {
+            $row['process2_mail_sent'] = (int) $mailMatch[1];
         }
 
         $this->financingAttempts[$attemptId] = $row;

@@ -84,12 +84,13 @@ class ModelExtensionPaymentMtUniCredit extends Model
     }
 
     /**
-     * Phase 7: submit/resume CP order lifecycle for the prepared native order.
+     * Phase 7/10: submit/resume CP order lifecycle for the prepared native order.
      *
      * @param int $orderId
+     * @param array<string, mixed> $process2
      * @return array<string, mixed>
      */
-    public function submitCheckoutFinancing($orderId)
+    public function submitCheckoutFinancing($orderId, array $process2 = array())
     {
         $orderId = (int) $orderId;
         $storeId = $this->resolveStoreId();
@@ -106,10 +107,70 @@ class ModelExtensionPaymentMtUniCredit extends Model
             (string) $this->config->get('config_ssl'),
             (string) $this->config->get('config_url')
         );
+        $service = $this->createCheckoutFinancingSubmissionService($db, $stack);
 
-        $categoryLoader = function ($productId) {
+        return $service->submit(array(
+            'store_id' => $storeId,
+            'order_id' => $orderId,
+            'order' => is_array($order) ? $order : null,
+            'order_products' => is_array($orderProducts) ? $orderProducts : array(),
+            'cart_context' => $this->createCheckoutCartContext(),
+            'process2' => is_array($process2) ? $process2 : array(),
+        ));
+    }
+
+    /**
+     * @return MtUniCreditCartContext
+     */
+    private function createCheckoutCartContext()
+    {
+        $cartFactory = new MtUniCreditOc3CartContextFactory(
+            $this->createCategoryLoaderCallable(),
+            $this->createTaxCalculatorCallable()
+        );
+
+        return $cartFactory->create(
+            is_array($this->cart->getProducts()) ? $this->cart->getProducts() : array(),
+            $this->calculateCheckoutGrandTotal()
+        );
+    }
+
+    /**
+     * @param object $db
+     * @param array<string, mixed> $stack
+     * @return MtUniCreditCheckoutFinancingSubmissionService
+     */
+    private function createCheckoutFinancingSubmissionService($db, array $stack)
+    {
+        $attempts = new MtUniCreditFinancingAttemptRepository($db);
+        $lifecycle = new MtUniCreditControlPanelOrderLifecycleService(
+            $attempts,
+            new MtUniCreditOperationLockRepository($db),
+            $stack['client'],
+            null,
+            MtUniCreditProcess1ServiceFactory::coordinator($db, null, null, $stack['client']),
+            MtUniCreditProcess1ServiceFactory::bankStatuses($db),
+            MtUniCreditProcessTwoServiceFactory::coordinator($db, $stack['client'])
+        );
+
+        return new MtUniCreditCheckoutFinancingSubmissionService(
+            $attempts,
+            $lifecycle,
+            $stack['credentials'],
+            MtUniCreditBootstrap::shopConfigurationCacheFromDb($db)
+        );
+    }
+
+    /**
+     * @return callable
+     */
+    private function createCategoryLoaderCallable()
+    {
+        $model = $this;
+
+        return function ($productId) use ($model) {
             $table = DB_PREFIX . 'product_to_category';
-            $result = $this->db->query(
+            $result = $model->db->query(
                 "SELECT `category_id` FROM `{$table}` WHERE `product_id` = " . (int) $productId
             );
             $ids = array();
@@ -121,47 +182,26 @@ class ModelExtensionPaymentMtUniCredit extends Model
 
             return $ids;
         };
-        $taxCalculator = function ($price, $taxClassId) {
-            if (isset($this->tax) && is_object($this->tax) && method_exists($this->tax, 'calculate')) {
-                return (float) $this->tax->calculate(
+    }
+
+    /**
+     * @return callable
+     */
+    private function createTaxCalculatorCallable()
+    {
+        $model = $this;
+
+        return function ($price, $taxClassId) use ($model) {
+            if (isset($model->tax) && is_object($model->tax) && method_exists($model->tax, 'calculate')) {
+                return (float) $model->tax->calculate(
                     (float) $price,
                     (int) $taxClassId,
-                    $this->config->get('config_tax')
+                    $model->config->get('config_tax')
                 );
             }
 
             return (float) $price;
         };
-        $cartFactory = new MtUniCreditOc3CartContextFactory($categoryLoader, $taxCalculator);
-        $currency = (string) (isset($this->session->data['currency']) ? $this->session->data['currency'] : $this->config->get('config_currency'));
-        $cartContext = $cartFactory->create(
-            is_array($this->cart->getProducts()) ? $this->cart->getProducts() : array(),
-            $this->calculateCheckoutGrandTotal()
-        );
-
-        $attempts = new MtUniCreditFinancingAttemptRepository($db);
-        $lifecycle = new MtUniCreditControlPanelOrderLifecycleService(
-            $attempts,
-            new MtUniCreditOperationLockRepository($db),
-            $stack['client'],
-            null,
-            MtUniCreditProcess1ServiceFactory::coordinator($db, null, null, $stack['client']),
-            MtUniCreditProcess1ServiceFactory::bankStatuses($db)
-        );
-        $service = new MtUniCreditCheckoutFinancingSubmissionService(
-            $attempts,
-            $lifecycle,
-            $stack['credentials'],
-            MtUniCreditBootstrap::shopConfigurationCacheFromDb($db)
-        );
-
-        return $service->submit(array(
-            'store_id' => $storeId,
-            'order_id' => $orderId,
-            'order' => is_array($order) ? $order : null,
-            'order_products' => is_array($orderProducts) ? $orderProducts : array(),
-            'cart_context' => $cartContext,
-        ));
     }
 
     /**
@@ -202,37 +242,14 @@ class ModelExtensionPaymentMtUniCredit extends Model
     private function createPaymentAvailability()
     {
         $db = MtUniCreditBootstrap::dbFromModel($this);
-        $model = $this;
-        $categoryLoader = function ($productId) use ($model) {
-            $table = DB_PREFIX . 'product_to_category';
-            $result = $model->db->query(
-                "SELECT `category_id` FROM `{$table}` WHERE `product_id` = " . (int) $productId
-            );
-            $ids = array();
-            if (is_object($result) && isset($result->rows) && is_array($result->rows)) {
-                foreach ($result->rows as $row) {
-                    $ids[] = (int) $row['category_id'];
-                }
-            }
-
-            return $ids;
-        };
-        $taxCalculator = function ($price, $taxClassId) use ($model) {
-            if (isset($model->tax) && is_object($model->tax) && method_exists($model->tax, 'calculate')) {
-                return (float) $model->tax->calculate(
-                    (float) $price,
-                    (int) $taxClassId,
-                    $model->config->get('config_tax')
-                );
-            }
-
-            return (float) $price;
-        };
 
         return new MtUniCreditCheckoutPaymentAvailability(
             MtUniCreditBootstrap::shopConfigurationCacheFromDb($db),
             MtUniCreditBootstrap::credentialsRepositoryFromDb($db),
-            new MtUniCreditOc3CartContextFactory($categoryLoader, $taxCalculator)
+            new MtUniCreditOc3CartContextFactory(
+                $this->createCategoryLoaderCallable(),
+                $this->createTaxCalculatorCallable()
+            )
         );
     }
 

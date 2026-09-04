@@ -65,56 +65,109 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
 
         $view = MtUniCreditCheckoutPreparedViewState::fromAttempt($context['attempt']);
         $token = MtUniCreditCheckoutSubmitToken::issue($this->session->data);
+        $flash = $this->consumeCheckoutFlash();
 
+        $this->document->setTitle($this->language->get('heading_prepared_title'));
+        $data = $this->buildPreparedViewData($view, $token, $flash);
+        $this->response->setOutput($this->load->view('extension/payment/mt_uni_credit_prepared', $data));
+    }
+
+    /**
+     * @return string
+     */
+    private function consumeCheckoutFlash()
+    {
         $flash = '';
-        if (isset($this->session->data['mt_uni_credit_checkout_flash']) && is_string($this->session->data['mt_uni_credit_checkout_flash'])) {
+        if (
+            isset($this->session->data['mt_uni_credit_checkout_flash'])
+            && is_string($this->session->data['mt_uni_credit_checkout_flash'])
+        ) {
             $flash = (string) $this->session->data['mt_uni_credit_checkout_flash'];
             unset($this->session->data['mt_uni_credit_checkout_flash']);
         }
 
-        $this->document->setTitle($this->language->get('heading_prepared_title'));
+        return $flash;
+    }
 
-        $data = array();
-        $data['breadcrumbs'] = array();
-        $data['breadcrumbs'][] = array(
-            'text' => $this->language->get('text_home'),
-            'href' => $this->url->link('common/home'),
+    /**
+     * @return bool
+     */
+    private function resolveCheckoutProcess2Flag()
+    {
+        try {
+            $db = MtUniCreditBootstrap::dbFromRegistry($this->db);
+            $settings = new MtUniCreditSettingStore($db, MtUniCreditConstants::MODULE_SETTINGS_CODE);
+            $storeId = (int) $this->config->get('config_store_id');
+            $stack = MtUniCreditCpServiceFactory::create(
+                $db,
+                $settings,
+                $storeId,
+                (string) $this->config->get('config_ssl'),
+                (string) $this->config->get('config_url')
+            );
+            $unicid = $stack['credentials']->getUnicid($storeId);
+            if ($unicid === '') {
+                return false;
+            }
+            $shop = MtUniCreditBootstrap::shopConfigurationCacheFromDb($db)->getFreshShopData($storeId, $unicid);
+
+            return is_array($shop) && MtUniCreditShopConfigurationFlags::isSecondaryProcess($shop);
+        } catch (Exception $ignored) {
+            return false;
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $view
+     * @param string $token
+     * @param string $flash
+     * @return array<string, mixed>
+     */
+    private function buildPreparedViewData(array $view, $token, $flash)
+    {
+        $data = array(
+            'breadcrumbs' => array(
+                array(
+                    'text' => $this->language->get('text_home'),
+                    'href' => $this->url->link('common/home'),
+                ),
+                array(
+                    'text' => $this->language->get('text_checkout'),
+                    'href' => $this->url->link('checkout/checkout', '', true),
+                ),
+                array(
+                    'text' => $this->language->get('heading_prepared_title'),
+                    'href' => $this->url->link(MtUniCreditConstants::CHECKOUT_PREPARED_ROUTE, '', true),
+                ),
+            ),
+            'heading_title' => $this->language->get('heading_prepared_title'),
+            'success' => !empty($view['success']),
+            'ambiguous' => !empty($view['ambiguous']),
+            'can_submit' => !empty($view['can_submit']),
+            'mode' => $view['mode'],
+            'message' => $flash !== '' ? $flash : $this->language->get($view['message_key']),
+            'text_continue_checkout' => $this->language->get('text_continue_checkout'),
+            'text_continue_shopping' => $this->language->get('text_continue_shopping'),
+            'button_submit_financing' => $this->language->get('button_submit_financing'),
+            'button_retry_financing' => $this->language->get('button_retry_financing'),
+            'action' => $this->url->link(MtUniCreditConstants::CHECKOUT_SUBMIT_ROUTE, '', true),
+            'submit_token' => $token,
+            'process2' => $this->resolveCheckoutProcess2Flag(),
+            'text_egn' => $this->language->get('text_egn'),
+            'text_phone2' => $this->language->get('text_phone2'),
+            'text_required' => '*',
+            'continue' => !empty($view['success'])
+                ? $this->url->link('common/home', '', true)
+                : $this->url->link('checkout/checkout', '', true),
+            'column_left' => $this->load->controller('common/column_left'),
+            'column_right' => $this->load->controller('common/column_right'),
+            'content_top' => $this->load->controller('common/content_top'),
+            'content_bottom' => $this->load->controller('common/content_bottom'),
+            'footer' => $this->load->controller('common/footer'),
+            'header' => $this->load->controller('common/header'),
         );
-        $data['breadcrumbs'][] = array(
-            'text' => $this->language->get('text_checkout'),
-            'href' => $this->url->link('checkout/checkout', '', true),
-        );
-        $data['breadcrumbs'][] = array(
-            'text' => $this->language->get('heading_prepared_title'),
-            'href' => $this->url->link(MtUniCreditConstants::CHECKOUT_PREPARED_ROUTE, '', true),
-        );
 
-        $data['heading_title'] = $this->language->get('heading_prepared_title');
-        $data['success'] = !empty($view['success']);
-        $data['ambiguous'] = !empty($view['ambiguous']);
-        $data['can_submit'] = !empty($view['can_submit']);
-        $data['mode'] = $view['mode'];
-        $data['message'] = $flash !== ''
-            ? $flash
-            : $this->language->get($view['message_key']);
-        $data['text_continue_checkout'] = $this->language->get('text_continue_checkout');
-        $data['text_continue_shopping'] = $this->language->get('text_continue_shopping');
-        $data['button_submit_financing'] = $this->language->get('button_submit_financing');
-        $data['button_retry_financing'] = $this->language->get('button_retry_financing');
-        $data['action'] = $this->url->link(MtUniCreditConstants::CHECKOUT_SUBMIT_ROUTE, '', true);
-        $data['submit_token'] = $token;
-        $data['continue'] = !empty($view['success'])
-            ? $this->url->link('common/home', '', true)
-            : $this->url->link('checkout/checkout', '', true);
-
-        $data['column_left'] = $this->load->controller('common/column_left');
-        $data['column_right'] = $this->load->controller('common/column_right');
-        $data['content_top'] = $this->load->controller('common/content_top');
-        $data['content_bottom'] = $this->load->controller('common/content_bottom');
-        $data['footer'] = $this->load->controller('common/footer');
-        $data['header'] = $this->load->controller('common/header');
-
-        $this->response->setOutput($this->load->view('extension/payment/mt_uni_credit_prepared', $data));
+        return $data;
     }
 
     /**
@@ -155,7 +208,14 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
 
         $this->load->model('extension/payment/mt_uni_credit');
         $this->load->model('checkout/order');
-        $result = $this->model_extension_payment_mt_uni_credit->submitCheckoutFinancing((int) $context['order_id']);
+        $process2 = array(
+            'egn' => isset($this->request->post['egn']) ? (string) $this->request->post['egn'] : '',
+            'phone2' => isset($this->request->post['phone2']) ? (string) $this->request->post['phone2'] : '',
+        );
+        $result = $this->model_extension_payment_mt_uni_credit->submitCheckoutFinancing(
+            (int) $context['order_id'],
+            $process2
+        );
 
         if (!empty($result['apply_native_order_status'])) {
             $statusId = (int) $this->config->get(MtUniCreditConstants::PAYMENT_SETTING_ORDER_STATUS_ID);

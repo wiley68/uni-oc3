@@ -73,6 +73,14 @@ final class Phase9TestHarness
         );
         $process1 = MtUniCreditProcess1ServiceFactory::coordinator($db, $smartUcfClient, $clock, $services['client']);
         $bankStatuses = MtUniCreditProcess1ServiceFactory::bankStatuses($db, $clock);
+        $mailer = new MtUniCreditRecordingProcessTwoMailer();
+        $process2 = MtUniCreditProcessTwoServiceFactory::coordinator(
+            $db,
+            $services['client'],
+            $mailer,
+            $clock,
+            MtUniCreditEncryptionKeyProvider::testSecretInput()
+        );
         $smartUcfLifecycle = new MtUniCreditSmartUcfLifecycleRepository($db, $clock);
         $lifecycle = new MtUniCreditControlPanelOrderLifecycleService(
             $attempts,
@@ -80,7 +88,8 @@ final class Phase9TestHarness
             $services['client'],
             null,
             $process1,
-            $bankStatuses
+            $bankStatuses,
+            $process2
         );
         $submission = new MtUniCreditCheckoutFinancingSubmissionService(
             $attempts,
@@ -118,6 +127,8 @@ final class Phase9TestHarness
             'storeId' => $storeId,
             'smartUcfProbe' => $smartUcfProbe,
             'process1' => $process1,
+            'process2' => $process2,
+            'process2Mailer' => $mailer,
             'bankStatuses' => $bankStatuses,
             'smartUcfLifecycle' => $smartUcfLifecycle,
             'clock' => $clock,
@@ -167,6 +178,8 @@ final class Phase9TestHarness
                 'country_id' => 33,
                 'zone' => 'Sofia',
                 'zone_id' => 1,
+                'egn' => self::process2Fields()['egn'],
+                'phone2' => self::process2Fields()['phone2'],
             ),
             'session' => array(),
             'invoice_prefix' => 'INV',
@@ -330,6 +343,36 @@ final class Phase9TestHarness
             'order_products' => Phase7TestHarness::orderProducts(),
             'cart_context' => Phase7TestHarness::cartContext(),
         );
+    }
+
+    /**
+     * Valid Process 2 EGN/phone2 for offline tests (10-digit date EGN, no checksum).
+     *
+     * @return array{egn: string, phone2: string}
+     */
+    public static function process2Fields(): array
+    {
+        return array(
+            'egn' => '1990010112',
+            'phone2' => '+359 88 123 456',
+        );
+    }
+
+    /**
+     * @param int $orderId
+     * @param int $storeId
+     * @return array<string, mixed>
+     */
+    public static function submitInputProcess2(int $orderId, int $storeId): array
+    {
+        $input = self::submitInput($orderId, $storeId);
+        $input['process2'] = self::process2Fields();
+        $order = $input['order'];
+        $order['email'] = 'customer@example.test';
+        $order['store_email'] = 'store@example.test';
+        $input['order'] = $order;
+
+        return $input;
     }
 
     /**

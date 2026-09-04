@@ -29,6 +29,9 @@ final class MtUniCreditControlPanelOrderLifecycleService
     /** @var MtUniCreditSmartUcfSessionCoordinator|null */
     private $process1;
 
+    /** @var MtUniCreditProcessTwoLifecycleCoordinator|null */
+    private $process2;
+
     /** @var MtUniCreditOrderBankStatusRepository|null */
     private $bankStatuses;
 
@@ -42,6 +45,7 @@ final class MtUniCreditControlPanelOrderLifecycleService
      * @param MtUniCreditControlPanelOrderPayloadBuilder|null $payloadBuilder
      * @param MtUniCreditSmartUcfSessionCoordinator|null $process1
      * @param MtUniCreditOrderBankStatusRepository|null $bankStatuses
+     * @param MtUniCreditProcessTwoLifecycleCoordinator|null $process2
      */
     public function __construct(
         MtUniCreditFinancingAttemptRepository $attempts,
@@ -49,7 +53,8 @@ final class MtUniCreditControlPanelOrderLifecycleService
         MtUniCreditControlPanelClient $client,
         $payloadBuilder = null,
         $process1 = null,
-        $bankStatuses = null
+        $bankStatuses = null,
+        $process2 = null
     ) {
         $this->attempts = $attempts;
         $this->locks = $locks;
@@ -59,6 +64,7 @@ final class MtUniCreditControlPanelOrderLifecycleService
             : new MtUniCreditControlPanelOrderPayloadBuilder();
         $this->process1 = $process1 instanceof MtUniCreditSmartUcfSessionCoordinator ? $process1 : null;
         $this->bankStatuses = $bankStatuses instanceof MtUniCreditOrderBankStatusRepository ? $bankStatuses : null;
+        $this->process2 = $process2 instanceof MtUniCreditProcessTwoLifecycleCoordinator ? $process2 : null;
         $this->phase9Log = null;
     }
 
@@ -460,10 +466,21 @@ final class MtUniCreditControlPanelOrderLifecycleService
         if ($normalized === MtUniCreditShopProcessContext::PROCESS_2) {
             $log->record($storeId, $localOrderId, $entryPoint, MtUniCreditPhase9LifecycleLog::EVENT_SKIP, array_merge(
                 $safeIds,
-                array('reason' => 'process2')
+                array('reason' => 'process2_no_smartucf')
             ));
 
-            return MtUniCreditControlPanelOrderSubmissionResult::ok($cpId, $localReplay);
+            return $this->continueProcess2AfterCp(
+                $attemptId,
+                $cpId,
+                $localReplay,
+                $storeId,
+                $localOrderId,
+                $entryPoint,
+                $order,
+                $shop,
+                $log,
+                $safeIds
+            );
         }
 
         $coordinator = $this->resolveProcess1Coordinator();
@@ -564,6 +581,118 @@ final class MtUniCreditControlPanelOrderLifecycleService
                 : MtUniCreditSmartUcfSessionCoordinator::CUSTOMER_FAILED,
             $applyNative
         );
+    }
+
+    /**
+     * @param int $attemptId
+     * @param int $cpId
+     * @param bool $localReplay
+     * @param int $storeId
+     * @param int $localOrderId
+     * @param string $entryPoint
+     * @param array<string, mixed> $order
+     * @param array<string, mixed> $shop
+     * @param MtUniCreditPhase9LifecycleLog $log
+     * @param array<string, mixed> $safeIds
+     * @return MtUniCreditControlPanelOrderSubmissionResult
+     */
+    private function continueProcess2AfterCp(
+        $attemptId,
+        $cpId,
+        $localReplay,
+        $storeId,
+        $localOrderId,
+        $entryPoint,
+        array $order,
+        array $shop,
+        MtUniCreditPhase9LifecycleLog $log,
+        array $safeIds
+    ) {
+        $coordinator = $this->resolveProcess2Coordinator();
+        if ($coordinator === null) {
+            $log->record($storeId, $localOrderId, $entryPoint, MtUniCreditPhase9LifecycleLog::EVENT_SKIP, array_merge(
+                $safeIds,
+                array('reason' => 'process2_coordinator_unavailable')
+            ));
+
+            return MtUniCreditControlPanelOrderSubmissionResult::failAfterCp(
+                $cpId,
+                $localReplay,
+                'process2_not_wired',
+                true,
+                false,
+                MtUniCreditProcessTwoLifecycleCoordinator::CUSTOMER_FAILED_MESSAGE
+            );
+        }
+
+        $orderContext = array(
+            'order_id' => $localOrderId,
+            'customer_email' => isset($order['email']) ? (string) $order['email'] : '',
+            'store_email' => isset($order['store_email'])
+                ? (string) $order['store_email']
+                : (isset($shop['store_email']) ? (string) $shop['store_email'] : ''),
+            'customer_firstname' => isset($order['firstname']) ? (string) $order['firstname'] : '',
+            'customer_lastname' => isset($order['lastname']) ? (string) $order['lastname'] : '',
+        );
+
+        $result = $coordinator->run((int) $attemptId, (int) $storeId, (int) $localOrderId, $shop, $orderContext);
+        if (empty($result['success'])) {
+            $log->record($storeId, $localOrderId, $entryPoint, MtUniCreditPhase9LifecycleLog::EVENT_SMARTUCF_RESULT, array_merge(
+                $safeIds,
+                array(
+                    'kind' => 'process2_failed',
+                    'error' => isset($result['error']) ? (string) $result['error'] : 'process2_failed',
+                )
+            ));
+
+            return MtUniCreditControlPanelOrderSubmissionResult::failAfterCp(
+                $cpId,
+                $localReplay,
+                isset($result['error']) ? (string) $result['error'] : 'process2_failed',
+                !empty($result['recoverable']),
+                false,
+                isset($result['message'])
+                    ? (string) $result['message']
+                    : MtUniCreditProcessTwoLifecycleCoordinator::CUSTOMER_FAILED_MESSAGE
+            );
+        }
+
+        $log->record($storeId, $localOrderId, $entryPoint, MtUniCreditPhase9LifecycleLog::EVENT_SMARTUCF_RESULT, array_merge(
+            $safeIds,
+            array(
+                'kind' => 'process2_prepared',
+                'bank_status' => MtUniCreditBankStatus::SENT_PROCESS2,
+                'replay' => !empty($result['replay']),
+            )
+        ));
+
+        $ok = MtUniCreditControlPanelOrderSubmissionResult::ok($cpId, $localReplay);
+        if (!empty($result['message'])) {
+            $ok->customerMessage = (string) $result['message'];
+        }
+
+        return $ok;
+    }
+
+    /**
+     * @return MtUniCreditProcessTwoLifecycleCoordinator|null
+     */
+    private function resolveProcess2Coordinator()
+    {
+        if ($this->process2 instanceof MtUniCreditProcessTwoLifecycleCoordinator) {
+            return $this->process2;
+        }
+
+        try {
+            $this->process2 = MtUniCreditProcessTwoServiceFactory::coordinator(
+                $this->attempts->database(),
+                $this->client
+            );
+        } catch (Exception $exception) {
+            return null;
+        }
+
+        return $this->process2;
     }
 
     /**

@@ -908,3 +908,43 @@ After Product Step 2 `Изпрати` with Process 1:
 - [ ] No live SmartUCF or live CP calls in the automated gate.
 - [ ] Do not hack mail events to suppress native mails — fix `addOrderHistory` timing instead.
 - [ ] Financing/leasing mail enrichment intentionally not started in Phase 9.
+
+---
+
+## Phase 10 — Process 2 / EGN / leasing mail / privacy (local PASS)
+
+Automated gate: `php tests/phase10_check.php` (no live network).
+
+### Process 2 success
+
+After Product/Cart/Checkout Process 2 submit (`uni_proces === 1`):
+
+1. [ ] Local OC order = 1
+2. [ ] CP order = 1 (`cp_created`)
+3. [ ] SmartUCF HTTP calls = 0
+4. [ ] Local bank status = `bank_sent_process2`
+5. [ ] CP bank status PATCHed to `bank_sent_process2` (`Изпратен Банка - Процес 2`)
+6. [ ] Native OC status applied once (configured payment status) — not tied to SmartUCF
+7. [ ] Process 2 leasing admin/`uni_email` mail includes EGN + phone2
+8. [ ] Process 2 customer leasing mail omits EGN/phone2
+9. [ ] EGN absent from CP create payload and generic diagnostic logs
+10. [ ] Customer continuation is shop terminal flow (no bank redirect)
+
+### Process 2 mail failure
+
+1. [ ] CP order and local order remain
+2. [ ] `bank_sent_process2` still set (mail independent after prepare)
+3. [ ] `process2_mail_sent` stays 0 until successful send
+4. [ ] Replay retries mail only — no second CP create / no SmartUCF
+
+### Process 1 regression
+
+1. [ ] SmartUCF success + local/CP `bank_sent_process1` + bank redirect unchanged
+2. [ ] No Process 2 mail on Process 1
+3. [ ] No EGN/phone2 in SmartUCF/CP generic payloads
+
+### Explicit exclusions (Phase 10)
+
+- [ ] No Thank You / admin order-detail presentation redesign (Phase 11)
+- [ ] No homepage ads
+- [ ] Native OC order_add/order_alert HTML enrichment via events may follow Phase 11 presentation parity; Phase 10 ships dedicated Process 2 leasing mail + frozen presentation composer

@@ -31,6 +31,7 @@ function mtuc4_valid_shop_snapshot(array $overrides = array())
         'uni_production_application' => 'https://online.ucfin.bg/sucf-online/Request/Start',
         'uni_user' => 'demo-user',
         'uni_password' => 'demo-secret-password',
+        'uni_email' => 'bank-admin@example.test',
         'kop' => array(
             'by_default' => array(
                 'uni_kop_default' => 'KOPSTD',

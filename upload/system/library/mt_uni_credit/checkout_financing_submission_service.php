@@ -105,6 +105,41 @@ final class MtUniCreditCheckoutFinancingSubmissionService
             $fingerprint
         );
 
+        if (MtUniCreditShopConfigurationFlags::isSecondaryProcess($shop)) {
+            $posted = isset($input['process2']) && is_array($input['process2']) ? $input['process2'] : array();
+            try {
+                $sensitive = MtUniCreditProcessTwoSubmissionSupport::validateIfRequired($shop, $posted);
+                if ($sensitive instanceof MtUniCreditProcessTwoSensitiveData) {
+                    MtUniCreditProcessTwoSubmissionSupport::persist(
+                        $sensitive,
+                        (int) $attempt['attempt_id'],
+                        $this->attempts->database()
+                    );
+                }
+            } catch (InvalidArgumentException $exception) {
+                return array(
+                    'success' => false,
+                    'error' => 'validation',
+                    'message' => $exception->getMessage(),
+                    'attempt' => $attempt,
+                );
+            } catch (RuntimeException $exception) {
+                return array(
+                    'success' => false,
+                    'error' => 'process2_encryption_unavailable',
+                    'message' => MtUniCreditControlPanelOrderLifecycleService::CUSTOMER_FAILURE_MESSAGE,
+                    'attempt' => $attempt,
+                );
+            }
+            MtUniCreditProcessTwoSubmissionSupport::persistLeasingSnapshot(
+                $calculation,
+                $orderId,
+                (int) $attempt['attempt_id'],
+                $this->attempts->database(),
+                isset($attempt['control_panel_order_id']) ? (int) $attempt['control_panel_order_id'] : null
+            );
+        }
+
         if (
             $attempt['request_fingerprint'] !== ''
             && $attempt['cp_payload']
