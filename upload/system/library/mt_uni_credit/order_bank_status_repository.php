@@ -2,6 +2,12 @@
 
 /**
  * Persists CP → module bank status callbacks scoped by store + local order.
+ *
+ * Update semantics (OC4 / Woo / PS8 Bridge A parity): last-write wins.
+ * Any accepted status_id may replace any previous status_id for the same
+ * (store_id, order_id). Same status_id + label is idempotent (no rewrite).
+ * Native OpenCart order history / mail are never touched here.
+ * CP schedulers must not push regressive / stale statuses.
  */
 final class MtUniCreditOrderBankStatusRepository
 {
