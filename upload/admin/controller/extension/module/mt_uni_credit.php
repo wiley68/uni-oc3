@@ -42,11 +42,11 @@ class ControllerExtensionModuleMtUniCredit extends Controller
         $data = array();
         $this->assignFlashMessages($data);
         $this->assignErrors($data);
+        $this->applyEventRepairWarning($data, $repairResult);
         $this->assignBreadcrumbs($data);
         $this->assignFormAction($data);
         $this->assignOperationalActions($data);
         $this->assignSettings($data);
-        $this->assignEventHealth($data, $repairResult);
         $this->assignLayout($data);
 
         $this->response->setOutput($this->load->view('extension/module/mt_uni_credit', $data));
@@ -296,32 +296,25 @@ class ControllerExtensionModuleMtUniCredit extends Controller
     }
 
     /**
+     * Surface a concise warning only when presentation-event self-heal fails.
+     * Healthy / successful repair produces no admin UI noise.
+     *
      * @param array<string, mixed> $data
      * @param array<string, mixed>|null $repairResult ensureCatalogEvents() result from this page load
      * @return void
      */
-    private function assignEventHealth(array &$data, $repairResult = null)
+    private function applyEventRepairWarning(array &$data, $repairResult = null)
     {
-        $report = $this->model_extension_module_mt_uni_credit->getPresentationEventHealth();
-        $healthy = !empty($report['ok']);
-        $data['event_health_ok'] = $healthy;
-        $data['event_health_repair_failed'] = !$healthy;
-        $data['event_health_summary'] = MtUniCreditCatalogEventHealth::formatSummaryLine($report);
-        $data['event_health_rows'] = isset($report['events']) && is_array($report['events'])
-            ? $report['events']
-            : array();
-        if (!$healthy && is_array($repairResult) && !empty($repairResult['error'])) {
-            $data['event_health_summary'] .= ' | repair_error=' . (string) $repairResult['error'];
+        if (!empty($data['error_warning'])) {
+            return;
         }
-        $data['text_event_health'] = $this->language->get('text_event_health');
-        $data['text_event_health_ok'] = $this->language->get('text_event_health_ok');
-        $data['text_event_health_repair_failed'] = $this->language->get('text_event_health_repair_failed');
-        $data['column_event_code'] = $this->language->get('column_event_code');
-        $data['column_event_trigger'] = $this->language->get('column_event_trigger');
-        $data['column_event_registered'] = $this->language->get('column_event_registered');
-        $data['column_event_enabled'] = $this->language->get('column_event_enabled');
-        $data['column_event_duplicates'] = $this->language->get('column_event_duplicates');
-        $data['column_event_healthy'] = $this->language->get('column_event_healthy');
+
+        $healthy = is_array($repairResult) && !empty($repairResult['healthy']);
+        if ($healthy) {
+            return;
+        }
+
+        $data['error_warning'] = $this->language->get('text_event_health_repair_failed');
     }
 
     /**

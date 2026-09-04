@@ -31,45 +31,6 @@
     {% endif %}
     <div class="panel panel-default">
       <div class="panel-heading">
-        <h3 class="panel-title"><i class="fa fa-heartbeat"></i> {{ text_event_health }}</h3>
-      </div>
-      <div class="panel-body">
-        {% if event_health_ok %}
-        <div class="alert alert-success"><i class="fa fa-check-circle"></i> {{ text_event_health_ok }}</div>
-        {% elseif event_health_repair_failed %}
-        <div class="alert alert-danger"><i class="fa fa-exclamation-triangle"></i> {{ text_event_health_repair_failed }}</div>
-        {% endif %}
-        <p><code>{{ event_health_summary }}</code></p>
-        <div class="table-responsive">
-          <table class="table table-bordered table-hover">
-            <thead>
-              <tr>
-                <th>{{ column_event_code }}</th>
-                <th>{{ column_event_trigger }}</th>
-                <th>{{ column_event_registered }}</th>
-                <th>{{ column_event_enabled }}</th>
-                <th>{{ column_event_duplicates }}</th>
-                <th>{{ column_event_healthy }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for row in event_health_rows %}
-              <tr>
-                <td>{{ row.code }}</td>
-                <td><small>{{ row.expected_trigger }}</small></td>
-                <td>{{ row.registered }}</td>
-                <td>{{ row.enabled }}</td>
-                <td>{{ row.duplicate_count }}</td>
-                <td>{{ row.healthy }}</td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-    <div class="panel panel-default">
-      <div class="panel-heading">
         <h3 class="panel-title"><i class="fa fa-pencil"></i> {{ text_edit }}</h3>
       </div>
       <div class="panel-body">

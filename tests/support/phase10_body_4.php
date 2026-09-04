@@ -406,14 +406,26 @@ $moduleModel = mtuc10_read(
 );
 $installerSrc = mtuc10_read($lib . DIRECTORY_SEPARATOR . 'installer.php');
 mtuc10_assert(strpos($moduleCtrl, 'repairCatalogEvents') !== false, 'wiring: Module admin self-heals events');
-mtuc10_assert(strpos($moduleCtrl, 'assignEventHealth') !== false, 'wiring: Module admin shows event health');
-mtuc10_assert(strpos($moduleCtrl, 'event_health_repair_failed') !== false, 'wiring: admin distinguishes repair failure');
+mtuc10_assert(strpos($moduleCtrl, 'applyEventRepairWarning') !== false, 'wiring: Module admin surfaces repair failure only');
 mtuc10_assert(strpos($moduleCtrl, 'text_event_health_repair_failed') !== false, 'wiring: failure language key wired');
+mtuc10_assert(strpos($moduleCtrl, 'assignEventHealth') === false, 'wiring: Module admin no longer renders event-health panel data');
 mtuc10_assert(strpos($moduleModel, 'ensureCatalogEvents($this->db)') !== false, 'wiring: module passes $this->db');
 mtuc10_assert(strpos($moduleModel, 'removeCatalogEvents($this->db)') !== false, 'wiring: uninstall passes $this->db');
 mtuc10_assert(strpos($installerSrc, 'isset($model->db)') === false, 'wiring: installer no longer uses isset($model->db)');
 mtuc10_assert(strpos($installerSrc, 'function ensureCatalogEvents($db)') !== false, 'wiring: ensureCatalogEvents($db) contract');
 mtuc10_assert(strpos($installerSrc, 'function removeCatalogEvents($db)') !== false, 'wiring: removeCatalogEvents($db) contract');
+
+$moduleTwig = mtuc10_read(
+    $root . DIRECTORY_SEPARATOR . 'upload' . DIRECTORY_SEPARATOR . 'admin' . DIRECTORY_SEPARATOR
+        . 'view' . DIRECTORY_SEPARATOR . 'template' . DIRECTORY_SEPARATOR . 'extension'
+        . DIRECTORY_SEPARATOR . 'module' . DIRECTORY_SEPARATOR . 'mt_uni_credit.twig'
+);
+mtuc10_assert(
+    strpos($moduleTwig, 'Здраве на presentation events') === false
+        && strpos($moduleTwig, 'text_event_health') === false
+        && strpos($moduleTwig, 'fa-heartbeat') === false,
+    'wiring: Module settings twig has no presentation-event health block'
+);
 
 $csSrc = mtuc10_read(
     $root . DIRECTORY_SEPARATOR . 'upload' . DIRECTORY_SEPARATOR . 'catalog' . DIRECTORY_SEPARATOR
