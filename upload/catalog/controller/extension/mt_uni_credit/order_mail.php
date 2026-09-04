@@ -58,25 +58,27 @@ class ControllerExtensionMtUniCreditOrderMail extends Controller
         if (!is_string($output) || $output === '') {
             return;
         }
-        if (
+        if (!is_array($data)) {
+            return;
+        }
+        $orderId = (int) (isset($data['order_id']) ? $data['order_id'] : 0);
+        $already = (
             strpos($output, 'mt-uni-credit-leasing-block') !== false
             || strpos($output, "УниКредит лизинг\n") !== false
             || (
                 strpos($output, 'УниКредит лизинг') !== false
                 && strpos($output, 'Срок (месеци)') !== false
             )
-        ) {
-            return;
-        }
-        if (!is_array($data)) {
-            return;
-        }
-        $orderId = (int) (isset($data['order_id']) ? $data['order_id'] : 0);
+        );
         error_log(
             'mt_uni_credit: mail event entered audience=' . $audience
                 . ' order_id=' . $orderId
                 . ' format=' . $format
+                . ' already_enriched=' . ($already ? 'yes' : 'no')
         );
+        if ($already) {
+            return;
+        }
         if ($orderId <= 0) {
             return;
         }
@@ -87,9 +89,12 @@ class ControllerExtensionMtUniCreditOrderMail extends Controller
                 new MtUniCreditFinancingPresentationRepository($db)
             );
             $storeId = (int) $this->config->get('config_store_id');
-            // Prefer order store_id when present in mail data context via DB ownership.
             $rows = $service->rowsForOrder($storeId, $orderId, $audience);
-            error_log('mt_uni_credit: mail row_count=' . count($rows) . ' audience=' . $audience);
+            error_log(
+                'mt_uni_credit: mail row_count=' . count($rows)
+                    . ' audience=' . $audience
+                    . ' order_id=' . $orderId
+            );
             if ($rows === array()) {
                 return;
             }
@@ -97,6 +102,8 @@ class ControllerExtensionMtUniCreditOrderMail extends Controller
             $presenter = new MtUniCreditFinancingLeasingPresenter();
             if ($format === 'text') {
                 $chunk = $presenter->renderText($rows);
+                $chunkLen = strlen((string) $chunk);
+                error_log('mt_uni_credit: mail chunk_length=' . $chunkLen . ' audience=' . $audience);
                 if ($chunk === '' || $this->containsBlockedSensitiveMailContent($chunk, $audience)) {
                     return;
                 }
@@ -110,6 +117,8 @@ class ControllerExtensionMtUniCreditOrderMail extends Controller
                 $rows = $service->filterCustomerFacingRows($rows);
             }
             $html = $presenter->renderHtml($rows);
+            $chunkLen = strlen((string) $html);
+            error_log('mt_uni_credit: mail chunk_length=' . $chunkLen . ' audience=' . $audience);
             if ($html === '' || $this->containsBlockedSensitiveMailContent($html, $audience)) {
                 if ($this->containsBlockedSensitiveMailContent($html, $audience)) {
                     error_log('mt_uni_credit: blocked order mail leasing HTML containing sensitive fields');

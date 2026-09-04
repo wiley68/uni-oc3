@@ -13,20 +13,27 @@ class ControllerExtensionMtUniCreditCheckoutSuccess extends Controller
     /**
      * catalog/controller/checkout/success/before — stash before native unset.
      *
+     * OC3 Router passes (&$route, &$data) where $data may be uninitialized.
+     *
      * @param string $route
      * @param mixed $data
      * @return void
      */
     public function before(&$route, &$data)
     {
-        error_log('mt_uni_credit: thankyou before entered route=' . (string) $route);
+        error_log('mt_uni_credit: thankyou_stash event entered route=' . (string) $route);
         if ((string) $route !== 'checkout/success') {
             return;
         }
         $orderId = (int) (isset($this->session->data['order_id']) ? $this->session->data['order_id'] : 0);
         if ($orderId > 0) {
             $this->session->data[MtUniCreditFinancingTerminalNavigationSupport::SESSION_SUCCESS_ORDER_ID] = $orderId;
-            error_log('mt_uni_credit: thankyou stashed order_id=' . $orderId);
+            error_log('mt_uni_credit: thankyou_stash order_id=' . $orderId);
+        } else {
+            $existing = (int) (isset($this->session->data[MtUniCreditFinancingTerminalNavigationSupport::SESSION_SUCCESS_ORDER_ID])
+                ? $this->session->data[MtUniCreditFinancingTerminalNavigationSupport::SESSION_SUCCESS_ORDER_ID]
+                : 0);
+            error_log('mt_uni_credit: thankyou_stash no session.order_id existing_success_id=' . $existing);
         }
     }
 
@@ -103,20 +110,32 @@ class ControllerExtensionMtUniCreditCheckoutSuccess extends Controller
         $orderId = $this->resolveSuccessOrderId();
         error_log('mt_uni_credit: thankyou resolve order_id=' . $orderId);
         if ($orderId <= 0) {
+            error_log('mt_uni_credit: thankyou abort reason=order_id_missing');
             return '';
         }
 
         $storeId = (int) $this->config->get('config_store_id');
-        if (!$this->canPresentOrderToCurrentCustomer($storeId, $orderId)) {
-            error_log('mt_uni_credit: thankyou ownership denied order_id=' . $orderId);
+        $checks = $this->ownershipChecks($storeId, $orderId);
+        error_log(
+            'mt_uni_credit: thankyou checks order_exists=' . ($checks['order_exists'] ? 'yes' : 'no')
+                . ' store_match=' . ($checks['store_match'] ? 'yes' : 'no')
+                . ' ownership=' . ($checks['ok'] ? 'yes' : 'no')
+        );
+        if (!$checks['ok']) {
             return '';
         }
 
         try {
             $db = MtUniCreditBootstrap::dbFromRegistry($this->db);
-            $service = new MtUniCreditFinancingPresentationService(
-                new MtUniCreditFinancingPresentationRepository($db)
+            $repo = new MtUniCreditFinancingPresentationRepository($db);
+            $snapshot = $repo->findByOrderId($storeId, $orderId);
+            error_log(
+                'mt_uni_credit: thankyou presentation store_id=' . $storeId
+                    . ' order_id=' . $orderId
+                    . ' row_exists=' . ($snapshot !== null ? 'yes' : 'no')
+                    . ' snapshot_nonempty=' . ($snapshot !== null ? 'yes' : 'no')
             );
+            $service = new MtUniCreditFinancingPresentationService($repo);
             $rows = $service->customerThankYouRows($storeId, $orderId);
             error_log(
                 'mt_uni_credit: thankyou row_count=' . count($rows)
@@ -126,6 +145,8 @@ class ControllerExtensionMtUniCreditCheckoutSuccess extends Controller
                 return '';
             }
             $html = $service->renderCustomerThankYouHtml($rows);
+            $htmlLen = strlen((string) $html);
+            error_log('mt_uni_credit: thankyou html_length=' . $htmlLen);
             if ($html === '' || !$this->isCustomerPresentationSafe($html)) {
                 if (!$this->isCustomerPresentationSafe($html)) {
                     error_log('mt_uni_credit: blocked Thank You leasing HTML containing Process 2 sensitive fields');
@@ -162,19 +183,19 @@ class ControllerExtensionMtUniCreditCheckoutSuccess extends Controller
     /**
      * @param int $storeId
      * @param int $orderId
-     * @return bool
+     * @return array{ok:bool,order_exists:bool,store_match:bool}
      */
-    private function canPresentOrderToCurrentCustomer($storeId, $orderId)
+    private function ownershipChecks($storeId, $orderId)
     {
         if (!isset($this->customer) || !is_object($this->customer) || !method_exists($this->customer, 'isLogged')) {
-            return true;
+            return array('ok' => true, 'order_exists' => true, 'store_match' => true);
         }
         if (!$this->customer->isLogged()) {
-            return true;
+            return array('ok' => true, 'order_exists' => true, 'store_match' => true);
         }
         $customerId = (int) $this->customer->getId();
         if ($customerId <= 0) {
-            return false;
+            return array('ok' => false, 'order_exists' => false, 'store_match' => false);
         }
 
         $result = $this->db->query(
@@ -182,12 +203,29 @@ class ControllerExtensionMtUniCreditCheckoutSuccess extends Controller
                 . " WHERE `order_id` = " . (int) $orderId . " LIMIT 1"
         );
         if (!is_object($result) || empty($result->num_rows)) {
-            return false;
+            return array('ok' => false, 'order_exists' => false, 'store_match' => false);
         }
         $orderCustomerId = (int) (isset($result->row['customer_id']) ? $result->row['customer_id'] : 0);
         $orderStoreId = (int) (isset($result->row['store_id']) ? $result->row['store_id'] : -1);
+        $storeMatch = $orderStoreId === (int) $storeId;
 
-        return $orderCustomerId === $customerId && $orderStoreId === (int) $storeId;
+        return array(
+            'ok' => $orderCustomerId === $customerId && $storeMatch,
+            'order_exists' => true,
+            'store_match' => $storeMatch,
+        );
+    }
+
+    /**
+     * @param int $storeId
+     * @param int $orderId
+     * @return bool
+     */
+    private function canPresentOrderToCurrentCustomer($storeId, $orderId)
+    {
+        $checks = $this->ownershipChecks($storeId, $orderId);
+
+        return !empty($checks['ok']);
     }
 
     /**

@@ -991,7 +991,16 @@ Automated gate: `php tests/phase10_check.php` (includes stale-binding + Thank Yo
   - `catalog/view/mail/order_add/after` → customer native HTML enrichment
   - `catalog/view/mail/order_alert/after` → admin native text enrichment
 - Process 1 bank redirect unchanged
-- **Remote repair:** Module/Payment reinstall **or** Module admin Save (calls `ensureCatalogEvents` upsert). Events must exist in `oc_event` with `status=1`.
+- **Remote repair:** Opening Module admin **or** Module/Payment install **or** Module Save calls `ensureCatalogEvents` (upsert + de-dupe). Events must exist in `oc_event` with `status=1`.
+- **Event health (admin Module page, no PII):**
+
+```text
+thankyou_stash: registered/enabled
+thankyou_before: registered/enabled
+thankyou_after: registered/enabled
+mail_customer: registered/enabled
+mail_admin: registered/enabled
+```
 
 ### Expected Process 2 mail count
 

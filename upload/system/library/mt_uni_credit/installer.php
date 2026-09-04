@@ -103,6 +103,7 @@ final class MtUniCreditInstaller
     /**
      * Idempotent catalog event registration for Thank You + native mail enrichment.
      * Upserts trigger/action/status so older installs receive corrected rows.
+     * Removes duplicate rows for the same code (keeps one healthy row).
      *
      * @param object $model OpenCart Model with $db
      * @return void
@@ -117,30 +118,68 @@ final class MtUniCreditInstaller
         }
 
         $prefix = defined('DB_PREFIX') ? DB_PREFIX : 'oc_';
+        $knownCodes = array();
 
         foreach (MtUniCreditCatalogEventRegistry::definitions() as $event) {
+            $code = (string) $event['code'];
+            $knownCodes[] = $code;
             $existing = $model->db->query(
                 "SELECT `event_id` FROM `" . $prefix . "event`"
-                    . " WHERE `code` = '" . $model->db->escape($event['code']) . "' LIMIT 1"
+                    . " WHERE `code` = '" . $model->db->escape($code) . "'"
+                    . " ORDER BY `event_id` ASC"
             );
-            if (is_object($existing) && !empty($existing->num_rows)) {
+            $ids = array();
+            if (is_object($existing) && !empty($existing->rows) && is_array($existing->rows)) {
+                foreach ($existing->rows as $row) {
+                    if (isset($row['event_id'])) {
+                        $ids[] = (int) $row['event_id'];
+                    }
+                }
+            } elseif (is_object($existing) && !empty($existing->num_rows) && isset($existing->row['event_id'])) {
+                $ids[] = (int) $existing->row['event_id'];
+            }
+
+            if ($ids === array()) {
                 $model->db->query(
-                    "UPDATE `" . $prefix . "event` SET"
+                    "INSERT INTO `" . $prefix . "event` SET"
+                        . " `code` = '" . $model->db->escape($code) . "',"
                         . " `trigger` = '" . $model->db->escape($event['trigger']) . "',"
                         . " `action` = '" . $model->db->escape($event['action']) . "',"
                         . " `status` = '1',"
                         . " `sort_order` = '0'"
-                        . " WHERE `code` = '" . $model->db->escape($event['code']) . "'"
                 );
                 continue;
             }
+
+            $keepId = array_shift($ids);
             $model->db->query(
-                "INSERT INTO `" . $prefix . "event` SET"
-                    . " `code` = '" . $model->db->escape($event['code']) . "',"
+                "UPDATE `" . $prefix . "event` SET"
                     . " `trigger` = '" . $model->db->escape($event['trigger']) . "',"
                     . " `action` = '" . $model->db->escape($event['action']) . "',"
                     . " `status` = '1',"
                     . " `sort_order` = '0'"
+                    . " WHERE `event_id` = " . (int) $keepId
+            );
+            foreach ($ids as $duplicateId) {
+                $model->db->query(
+                    "DELETE FROM `" . $prefix . "event` WHERE `event_id` = " . (int) $duplicateId
+                );
+            }
+        }
+
+        // Drop obsolete presentation event codes from earlier builds (same family only).
+        if ($knownCodes !== array()) {
+            $escaped = array();
+            foreach ($knownCodes as $known) {
+                $escaped[] = "'" . $model->db->escape($known) . "'";
+            }
+            $model->db->query(
+                "DELETE FROM `" . $prefix . "event` WHERE `code` LIKE 'mt_uni_credit_%'"
+                    . " AND ("
+                    . " `code` LIKE 'mt_uni_credit_checkout_success%'"
+                    . " OR `code` LIKE 'mt_uni_credit_mail_order%'"
+                    . ")"
+                    . " AND `code` NOT IN (" . implode(',', $escaped) . ")"
             );
         }
     }

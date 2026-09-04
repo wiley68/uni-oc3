@@ -38,6 +38,28 @@ class ModelExtensionModuleMtUniCredit extends Model
     }
 
     /**
+     * Idempotent presentation-event repair (install / Save / Module admin open).
+     *
+     * @return void
+     */
+    public function repairCatalogEvents()
+    {
+        MtUniCreditInstaller::ensureCatalogEvents($this);
+    }
+
+    /**
+     * Safe event health for admin diagnostics (no customer PII).
+     *
+     * @return array<string, mixed>
+     */
+    public function getPresentationEventHealth()
+    {
+        $prefix = defined('DB_PREFIX') ? DB_PREFIX : 'oc_';
+
+        return MtUniCreditCatalogEventHealth::report($this->db, $prefix);
+    }
+
+    /**
      * @return array<string, string>
      */
     public function getDefaultSettings()

@@ -86,6 +86,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'cp_service_factory.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'calculator' . DIRECTORY_SEPARATOR . 'bootstrap.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'health.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'catalog_event_registry.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'catalog_event_health.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'installer.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'shop_configuration_flags.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'bank_status.php';

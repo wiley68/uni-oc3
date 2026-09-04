@@ -18,6 +18,9 @@ class ControllerExtensionModuleMtUniCredit extends Controller
         $this->load->model('setting/setting');
         $this->load->model('extension/module/mt_uni_credit');
 
+        // Self-heal presentation events on every Module admin open (no Save required).
+        $this->model_extension_module_mt_uni_credit->repairCatalogEvents();
+
         if (($this->request->server['REQUEST_METHOD'] === 'POST') && $this->validate()) {
             try {
                 $this->model_extension_module_mt_uni_credit->saveSettings($this->request->post);
@@ -43,6 +46,7 @@ class ControllerExtensionModuleMtUniCredit extends Controller
         $this->assignFormAction($data);
         $this->assignOperationalActions($data);
         $this->assignSettings($data);
+        $this->assignEventHealth($data);
         $this->assignLayout($data);
 
         $this->response->setOutput($this->load->view('extension/module/mt_uni_credit', $data));
@@ -288,6 +292,29 @@ class ControllerExtensionModuleMtUniCredit extends Controller
                 'label' => $this->language->get('text_product_button_buy'),
             ),
         );
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @return void
+     */
+    private function assignEventHealth(array &$data)
+    {
+        $report = $this->model_extension_module_mt_uni_credit->getPresentationEventHealth();
+        $data['event_health_ok'] = !empty($report['ok']);
+        $data['event_health_summary'] = MtUniCreditCatalogEventHealth::formatSummaryLine($report);
+        $data['event_health_rows'] = isset($report['events']) && is_array($report['events'])
+            ? $report['events']
+            : array();
+        $data['text_event_health'] = $this->language->get('text_event_health');
+        $data['text_event_health_ok'] = $this->language->get('text_event_health_ok');
+        $data['text_event_health_repair'] = $this->language->get('text_event_health_repair');
+        $data['column_event_code'] = $this->language->get('column_event_code');
+        $data['column_event_trigger'] = $this->language->get('column_event_trigger');
+        $data['column_event_registered'] = $this->language->get('column_event_registered');
+        $data['column_event_enabled'] = $this->language->get('column_event_enabled');
+        $data['column_event_duplicates'] = $this->language->get('column_event_duplicates');
+        $data['column_event_healthy'] = $this->language->get('column_event_healthy');
     }
 
     /**

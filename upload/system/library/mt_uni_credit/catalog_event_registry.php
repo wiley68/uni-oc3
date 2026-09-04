@@ -2,6 +2,12 @@
 
 /**
  * Shared catalog event definitions for Thank You + native order mail enrichment.
+ *
+ * OC3 mechanics (reference-oc3-core):
+ * - DB trigger keeps catalog/ prefix; startup/event strips first segment before register.
+ * - Loader/Router fire controller/{route}/before|after and view/{route}/before|after.
+ * - Action strings are classic OC3 routes: extension/.../controller/method (slash method).
+ * - Callbacks must accept by-ref args matching Loader::view / Router signatures.
  */
 final class MtUniCreditCatalogEventRegistry
 {
