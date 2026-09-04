@@ -287,7 +287,23 @@ mtuc8_assert(isset($recalc['financed_amount'], $recalc['monthly_installment'], $
 mtuc8_assert((float) $recalc['first_installment'] >= 0, 'recalculate first installment numeric');
 
 mtuc8_assert(strpos($jsPopup, 'function setProcessing') !== false || strpos($jsPopup, 'setProcessing(active)') !== false, 'JS setProcessing present');
-mtuc8_assert(strpos($jsPopup, 'setProcessing(false)') !== false, 'JS clears processing on terminal paths');
+mtuc8_assert(strpos($jsPopup, 'setProcessing(false)') !== false, 'JS clears processing on non-redirect error paths');
+mtuc8_assert(strpos($jsPopup, 'terminalSubmitInFlight') !== false, 'JS terminal submit in-flight lock present');
+mtuc8_assert(strpos($jsPopup, 'isTerminalSubmitLocked') !== false, 'JS isTerminalSubmitLocked helper present');
+mtuc8_assert(strpos($jsPopup, 'window.location.assign') !== false, 'JS terminal redirect uses location.assign');
+mtuc8_assert(
+    preg_match(
+        '/if\s*\(\s*response\.redirect\s*\)\s*\{[^}]*window\.location\.assign/s',
+        $jsPopup
+    ) === 1,
+    'JS redirect path navigates without prior unlock'
+);
+mtuc8_assert(
+    strpos($jsPopup, "setProcessing(false);\n            if (err || !response)") === false
+        && strpos($jsPopup, 'setProcessing(false); if (err || !response)') === false
+        && !preg_match('/setProcessing\(false\);\s*if\s*\(\s*err\s*\|\|\s*!response\s*\)/', $jsPopup),
+    'JS does not clear processing before redirect branch'
+);
 mtuc8_assert(strpos($jsPopup, 'scheduleRecalculate') !== false || strpos($jsPopup, 'runRecalculate') !== false, 'JS recalculate path');
 mtuc8_assert(strpos($jsPopup, 'data-mtuc-display="financed_amount"') !== false, 'JS fills financed_amount');
 mtuc8_assert(strpos($jsPopup, 'data-mtuc-display="glp"') !== false, 'JS fills glp');

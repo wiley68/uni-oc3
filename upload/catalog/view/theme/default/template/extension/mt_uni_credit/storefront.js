@@ -104,6 +104,8 @@
     var firstInstallmentTimer = null;
     var sequence = 0;
     var abortController = null;
+    // Terminal financing submit (Process 1 bank redirect): keep locked until navigation.
+    var terminalSubmitInFlight = false;
     var width = $root.attr("data-mtuc-button-width");
     var height = $root.attr("data-mtuc-button-height");
     var topSpacing = $root.attr("data-mtuc-top-spacing");
@@ -138,15 +140,27 @@
       return (state.offers && state.offers[selectedOfferType]) || null;
     }
 
+    function isTerminalSubmitLocked() {
+      return terminalSubmitInFlight === true;
+    }
+
     function setProcessing(active) {
+      // While terminal redirect navigation is pending, never unlock the modal.
+      if (!active && isTerminalSubmitLocked()) {
+        return;
+      }
       var $panel = $modal.find("[data-mtuc-processing]");
       var $dialog = $modal.find(".mt-uni-credit-storefront__dialog");
       if (active) {
         $panel.removeAttr("hidden");
         $dialog.css({ opacity: "0.45", pointerEvents: "none" });
+        $modal.attr("data-mtuc-processing-active", "1");
+        $modal.addClass("mt-uni-credit-storefront--processing");
       } else {
         $panel.attr("hidden", true);
         $dialog.css({ opacity: "", pointerEvents: "" });
+        $modal.removeAttr("data-mtuc-processing-active");
+        $modal.removeClass("mt-uni-credit-storefront--processing");
       }
     }
 
@@ -382,9 +396,10 @@
     function updateSubmitState() {
       var valid = isStep2FormValid();
       var $submit = $modal.find("[data-mtuc-submit]");
-      $submit.prop("disabled", !valid);
-      $submit.attr("aria-disabled", valid ? "false" : "true");
-      $submit.toggleClass("is-disabled", !valid);
+      var locked = isTerminalSubmitLocked();
+      $submit.prop("disabled", locked || !valid);
+      $submit.attr("aria-disabled", locked || !valid ? "true" : "false");
+      $submit.toggleClass("is-disabled", locked || !valid);
       return valid;
     }
 
@@ -416,6 +431,9 @@
      * rhythm) while keeping OC4 class/hidden sequencing — no hard flash.
      */
     function setStep(step, options) {
+      if (isTerminalSubmitLocked()) {
+        return;
+      }
       var opts = options || {};
       var animate = opts.animate !== false;
       var $steps = $modal.find("[data-mtuc-step]");
@@ -496,6 +514,10 @@
     }
 
     function closeModal() {
+      // Keep modal locked while Process 1 bank redirect navigation is pending.
+      if (isTerminalSubmitLocked()) {
+        return;
+      }
       if (firstInstallmentTimer) {
         window.clearTimeout(firstInstallmentTimer);
         firstInstallmentTimer = null;
@@ -896,6 +918,9 @@
 
     $root.off("click.mtuc").on("click.mtuc", "[data-mtuc-offer]", function (e) {
       e.preventDefault();
+      if (isTerminalSubmitLocked()) {
+        return;
+      }
       if ($root.data("mtucStale") === 1 || $(this).prop("disabled")) {
         return;
       }
@@ -910,7 +935,11 @@
       closeModal: closeModal,
       setStep: setStep,
       setProcessing: setProcessing,
+      isTerminalSubmitLocked: isTerminalSubmitLocked,
       selectScheme: function (key) {
+        if (isTerminalSubmitLocked()) {
+          return;
+        }
         selectedSchemeKey = key;
         var offer = currentOffer();
         var scheme = offer
@@ -922,9 +951,15 @@
         scheduleRecalculate(true);
       },
       recalculate: function () {
+        if (isTerminalSubmitLocked()) {
+          return;
+        }
         scheduleRecalculate(false);
       },
       secondary: function () {
+        if (isTerminalSubmitLocked()) {
+          return;
+        }
         var action = $root.attr("data-button-action") || "add_to_cart";
         if (action === "buy") {
           postJson(
@@ -961,6 +996,10 @@
         closeModal();
       },
       submit: function () {
+        // Double-submit guard: one POST until unlock or browser navigation.
+        if (isTerminalSubmitLocked()) {
+          return;
+        }
         var $form = $modal.find("[data-mtuc-form]");
         if (!$form.length) {
           return;
@@ -973,7 +1012,9 @@
             );
           return;
         }
+        terminalSubmitInFlight = true;
         setProcessing(true);
+        $modal.find("[data-mtuc-submit-error]").text("");
         var process = $form.attr("data-mtuc-process") || "1";
         var data = {
           csrf: $root.attr("data-csrf"),
@@ -1012,21 +1053,28 @@
             bootstrap.cart_fingerprint ||
             "";
         }
+        // Idempotent recovery (Phase 7/9): server reuses bound local order + cp_created —
+        // do not invent a second OC/CP order from the storefront.
         postJson(
           $root.attr("data-route-submit"),
           data,
           function (err, response) {
-            setProcessing(false);
             if (err || !response) {
+              terminalSubmitInFlight = false;
+              setProcessing(false);
               $modal
                 .find("[data-mtuc-submit-error]")
                 .text("Заявката не беше успешна.");
               return;
             }
+            // Bank / terminal redirect: keep loader locked until navigation leaves the page.
+            // Do NOT call setProcessing(false) before window.location.assign.
             if (response.redirect) {
-              window.location = response.redirect;
+              window.location.assign(String(response.redirect));
               return;
             }
+            terminalSubmitInFlight = false;
+            setProcessing(false);
             if (response.success) {
               closeModal();
               return;
@@ -1067,6 +1115,13 @@
       function (e) {
         e.preventDefault();
         var api = apiFromEvent(this);
+        if (
+          api &&
+          typeof api.isTerminalSubmitLocked === "function" &&
+          api.isTerminalSubmitLocked()
+        ) {
+          return;
+        }
         if (api) {
           api.closeModal();
         }
@@ -1079,6 +1134,13 @@
       function (e) {
         e.preventDefault();
         var api = apiFromEvent(this);
+        if (
+          api &&
+          typeof api.isTerminalSubmitLocked === "function" &&
+          api.isTerminalSubmitLocked()
+        ) {
+          return;
+        }
         if (api) {
           api.setStep(2);
         }
@@ -1091,6 +1153,13 @@
       function (e) {
         e.preventDefault();
         var api = apiFromEvent(this);
+        if (
+          api &&
+          typeof api.isTerminalSubmitLocked === "function" &&
+          api.isTerminalSubmitLocked()
+        ) {
+          return;
+        }
         if (api) {
           api.setStep(1);
         }
@@ -1102,6 +1171,13 @@
       "#mt-uni-credit-product-modal [data-mtuc-schemes], #mt-uni-credit-cart-modal [data-mtuc-schemes]",
       function () {
         var api = apiFromEvent(this);
+        if (
+          api &&
+          typeof api.isTerminalSubmitLocked === "function" &&
+          api.isTerminalSubmitLocked()
+        ) {
+          return;
+        }
         if (api) {
           api.selectScheme($(this).val());
         }
@@ -1113,6 +1189,13 @@
       "#mt-uni-credit-product-modal [data-mtuc-first], #mt-uni-credit-cart-modal [data-mtuc-first]",
       function () {
         var api = apiFromEvent(this);
+        if (
+          api &&
+          typeof api.isTerminalSubmitLocked === "function" &&
+          api.isTerminalSubmitLocked()
+        ) {
+          return;
+        }
         if (api && typeof api.recalculate === "function") {
           api.recalculate();
         }
@@ -1125,6 +1208,13 @@
       function (e) {
         e.preventDefault();
         var api = apiFromEvent(this);
+        if (
+          api &&
+          typeof api.isTerminalSubmitLocked === "function" &&
+          api.isTerminalSubmitLocked()
+        ) {
+          return;
+        }
         if (api) {
           api.secondary();
         }
@@ -1137,6 +1227,13 @@
       function (e) {
         e.preventDefault();
         var api = apiFromEvent(this);
+        if (
+          api &&
+          typeof api.isTerminalSubmitLocked === "function" &&
+          api.isTerminalSubmitLocked()
+        ) {
+          return;
+        }
         if (api) {
           api.submit();
         }
@@ -1152,6 +1249,13 @@
           var $m = $(this);
           if (!$m.attr("hidden")) {
             var api = $m.data("mtucApi");
+            if (
+              api &&
+              typeof api.isTerminalSubmitLocked === "function" &&
+              api.isTerminalSubmitLocked()
+            ) {
+              return;
+            }
             if (api) {
               api.closeModal();
             }

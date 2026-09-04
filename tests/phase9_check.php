@@ -783,6 +783,84 @@ mtuc9_assert(
     preg_match('/if\s*\(\s*response\.redirect\s*\)/', $jsSrc) === 1,
     'storefront.js prioritises redirect before generic success close'
 );
+mtuc9_assert(strpos($jsSrc, 'terminalSubmitInFlight') !== false, 'storefront.js terminalSubmitInFlight lock');
+mtuc9_assert(strpos($jsSrc, 'isTerminalSubmitLocked') !== false, 'storefront.js isTerminalSubmitLocked');
+mtuc9_assert(strpos($jsSrc, 'window.location.assign') !== false, 'storefront.js uses location.assign for bank redirect');
+
+// Redirect response: processing stays locked until navigation (no setProcessing(false) before assign).
+$submitCbMatch = preg_match(
+    '/submit:\s*function\s*\(\s*\)\s*\{(.*?)scheduleCalculate:\s*scheduleCalculate/s',
+    $jsSrc,
+    $submitCbParts
+);
+mtuc9_assert($submitCbMatch === 1, 'storefront.js submit handler extractable');
+$submitBody = $submitCbMatch === 1 ? $submitCbParts[1] : '';
+mtuc9_assert(
+    strpos($submitBody, 'terminalSubmitInFlight = true') !== false
+        && strpos($submitBody, 'setProcessing(true)') !== false,
+    'redirect path: processing starts on terminal submit'
+);
+mtuc9_assert(
+    preg_match(
+        '/if\s*\(\s*response\.redirect\s*\)\s*\{[^}]*window\.location\.assign\s*\(\s*String\s*\(\s*response\.redirect\s*\)\s*\)/s',
+        $submitBody
+    ) === 1,
+    'redirect path: assign uses response.redirect URL'
+);
+mtuc9_assert(
+    preg_match(
+        '/setProcessing\(false\);\s*if\s*\(\s*response\.redirect\s*\)/s',
+        $submitBody
+    ) !== 1,
+    'redirect path: processing is NOT cleared before navigation'
+);
+mtuc9_assert(
+    strpos($submitBody, 'if (isTerminalSubmitLocked())') !== false,
+    'duplicate submit: early return while locked'
+);
+mtuc9_assert(
+    preg_match(
+        '/if\s*\(\s*err\s*\|\|\s*!response\s*\)\s*\{\s*terminalSubmitInFlight\s*=\s*false;\s*setProcessing\(false\);/s',
+        $submitBody
+    ) === 1,
+    'error without redirect: processing clears on transport failure'
+);
+mtuc9_assert(
+    preg_match(
+        '/terminalSubmitInFlight\s*=\s*false;\s*setProcessing\(false\);\s*if\s*\(\s*response\.success\s*\)/s',
+        $submitBody
+    ) === 1,
+    'error without redirect: unlock before success/error branch'
+);
+mtuc9_assert(
+    strpos($jsSrc, 'Keep modal locked while Process 1 bank redirect') !== false
+        || strpos($jsSrc, 'isTerminalSubmitLocked()') !== false,
+    'dismiss while pending: closeModal ignores lock'
+);
+mtuc9_assert(
+    preg_match(
+        '/data-mtuc-dismiss[\s\S]*?isTerminalSubmitLocked\(\)/s',
+        $jsSrc
+    ) === 1,
+    'dismiss while pending: overlay/X checks lock'
+);
+mtuc9_assert(
+    preg_match(
+        '/keydown\.mtuc[\s\S]*?isTerminalSubmitLocked\(\)/s',
+        $jsSrc
+    ) === 1,
+    'dismiss while pending: Escape checks lock'
+);
+// Desired Phase 7/9 behaviour: existing local order + cp_created recover to SmartUCF —
+// do not treat reuse as a bug or invent a second OC/CP order.
+mtuc9_assert(
+    strpos($jsSrc, 'Idempotent recovery (Phase 7/9)') !== false,
+    'idempotent recovery: storefront comments preserve local/CP reuse'
+);
+mtuc9_assert(
+    !empty($secondOk['success']) && !empty($secondOk['local_replay']) && !empty($secondOk['redirect']),
+    'successful idempotent replay: no new local/CP path — redirect continues'
+);
 
 echo PHP_EOL . 'Phase 9 checks: ' . $passes . ' passed';
 if ($failures) {
