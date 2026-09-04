@@ -576,7 +576,12 @@ final class MtUniCreditControlPanelOrderLifecycleService
         }
 
         try {
-            $this->process1 = MtUniCreditProcess1ServiceFactory::coordinator($this->attempts->database());
+            $this->process1 = MtUniCreditProcess1ServiceFactory::coordinator(
+                $this->attempts->database(),
+                null,
+                null,
+                $this->client
+            );
         } catch (Exception $exception) {
             return null;
         }

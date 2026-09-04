@@ -19,11 +19,23 @@ final class MtUniCreditProcess1ServiceFactory
             ? $smartUcfClient
             : new MtUniCreditSmartUcfSessionClient();
         $sync = null;
+        $cp = null;
         if ($controlPanelClient instanceof MtUniCreditControlPanelClient) {
+            $cp = $controlPanelClient;
             $sync = new MtUniCreditCertificateSynchronizer($controlPanelClient);
         }
 
-        return new MtUniCreditSmartUcfSessionCoordinator($lifecycle, $client, null, null, null, null, null, $sync);
+        return new MtUniCreditSmartUcfSessionCoordinator(
+            $lifecycle,
+            $client,
+            null,
+            null,
+            null,
+            null,
+            null,
+            $sync,
+            $cp
+        );
     }
 
     /**

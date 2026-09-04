@@ -864,20 +864,35 @@ Automated gate: `php tests/phase9_check.php` (no live network).
 
 1. [ ] After CP `cp_created`, Process 1 (`uni_proces !== 1`) issues exactly one SmartUCF `sucfOnlineSessionStart`.
 2. [ ] Local bank status becomes `bank_sent_process1`.
-3. [ ] Customer redirect is the stored trusted application URL (`bank_redirect=true`, allowlisted host + path + safe session id) — **not** cart/prepared fallback.
-4. [ ] Configured native payment order status is applied **once** only after confirmed Process 1 success (or OC4-terminal remote reject); never solely because CP succeeded.
-5. [ ] Repeat submit / local replay does **not** issue a second SmartUCF session create and does **not** re-authorise `addOrderHistory`.
+3. [ ] Control Panel order bank status is PATCHed to `bank_sent_process1` (`Изпратен Банка - Процес 1`) via authenticated `PATCH /orders/status` using the **shop** `order_id` (not CP internal PK).
+4. [ ] Customer redirect is the stored trusted application URL (`bank_redirect=true`, allowlisted host + path + safe session id) — **not** cart/prepared fallback.
+5. [ ] Configured native payment order status is applied **once** only after confirmed Process 1 success (or OC4-terminal remote reject); never solely because CP succeeded.
+6. [ ] Repeat submit / local replay does **not** issue a second SmartUCF session create and does **not** re-authorise `addOrderHistory`; CP status sync may safely retry PATCH only.
+
+### Fresh Product Process 1 runtime check
+
+After Product Step 2 `Изпрати` with Process 1:
+
+1. [ ] Local OC order = 1
+2. [ ] CP order = 1 (`cp_created`)
+3. [ ] SmartUCF session = 1
+4. [ ] Local bank status = `bank_sent_process1`
+5. [ ] CP bank status = `bank_sent_process1` (CP UI label e.g. `Изпратен банка процес 1` / `Изпратен Банка - Процес 1`) — **not** stuck on `Създаден в КП Банка`
+6. [ ] Native OC status = configured payment status (`Обработка` or shop mapping)
+7. [ ] Browser redirected to trusted SmartUCF application URL
+8. [ ] Native OpenCart mails remain native side effects of order status — financing/leasing mail enrichment is **out of Phase 9 scope**
 
 ### SmartUCF failure / ambiguous / pre-call
 
-1. [ ] Definitive remote reject (`errorCode` JSON, HTTP 4xx) → `bank_send_failed_smartucf`; CP id preserved; `apply_native_order_status` may be true (OC4 Checkout terminal visibility) but result `success=false` / no bank redirect.
-2. [ ] Timeout / transport ambiguous → `outcome_unknown`; **no** `bank_sent_process1`; **no** `bank_send_failed_smartucf`; **no** premature native status; second submit does **not** fresh-resend SmartUCF.
-3. [ ] Certificate sync / validation failure before SmartUCF → 0 SmartUCF HTTP calls; CP preserved; **no** `bank_sent_process1`; **no** `apply_native_order_status`.
+1. [ ] Definitive remote reject (`errorCode` JSON, HTTP 4xx) → local + CP `bank_send_failed_smartucf`; CP id preserved; `apply_native_order_status` may be true (OC4 Checkout terminal visibility) but result `success=false` / no bank redirect.
+2. [ ] Timeout / transport ambiguous → `outcome_unknown`; **no** `bank_sent_process1`; **no** `bank_send_failed_smartucf`; **no** CP terminal bank-status PATCH; **no** premature native status; second submit does **not** fresh-resend SmartUCF.
+3. [ ] Certificate sync / validation failure before SmartUCF → 0 SmartUCF HTTP calls; CP preserved; **no** `bank_sent_process1`; **no** CP Process 1 terminal bank-status PATCH; **no** `apply_native_order_status`.
 4. [ ] Concurrent claim: while `submitting`, a second `claimForSubmitting` returns null.
+5. [ ] CP `PATCH /orders/status` failure **after** confirmed SmartUCF success leaves `smartucf_state=created` + local `bank_sent_process1`; no second SmartUCF/CP create; later submit may retry CP sync only.
 
 ### Process 2 no-call
 
-1. [ ] `uni_proces === 1` → Process 2 path: **0** SmartUCF HTTP calls; bank status is neither `bank_sent_process1` nor `bank_send_failed_smartucf`.
+1. [ ] `uni_proces === 1` → Process 2 path: **0** SmartUCF HTTP calls; bank status is neither `bank_sent_process1` nor `bank_send_failed_smartucf`; **no** Process 1 bank-status PATCH.
 2. [ ] Native payment status may be applied after successful CP (Process 2 has no SmartUCF gate).
 
 ### Certificate sync / privacy / diagnostics
@@ -892,3 +907,4 @@ Automated gate: `php tests/phase9_check.php` (no live network).
 - [ ] No Thank You / admin presentation / homepage ads (Phase 11).
 - [ ] No live SmartUCF or live CP calls in the automated gate.
 - [ ] Do not hack mail events to suppress native mails — fix `addOrderHistory` timing instead.
+- [ ] Financing/leasing mail enrichment intentionally not started in Phase 9.

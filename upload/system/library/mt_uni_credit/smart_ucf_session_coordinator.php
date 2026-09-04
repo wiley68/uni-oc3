@@ -3,13 +3,17 @@
 /**
  * Coordinates Process 1 SmartUCF session create with durable lifecycle transitions.
  *
- * CP status PATCH is best-effort deferred when the local Control Panel client
- * lacks an updateOrderStatus() method — local bank status only for now.
+ * After confirmed SmartUCF success (or definitive remote reject), persists local bank
+ * status and PATCHes Control Panel `/orders/status` using the shop order_id.
+ * CP PATCH failure after SmartUCF success is recoverable — SmartUCF stays created.
  */
 final class MtUniCreditSmartUcfSessionCoordinator
 {
     const ERROR_CERTIFICATE_INVALID = 'smartucf_certificate_invalid';
     const ERROR_CREDENTIALS_SYNC_FAILED = 'smartucf_credentials_sync_failed';
+
+    /** Recoverable: SmartUCF already succeeded; CP PATCH /orders/status did not. */
+    const ERROR_CP_BANK_STATUS_SYNC_PENDING = 'cp_bank_status_sync_pending';
 
     const CUSTOMER_OUTCOME_UNKNOWN =
     'Поръчката е създадена, но потвърждението от банковата система не беше получено. Не изпращайте заявката повторно.';
@@ -41,6 +45,9 @@ final class MtUniCreditSmartUcfSessionCoordinator
     /** @var MtUniCreditCertificateSynchronizer|null */
     private $certificateSynchronizer;
 
+    /** @var MtUniCreditControlPanelClient|null */
+    private $controlPanel;
+
     /** @var MtUniCreditPhase9LifecycleLog|null */
     private $phase9Log;
 
@@ -68,6 +75,7 @@ final class MtUniCreditSmartUcfSessionCoordinator
      * @param MtUniCreditCertificatePairValidator|null $certificateValidator
      * @param MtUniCreditSmartUcfPayloadBuilder|null $payloadBuilder
      * @param MtUniCreditCertificateSynchronizer|null $certificateSynchronizer
+     * @param MtUniCreditControlPanelClient|null $controlPanel
      */
     public function __construct(
         MtUniCreditSmartUcfLifecycleRepository $lifecycle,
@@ -77,7 +85,8 @@ final class MtUniCreditSmartUcfSessionCoordinator
         $passphrases = null,
         $certificateValidator = null,
         $payloadBuilder = null,
-        $certificateSynchronizer = null
+        $certificateSynchronizer = null,
+        $controlPanel = null
     ) {
         if (!is_object($client) || !method_exists($client, 'createSession')) {
             throw new InvalidArgumentException('SmartUCF client must provide createSession().');
@@ -101,6 +110,9 @@ final class MtUniCreditSmartUcfSessionCoordinator
             : new MtUniCreditSmartUcfPayloadBuilder();
         $this->certificateSynchronizer = $certificateSynchronizer instanceof MtUniCreditCertificateSynchronizer
             ? $certificateSynchronizer
+            : null;
+        $this->controlPanel = $controlPanel instanceof MtUniCreditControlPanelClient
+            ? $controlPanel
             : null;
         $this->phase9Log = null;
     }
@@ -135,7 +147,7 @@ final class MtUniCreditSmartUcfSessionCoordinator
      * @param array<int, array<string, mixed>> $orderProducts
      * @param MtUniCreditCalculationResult $calculation
      * @param int|string $localOrderId
-     * @param int|string $cpOrderId Unused locally; reserved for deferred CP status PATCH
+     * @param int|string $cpOrderId Control Panel internal id (diagnostics only; PATCH uses shop order_id)
      * @param MtUniCreditOrderBankStatusRepository|null $bankStatuses
      * @return MtUniCreditSmartUcfCoordinationResult
      */
@@ -168,8 +180,9 @@ final class MtUniCreditSmartUcfSessionCoordinator
         }
         $known = $this->resultFromState($row);
         if ($known !== null) {
+            // Replay of proven SmartUCF success: never re-create session; reconcile bank status.
             if ($known->isCreated()) {
-                $this->persistProcess1BankStatus($storeId, $localOrderId, $bankStatuses);
+                $this->persistProcess1BankStatus($attemptId, $storeId, $localOrderId, $bankStatuses);
             }
 
             return $known;
@@ -235,7 +248,7 @@ final class MtUniCreditSmartUcfSessionCoordinator
             $fromLatest = $this->resultFromState($latest);
             if ($fromLatest !== null) {
                 if ($fromLatest->isCreated()) {
-                    $this->persistProcess1BankStatus($storeId, $localOrderId, $bankStatuses);
+                    $this->persistProcess1BankStatus($attemptId, $storeId, $localOrderId, $bankStatuses);
                 }
 
                 return $fromLatest;
@@ -293,7 +306,7 @@ final class MtUniCreditSmartUcfSessionCoordinator
             return MtUniCreditSmartUcfCoordinationResult::outcomeUnknown(self::CUSTOMER_OUTCOME_UNKNOWN);
         }
 
-        $this->persistProcess1BankStatus($storeId, $localOrderId, $bankStatuses);
+        $this->persistProcess1BankStatus($attemptId, $storeId, $localOrderId, $bankStatuses);
         $this->logEvent(MtUniCreditPhase9LifecycleLog::EVENT_SMARTUCF_RESULT, array(
             'kind' => 'created',
             'bank_status' => MtUniCreditBankStatus::SENT_PROCESS1,
@@ -401,7 +414,13 @@ final class MtUniCreditSmartUcfSessionCoordinator
         } catch (Throwable $ignored) {
         }
         if ($classification->errorClass() === MtUniCreditSmartUcfFailureClassification::CLASS_REMOTE_REJECT) {
-            $this->persistLocalBankStatus($storeId, $localOrderId, MtUniCreditBankStatus::smartUcfFailure(), $bankStatuses);
+            $this->persistBankStatusPair(
+                $attemptId,
+                $storeId,
+                $localOrderId,
+                MtUniCreditBankStatus::smartUcfFailure(),
+                $bankStatuses
+            );
         }
 
         $this->logEvent(MtUniCreditPhase9LifecycleLog::EVENT_SMARTUCF_RESULT, array(
@@ -419,38 +438,99 @@ final class MtUniCreditSmartUcfSessionCoordinator
     }
 
     /**
+     * After proven SmartUCF Process 1 success: local + CP bank_sent_process1.
+     * CP PATCH uses the shop order_id (same as POST /orders), not the CP internal id.
+     * CP failure leaves SmartUCF success durable and marks a recoverable sync pending class.
+     *
+     * @param int $attemptId
      * @param int $storeId
      * @param int|string $localOrderId
      * @param MtUniCreditOrderBankStatusRepository|null $bankStatuses
      * @return void
      */
-    private function persistProcess1BankStatus($storeId, $localOrderId, $bankStatuses)
+    private function persistProcess1BankStatus($attemptId, $storeId, $localOrderId, $bankStatuses)
     {
-        $this->persistLocalBankStatus($storeId, $localOrderId, MtUniCreditBankStatus::process1Sent(), $bankStatuses);
-        // CP status PATCH is best-effort deferred if the client lacks updateOrderStatus().
+        $status = MtUniCreditBankStatus::process1Sent();
+        $cpSynced = $this->persistBankStatusPair($attemptId, $storeId, $localOrderId, $status, $bankStatuses);
+        if (!$cpSynced) {
+            $this->logEvent(MtUniCreditPhase9LifecycleLog::EVENT_SMARTUCF_RESULT, array(
+                'kind' => 'cp_bank_status_sync_pending',
+                'error_class' => self::ERROR_CP_BANK_STATUS_SYNC_PENDING,
+                'bank_status' => $status['status_id'],
+            ));
+            error_log(
+                'mt_uni_credit: ' . self::ERROR_CP_BANK_STATUS_SYNC_PENDING
+                    . ' attempt_id=' . (int) $attemptId
+                    . ' store_id=' . (int) $storeId
+                    . ' order_id=' . substr((string) $localOrderId, 0, 13)
+                    . ' control_panel_order_id=' . (int) $this->logCpOrderId
+                    . ' status_id=' . $status['status_id']
+            );
+        }
     }
 
     /**
+     * @param int $attemptId
      * @param int $storeId
      * @param int|string $localOrderId
      * @param array{status_id: string, status_label: string} $status
      * @param MtUniCreditOrderBankStatusRepository|null $bankStatuses
-     * @return void
+     * @return bool true when Control Panel PATCH succeeded (local write may still have succeeded)
      */
-    private function persistLocalBankStatus($storeId, $localOrderId, array $status, $bankStatuses)
+    private function persistBankStatusPair($attemptId, $storeId, $localOrderId, array $status, $bankStatuses)
     {
-        if (!$bankStatuses instanceof MtUniCreditOrderBankStatusRepository) {
-            return;
-        }
         $shopOrderId = substr((string) $localOrderId, 0, 13);
+        if ($bankStatuses instanceof MtUniCreditOrderBankStatusRepository) {
+            try {
+                $bankStatuses->updateByOrderIdentifier(
+                    $storeId,
+                    $shopOrderId,
+                    $status['status_id'],
+                    $status['status_label']
+                );
+            } catch (Throwable $ignored) {
+            }
+        }
+
+        if (!$this->controlPanel instanceof MtUniCreditControlPanelClient) {
+            return false;
+        }
+
+        $this->logEvent(MtUniCreditPhase9LifecycleLog::EVENT_SMARTUCF_RESULT, array(
+            'kind' => 'cp_status_sync_begin',
+            'bank_status' => $status['status_id'],
+            'attempt_id' => (int) $attemptId,
+        ));
+
         try {
-            $bankStatuses->updateByOrderIdentifier(
-                $storeId,
+            // CP looks up by shop order_id from create payload — never the CP internal PK.
+            $this->controlPanel->updateOrderStatus(
                 $shopOrderId,
-                $status['status_id'],
-                $status['status_label']
+                $status['status_label'],
+                $status['status_id']
             );
-        } catch (Throwable $ignored) {
+            $this->logEvent(MtUniCreditPhase9LifecycleLog::EVENT_SMARTUCF_RESULT, array(
+                'kind' => 'cp_status_sync_success',
+                'bank_status' => $status['status_id'],
+            ));
+
+            return true;
+        } catch (Throwable $exception) {
+            $this->logEvent(MtUniCreditPhase9LifecycleLog::EVENT_SMARTUCF_RESULT, array(
+                'kind' => 'cp_status_sync_failure',
+                'bank_status' => $status['status_id'],
+                'error_class' => get_class($exception),
+            ));
+            error_log(
+                'mt_uni_credit: Control Panel bank status PATCH failed: '
+                    . get_class($exception)
+                    . ' attempt_id=' . (int) $attemptId
+                    . ' order_id=' . $shopOrderId
+                    . ' control_panel_order_id=' . (int) $this->logCpOrderId
+                    . ' status_id=' . $status['status_id']
+            );
+
+            return false;
         }
     }
 }

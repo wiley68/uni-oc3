@@ -13,6 +13,9 @@ final class Phase4FakeCpHttpTransport implements MtUniCreditCpHttpTransport
     /** @var array<int, array<string, mixed>> */
     public $requests = array();
 
+    /** When true, auto PATCH /orders/status returns HTTP 500. */
+    public $failStatusPatch = false;
+
     /**
      * @param int $status
      * @param string $body
@@ -75,6 +78,21 @@ final class Phase4FakeCpHttpTransport implements MtUniCreditCpHttpTransport
             }
 
             return new MtUniCreditCpHttpResponse((int) $next['status'], (string) $next['body']);
+        }
+
+        // Auto-respond to bank status sync when tests only queued login/create.
+        if (strtoupper((string) $method) === 'PATCH' && strpos((string) $url, '/orders/status') !== false) {
+            if ($this->failStatusPatch) {
+                return new MtUniCreditCpHttpResponse(500, json_encode(array(
+                    'error' => 'status_update_failed',
+                    'message' => 'Forced PATCH failure for tests',
+                ), JSON_THROW_ON_ERROR));
+            }
+
+            return new MtUniCreditCpHttpResponse(200, json_encode(array(
+                'success' => true,
+                'message' => 'Статусът е обновен',
+            ), JSON_THROW_ON_ERROR));
         }
 
         throw new RuntimeException('FakeCpHttpTransport has no queued response for ' . $method . ' ' . $url);

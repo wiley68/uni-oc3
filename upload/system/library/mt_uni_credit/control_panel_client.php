@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Control Panel HTTP client — login, refresh, logout, GET /shop (Phase 4).
+ * Control Panel HTTP client — login, refresh, logout, shop, orders, status (Phase 4/9).
  */
 final class MtUniCreditControlPanelClient
 {
@@ -204,6 +204,30 @@ final class MtUniCreditControlPanelClient
         }
 
         return $response;
+    }
+
+    /**
+     * PATCH /orders/status after a definitive bank lifecycle transition.
+     *
+     * @param string $shopOrderId Shop order identifier — same value as POST /orders `order_id`
+     *                            (local OpenCart order id), not the Control Panel internal PK.
+     * @param string $statusLabel Human-readable CP status label
+     * @param string $statusId Machine status id (e.g. bank_sent_process1)
+     * @return void
+     */
+    public function updateOrderStatus($shopOrderId, $statusLabel, $statusId)
+    {
+        $shopOrderId = trim((string) $shopOrderId);
+        $statusLabel = trim((string) $statusLabel);
+        $statusId = trim((string) $statusId);
+        if ($shopOrderId === '' || $statusId === '') {
+            throw new MtUniCreditCpInvalidPayloadException('Control Panel order status fields are incomplete.');
+        }
+        $this->authenticatedRequest('PATCH', '/orders/status', array(
+            'order_id' => $shopOrderId,
+            'status' => $statusLabel,
+            'status_id' => $statusId,
+        ));
     }
 
     /**

@@ -344,4 +344,46 @@ final class Phase9TestHarness
         $transport->enqueueJson(200, $payloads['login']);
         $transport->enqueueJson(201, $payloads['order']);
     }
+
+    /**
+     * Count PATCH /orders/status requests on a transport.
+     *
+     * @param Phase4FakeCpHttpTransport $transport
+     * @return int
+     */
+    public static function countStatusPatches(Phase4FakeCpHttpTransport $transport)
+    {
+        $count = 0;
+        foreach ($transport->requests as $request) {
+            if (
+                strtoupper((string) $request['method']) === 'PATCH'
+                && strpos((string) $request['url'], '/orders/status') !== false
+            ) {
+                $count++;
+            }
+        }
+
+        return $count;
+    }
+
+    /**
+     * Last PATCH /orders/status payload, or null.
+     *
+     * @param Phase4FakeCpHttpTransport $transport
+     * @return array<string, mixed>|null
+     */
+    public static function lastStatusPatchPayload(Phase4FakeCpHttpTransport $transport)
+    {
+        $last = null;
+        foreach ($transport->requests as $request) {
+            if (
+                strtoupper((string) $request['method']) === 'PATCH'
+                && strpos((string) $request['url'], '/orders/status') !== false
+            ) {
+                $last = is_array($request['payload']) ? $request['payload'] : null;
+            }
+        }
+
+        return $last;
+    }
 }
