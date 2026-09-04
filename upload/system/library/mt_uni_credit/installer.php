@@ -105,101 +105,180 @@ final class MtUniCreditInstaller
      * Upserts trigger/action/status so older installs receive corrected rows.
      * Removes duplicate rows for the same code (keeps one healthy row).
      *
-     * @param object $model OpenCart Model with $db
-     * @return void
+     * Pass the OpenCart DB object explicitly — never rely on isset() against
+     * Registry-backed Model properties (OC3 Model/Controller use __get without __isset).
+     *
+     * @param mixed $db OpenCart DB (query/escape); non-object / incomplete DB returns invalid_db
+     * @return array{inserted:int,updated:int,deleted_duplicates:int,healthy:bool,error:?string}
      */
-    public static function ensureCatalogEvents($model)
+    public static function ensureCatalogEvents($db)
     {
-        if (!isset($model->db) || !is_object($model->db) || !method_exists($model->db, 'query')) {
-            return;
+        $result = array(
+            'inserted' => 0,
+            'updated' => 0,
+            'deleted_duplicates' => 0,
+            'healthy' => false,
+            'error' => null,
+        );
+
+        if (!is_object($db) || !method_exists($db, 'query') || !method_exists($db, 'escape')) {
+            $result['error'] = 'invalid_db';
+
+            return $result;
         }
         if (!class_exists('MtUniCreditCatalogEventRegistry', false)) {
             require_once dirname(__FILE__) . DIRECTORY_SEPARATOR . 'catalog_event_registry.php';
+        }
+        if (!class_exists('MtUniCreditCatalogEventHealth', false)) {
+            require_once dirname(__FILE__) . DIRECTORY_SEPARATOR . 'catalog_event_health.php';
         }
 
         $prefix = defined('DB_PREFIX') ? DB_PREFIX : 'oc_';
         $knownCodes = array();
 
-        foreach (MtUniCreditCatalogEventRegistry::definitions() as $event) {
-            $code = (string) $event['code'];
-            $knownCodes[] = $code;
-            $existing = $model->db->query(
-                "SELECT `event_id` FROM `" . $prefix . "event`"
-                    . " WHERE `code` = '" . $model->db->escape($code) . "'"
-                    . " ORDER BY `event_id` ASC"
-            );
-            $ids = array();
-            if (is_object($existing) && !empty($existing->rows) && is_array($existing->rows)) {
-                foreach ($existing->rows as $row) {
-                    if (isset($row['event_id'])) {
-                        $ids[] = (int) $row['event_id'];
+        try {
+            foreach (MtUniCreditCatalogEventRegistry::definitions() as $event) {
+                $code = (string) $event['code'];
+                $knownCodes[] = $code;
+                $existing = $db->query(
+                    "SELECT `event_id` FROM `" . $prefix . "event`"
+                        . " WHERE `code` = '" . $db->escape($code) . "'"
+                        . " ORDER BY `event_id` ASC"
+                );
+                $ids = array();
+                if (is_object($existing) && !empty($existing->rows) && is_array($existing->rows)) {
+                    foreach ($existing->rows as $row) {
+                        if (isset($row['event_id'])) {
+                            $ids[] = (int) $row['event_id'];
+                        }
                     }
+                } elseif (is_object($existing) && !empty($existing->num_rows) && isset($existing->row['event_id'])) {
+                    $ids[] = (int) $existing->row['event_id'];
                 }
-            } elseif (is_object($existing) && !empty($existing->num_rows) && isset($existing->row['event_id'])) {
-                $ids[] = (int) $existing->row['event_id'];
-            }
 
-            if ($ids === array()) {
-                $model->db->query(
-                    "INSERT INTO `" . $prefix . "event` SET"
-                        . " `code` = '" . $model->db->escape($code) . "',"
-                        . " `trigger` = '" . $model->db->escape($event['trigger']) . "',"
-                        . " `action` = '" . $model->db->escape($event['action']) . "',"
+                if ($ids === array()) {
+                    $db->query(
+                        "INSERT INTO `" . $prefix . "event` SET"
+                            . " `code` = '" . $db->escape($code) . "',"
+                            . " `trigger` = '" . $db->escape($event['trigger']) . "',"
+                            . " `action` = '" . $db->escape($event['action']) . "',"
+                            . " `status` = '1',"
+                            . " `sort_order` = '0'"
+                    );
+                    $result['inserted']++;
+                    continue;
+                }
+
+                $keepId = array_shift($ids);
+                $db->query(
+                    "UPDATE `" . $prefix . "event` SET"
+                        . " `trigger` = '" . $db->escape($event['trigger']) . "',"
+                        . " `action` = '" . $db->escape($event['action']) . "',"
                         . " `status` = '1',"
                         . " `sort_order` = '0'"
+                        . " WHERE `event_id` = " . (int) $keepId
                 );
-                continue;
+                $result['updated']++;
+                foreach ($ids as $duplicateId) {
+                    $db->query(
+                        "DELETE FROM `" . $prefix . "event` WHERE `event_id` = " . (int) $duplicateId
+                    );
+                    $result['deleted_duplicates']++;
+                }
             }
 
-            $keepId = array_shift($ids);
-            $model->db->query(
-                "UPDATE `" . $prefix . "event` SET"
-                    . " `trigger` = '" . $model->db->escape($event['trigger']) . "',"
-                    . " `action` = '" . $model->db->escape($event['action']) . "',"
-                    . " `status` = '1',"
-                    . " `sort_order` = '0'"
-                    . " WHERE `event_id` = " . (int) $keepId
-            );
-            foreach ($ids as $duplicateId) {
-                $model->db->query(
-                    "DELETE FROM `" . $prefix . "event` WHERE `event_id` = " . (int) $duplicateId
+            // Drop obsolete presentation event codes from earlier builds (same family only).
+            if ($knownCodes !== array()) {
+                $escaped = array();
+                foreach ($knownCodes as $known) {
+                    $escaped[] = "'" . $db->escape($known) . "'";
+                }
+                $db->query(
+                    "DELETE FROM `" . $prefix . "event` WHERE `code` LIKE 'mt_uni_credit_%'"
+                        . " AND ("
+                        . " `code` LIKE 'mt_uni_credit_checkout_success%'"
+                        . " OR `code` LIKE 'mt_uni_credit_mail_order%'"
+                        . ")"
+                        . " AND `code` NOT IN (" . implode(',', $escaped) . ")"
                 );
             }
+        } catch (Exception $exception) {
+            $result['error'] = 'db_query_failed';
+            error_log(
+                'mt_uni_credit: ensureCatalogEvents DB failure'
+                    . ' type=' . get_class($exception)
+                    . ' msg=' . self::sanitizeDbExceptionMessage($exception->getMessage())
+            );
+
+            return $result;
         }
 
-        // Drop obsolete presentation event codes from earlier builds (same family only).
-        if ($knownCodes !== array()) {
-            $escaped = array();
-            foreach ($knownCodes as $known) {
-                $escaped[] = "'" . $model->db->escape($known) . "'";
-            }
-            $model->db->query(
+        $health = MtUniCreditCatalogEventHealth::report($db, $prefix);
+        $result['healthy'] = !empty($health['ok']);
+        if (!$result['healthy'] && $result['error'] === null) {
+            $result['error'] = 'post_write_unhealthy';
+        }
+
+        return $result;
+    }
+
+    /**
+     * Remove this module's managed presentation events only.
+     *
+     * @param mixed $db OpenCart DB (query/escape); non-object / incomplete DB returns invalid_db
+     * @return array{removed:bool,error:?string}
+     */
+    public static function removeCatalogEvents($db)
+    {
+        $result = array(
+            'removed' => false,
+            'error' => null,
+        );
+
+        if (!is_object($db) || !method_exists($db, 'query')) {
+            $result['error'] = 'invalid_db';
+
+            return $result;
+        }
+
+        $prefix = defined('DB_PREFIX') ? DB_PREFIX : 'oc_';
+
+        try {
+            $db->query(
                 "DELETE FROM `" . $prefix . "event` WHERE `code` LIKE 'mt_uni_credit_%'"
                     . " AND ("
                     . " `code` LIKE 'mt_uni_credit_checkout_success%'"
                     . " OR `code` LIKE 'mt_uni_credit_mail_order%'"
                     . ")"
-                    . " AND `code` NOT IN (" . implode(',', $escaped) . ")"
+            );
+            $result['removed'] = true;
+        } catch (Exception $exception) {
+            $result['error'] = 'db_query_failed';
+            error_log(
+                'mt_uni_credit: removeCatalogEvents DB failure'
+                    . ' type=' . get_class($exception)
+                    . ' msg=' . self::sanitizeDbExceptionMessage($exception->getMessage())
             );
         }
+
+        return $result;
     }
 
     /**
-     * @param object $model
-     * @return void
+     * Strip SQL payloads from OC3 DB exception text before logging.
+     *
+     * @param string $message
+     * @return string
      */
-    public static function removeCatalogEvents($model)
+    private static function sanitizeDbExceptionMessage($message)
     {
-        if (!isset($model->db) || !is_object($model->db) || !method_exists($model->db, 'query')) {
-            return;
+        $message = (string) $message;
+        $cut = strpos($message, '<br');
+        if ($cut !== false) {
+            $message = substr($message, 0, $cut);
         }
-        $prefix = defined('DB_PREFIX') ? DB_PREFIX : 'oc_';
-        $model->db->query(
-            "DELETE FROM `" . $prefix . "event` WHERE `code` LIKE 'mt_uni_credit_%'"
-                . " AND ("
-                . " `code` LIKE 'mt_uni_credit_checkout_success%'"
-                . " OR `code` LIKE 'mt_uni_credit_mail_order%'"
-                . ")"
-        );
+        $message = preg_replace('/\s+/', ' ', $message);
+
+        return substr(trim((string) $message), 0, 180);
     }
 }

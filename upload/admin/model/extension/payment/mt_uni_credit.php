@@ -21,7 +21,7 @@ class ModelExtensionPaymentMtUniCredit extends Model
             MtUniCreditConstants::PAYMENT_SETTINGS_CODE,
             $defaults
         );
-        MtUniCreditInstaller::ensureCatalogEvents($this);
+        MtUniCreditInstaller::ensureCatalogEvents($this->db);
     }
 
     /**

@@ -22,7 +22,7 @@ class ModelExtensionModuleMtUniCredit extends Model
             $this,
             MtUniCreditConstants::MODULE_SETTINGS_CODE
         );
-        MtUniCreditInstaller::ensureCatalogEvents($this);
+        MtUniCreditInstaller::ensureCatalogEvents($this->db);
     }
 
     /**
@@ -32,7 +32,7 @@ class ModelExtensionModuleMtUniCredit extends Model
      */
     public function uninstall()
     {
-        MtUniCreditInstaller::removeCatalogEvents($this);
+        MtUniCreditInstaller::removeCatalogEvents($this->db);
         $this->load->model('setting/setting');
         $this->model_setting_setting->deleteSetting(MtUniCreditConstants::MODULE_SETTINGS_CODE);
     }
@@ -40,11 +40,11 @@ class ModelExtensionModuleMtUniCredit extends Model
     /**
      * Idempotent presentation-event repair (install / Save / Module admin open).
      *
-     * @return void
+     * @return array{inserted:int,updated:int,deleted_duplicates:int,healthy:bool,error:?string}
      */
     public function repairCatalogEvents()
     {
-        MtUniCreditInstaller::ensureCatalogEvents($this);
+        return MtUniCreditInstaller::ensureCatalogEvents($this->db);
     }
 
     /**
@@ -177,7 +177,7 @@ class ModelExtensionModuleMtUniCredit extends Model
         );
 
         // Repair catalog events on every Module save (dev 2.0.2 reinstall/repair path).
-        MtUniCreditInstaller::ensureCatalogEvents($this);
+        MtUniCreditInstaller::ensureCatalogEvents($this->db);
 
         // Write/replace Secret AFTER editSetting so DELETE+reinsert cannot drop a fresh envelope.
         $secretChanged = false;
@@ -334,9 +334,12 @@ class ModelExtensionModuleMtUniCredit extends Model
      */
     public function isSecretConfigured()
     {
-        if (!isset($this->db)) {
-            if (isset($this->config) && is_object($this->config) && method_exists($this->config, 'get')) {
-                $stored = $this->config->get(MtUniCreditConstants::MODULE_SETTING_SECRET);
+        // OC3 Registry properties: use __get, never isset() (no __isset on Model).
+        $db = $this->db;
+        if (!is_object($db) || !method_exists($db, 'query')) {
+            $config = $this->config;
+            if (is_object($config) && method_exists($config, 'get')) {
+                $stored = $config->get(MtUniCreditConstants::MODULE_SETTING_SECRET);
 
                 return is_string($stored) && MtUniCreditSettingCipher::hasEncryptedPrefix($stored);
             }
@@ -356,8 +359,9 @@ class ModelExtensionModuleMtUniCredit extends Model
      */
     private function resolveStoreId()
     {
-        if (isset($this->config) && is_object($this->config) && method_exists($this->config, 'get')) {
-            return (int) $this->config->get('config_store_id');
+        $config = $this->config;
+        if (is_object($config) && method_exists($config, 'get')) {
+            return (int) $config->get('config_store_id');
         }
 
         return 0;
@@ -371,7 +375,8 @@ class ModelExtensionModuleMtUniCredit extends Model
     public function getHealthReport()
     {
         $secretConfigured = false;
-        if (isset($this->db)) {
+        $db = $this->db;
+        if (is_object($db) && method_exists($db, 'query')) {
             try {
                 $secretConfigured = MtUniCreditBootstrap::credentialsRepositoryFromModel($this)
                     ->hasSecret($this->resolveStoreId());
