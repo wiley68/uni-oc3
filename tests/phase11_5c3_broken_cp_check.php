@@ -633,6 +633,109 @@ mtuc115c3cp_assert(
     'canary P2: cart-clear eligible handoff'
 );
 
+// ---------------------------------------------------------------------------
+// Test-only CP 422 header trigger (OC3 → CP create only)
+// ---------------------------------------------------------------------------
+$envDefault = new MtUniCreditDeploymentEnvironment(Phase4TestHarness::environmentConfigPath());
+mtuc115c3cp_assert($envDefault->forceTestCpCreate422() === false, 'default fixture: force_test_cp_create_422=false');
+
+$forceEnvPath = __DIR__ . DIRECTORY_SEPARATOR . 'fixtures' . DIRECTORY_SEPARATOR . 'cp_test_environment_force_422.php';
+$envForce = new MtUniCreditDeploymentEnvironment($forceEnvPath);
+mtuc115c3cp_assert($envForce->forceTestCpCreate422() === true, 'force fixture: force_test_cp_create_422=true');
+
+$transportHdrOff = new Phase4FakeCpHttpTransport();
+$transportHdrOff->enqueueJson(200, Phase4TestHarness::loginSuccessPayload());
+$transportHdrOff->enqueueJson(201, array(
+    'success' => true,
+    'message' => 'ok',
+    'data' => array('id' => 1, 'shop_id' => 1, 'created_at' => '2024-01-01 00:00:00'),
+));
+$stackHdrOff = Phase4TestHarness::services($transportHdrOff);
+$stackHdrOff['client']->createOrder(array('order_id' => 'HDR-OFF'));
+$orderReqOff = null;
+foreach ($transportHdrOff->requests as $req) {
+    if (isset($req['method'], $req['url']) && $req['method'] === 'POST' && strpos($req['url'], '/orders') !== false) {
+        $orderReqOff = $req;
+        break;
+    }
+}
+mtuc115c3cp_assert(is_array($orderReqOff), 'header-off: POST /orders captured');
+mtuc115c3cp_assert(
+    !isset($orderReqOff['headers'][MtUniCreditDeploymentEnvironment::TEST_FAILURE_HEADER]),
+    'header-off: createOrder omits test failure header'
+);
+
+$memoryHdrOn = Phase4TestHarness::memoryDb();
+$dbHdrOn = new MtUniCreditDbAdapter($memoryHdrOn, 'oc_');
+$settingsHdrOn = new MtUniCreditSettingStore($dbHdrOn, MtUniCreditConstants::MODULE_SETTINGS_CODE);
+Phase4TestHarness::prepareCredentials($settingsHdrOn);
+$transportHdrOn = new Phase4FakeCpHttpTransport();
+$transportHdrOn->enqueueJson(200, Phase4TestHarness::loginSuccessPayload());
+$transportHdrOn->enqueueJson(422, array('success' => false, 'error' => 'test_force_reject'));
+$servicesHdrOn = MtUniCreditCpServiceFactory::create(
+    $dbHdrOn,
+    $settingsHdrOn,
+    Phase4TestHarness::TEST_STORE_ID,
+    Phase4TestHarness::TEST_SHOP_URL,
+    Phase4TestHarness::TEST_SHOP_URL,
+    $transportHdrOn,
+    function () {
+        return 1700000000;
+    },
+    MtUniCreditEncryptionKeyProvider::testSecretInput(),
+    $forceEnvPath
+);
+try {
+    $servicesHdrOn['client']->createOrder(array('order_id' => 'HDR-ON'));
+    mtuc115c3cp_assert(false, 'header-on: createOrder must throw on 422');
+} catch (MtUniCreditCpHttpException $exception) {
+    mtuc115c3cp_assert($exception->getStatusCode() === 422, 'header-on: HTTP 422 thrown');
+}
+$orderReqOn = null;
+$loginHadHeader = false;
+foreach ($transportHdrOn->requests as $req) {
+    if (isset($req['headers'][MtUniCreditDeploymentEnvironment::TEST_FAILURE_HEADER])) {
+        if (isset($req['method']) && $req['method'] === 'POST' && strpos((string) $req['url'], '/auth/login') !== false) {
+            $loginHadHeader = true;
+        }
+    }
+    if (isset($req['method'], $req['url']) && $req['method'] === 'POST' && strpos($req['url'], '/orders') !== false) {
+        $orderReqOn = $req;
+    }
+}
+mtuc115c3cp_assert(is_array($orderReqOn), 'header-on: POST /orders captured');
+mtuc115c3cp_assert(
+    isset($orderReqOn['headers'][MtUniCreditDeploymentEnvironment::TEST_FAILURE_HEADER])
+        && $orderReqOn['headers'][MtUniCreditDeploymentEnvironment::TEST_FAILURE_HEADER]
+        === MtUniCreditDeploymentEnvironment::TEST_FAILURE_CP_CREATE_422,
+    'header-on: createOrder sends X-UniPayment-Test-Failure: cp-create-422'
+);
+mtuc115c3cp_assert($loginHadHeader === false, 'header-on: login does not send test failure header');
+
+// Classification: normal 422 body test_force_reject → cp_rejected / retryable / not ambiguous
+$transportClass = new Phase4FakeCpHttpTransport();
+$payloadsClass = Phase7TestHarness::loginAndOrderSuccessPayloads();
+$transportClass->enqueueJson(200, $payloadsClass['login']);
+$transportClass->enqueueJson(422, array('success' => false, 'error' => 'test_force_reject'));
+$stackClass = Phase9TestHarness::stack($transportClass);
+$classOrder = 207401;
+Phase9TestHarness::seedBankOrder($stackClass['memoryDb'], $classOrder, $stackClass['storeId']);
+$classSubmit = $stackClass['submission']->submit(Phase9TestHarness::submitInput($classOrder, $stackClass['storeId']));
+mtuc115c3cp_assert(
+    (string) $classSubmit['error'] === MtUniCreditControlPanelErrorClass::REJECTED,
+    'test_force_reject classification: error=cp_rejected'
+);
+mtuc115c3cp_assert(
+    isset($classSubmit['attempt']['state'])
+        && (string) $classSubmit['attempt']['state'] === MtUniCreditFinancingAttemptState::CP_FAILED_RETRYABLE,
+    'test_force_reject classification: attempt_state=cp_failed_retryable'
+);
+mtuc115c3cp_assert(empty($classSubmit['ambiguous_blocked']), 'test_force_reject classification: ambiguous_blocked=false');
+mtuc115c3cp_assert(
+    MtUniCreditFinancingTerminalNavigationSupport::isDefinitiveCheckoutCpFailureTerminal($classSubmit),
+    'test_force_reject classification: definitive Checkout CP Thank You'
+);
+
 echo PHP_EOL;
 if ($failures === array()) {
     echo 'RESULT  PASS (' . $passes . ' assertions)' . PHP_EOL;

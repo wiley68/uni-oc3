@@ -12,7 +12,13 @@ final class MtUniCreditDeploymentEnvironment
 
     const CONTROL_PANEL_URL_KEY = 'control_panel_url';
 
+    const FORCE_TEST_CP_CREATE_422_KEY = 'force_test_cp_create_422';
+
     const API_PATH_PREFIX = '/api/v1';
+
+    const TEST_FAILURE_HEADER = 'X-UniPayment-Test-Failure';
+
+    const TEST_FAILURE_CP_CREATE_422 = 'cp-create-422';
 
     /** @var string */
     private $configFilePath;
@@ -55,6 +61,21 @@ final class MtUniCreditDeploymentEnvironment
     public function controlPanelApiBaseUrl()
     {
         return $this->controlPanelUrl() . self::API_PATH_PREFIX;
+    }
+
+    /**
+     * Temporary test-only: add CP create 422 probe header on POST /orders.
+     *
+     * @return bool
+     */
+    public function forceTestCpCreate422()
+    {
+        $loaded = $this->load();
+        if (!array_key_exists(self::FORCE_TEST_CP_CREATE_422_KEY, $loaded)) {
+            return false;
+        }
+
+        return (bool) $loaded[self::FORCE_TEST_CP_CREATE_422_KEY];
     }
 
     /**

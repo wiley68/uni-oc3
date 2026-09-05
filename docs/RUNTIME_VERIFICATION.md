@@ -1090,18 +1090,28 @@ Payment unavailable; no submit. Document only.
 
 **INVALID** definitive CP test (see above). Temporary `checkout.pre_submit_trace` confirms `prepare_confirm` + `prepare_error=order_already_processed`.
 
-### Recommended definitive mechanism
+### Recommended definitive mechanism — IMPLEMENTED (test-only)
 
-**CP-side test-only 422 hook** (design only, not implemented):
+CP (`wiley68/uni.avalonbg.com`):
 
 ```text
-authenticated POST /api/v1/orders
+UNIPAYMENT_ENABLE_TEST_FAILURES=true
++ Bearer shop.token
++ X-UniPayment-Test-Failure: cp-create-422
+→ after StoreOrderRequest validation
 → before IdempotentOrderCreator
-→ APP_ENV != production AND config flag AND special test header
-→ HTTP 422 JSON { success:false, error:"test_force_reject" }
-→ no insert
+→ HTTP 422 { success:false, error:"test_force_reject" }
+→ no order insert
 ```
 
-OC3 must send the header only under a temporary non-released test flag (remove after remote proof). No customer-triggerable body field.
+OC3 temporary trigger (`config/environment.php`):
 
-Local automated 422 fixtures in `phase11_5c3_broken_cp_check.php` remain valid offline proofs of Checkout Thank You once a real 422 reaches submit.
+```text
+'force_test_cp_create_422' => false  (default)
+```
+
+When true, only `createOrder()` adds the header. Login / GET shop / status PATCH / inbound / SmartUCF unchanged.
+
+**Release recommendation:** keep key in deployment `environment.php` with **default false** (test infrastructure). Enable only for remote P1 logged definitive proof, then set back to false. Do not ship production packages with `true`.
+
+HMAC/replay: shop→CP order create uses Bearer; ModuleRequestSigner canonical string is timestamp+nonce+body only — extra header does not affect signing.

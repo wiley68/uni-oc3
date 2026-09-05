@@ -26,6 +26,9 @@ final class MtUniCreditControlPanelClient
     /** @var callable */
     private $clock;
 
+    /** @var MtUniCreditDeploymentEnvironment */
+    private $environment;
+
     /**
      * @param MtUniCreditCredentialsRepository $credentials
      * @param MtUniCreditCpTokenRepository $tokens
@@ -34,6 +37,7 @@ final class MtUniCreditControlPanelClient
      * @param int $storeId
      * @param string|null $baseUrl
      * @param callable|null $clock
+     * @param string|null $environmentConfigPath
      */
     public function __construct(
         MtUniCreditCredentialsRepository $credentials,
@@ -42,18 +46,24 @@ final class MtUniCreditControlPanelClient
         $shopName,
         $storeId,
         $baseUrl = null,
-        $clock = null
+        $clock = null,
+        $environmentConfigPath = null
     ) {
         $this->credentials = $credentials;
         $this->tokens = $tokens;
         $this->transport = $transport;
         $this->shopName = rtrim(trim((string) $shopName), '/');
         $this->storeId = (int) $storeId;
+        $this->environment = new MtUniCreditDeploymentEnvironment(
+            $environmentConfigPath !== null && $environmentConfigPath !== ''
+                ? (string) $environmentConfigPath
+                : null
+        );
 
         if ($baseUrl !== null && trim($baseUrl) !== '') {
             $resolved = trim($baseUrl);
         } else {
-            $resolved = (new MtUniCreditDeploymentEnvironment())->controlPanelApiBaseUrl();
+            $resolved = $this->environment->controlPanelApiBaseUrl();
         }
 
         $this->baseUrl = rtrim($resolved, '/');
@@ -198,7 +208,13 @@ final class MtUniCreditControlPanelClient
      */
     public function createOrder(array $order)
     {
-        $response = $this->authenticatedRequest('POST', '/orders', $order);
+        $extraHeaders = array();
+        if ($this->environment->forceTestCpCreate422()) {
+            $extraHeaders[MtUniCreditDeploymentEnvironment::TEST_FAILURE_HEADER]
+                = MtUniCreditDeploymentEnvironment::TEST_FAILURE_CP_CREATE_422;
+        }
+
+        $response = $this->authenticatedRequest('POST', '/orders', $order, $extraHeaders);
         if (!isset($response['data']) || !is_array($response['data'])) {
             throw new MtUniCreditCpInvalidPayloadException('The Control Panel order response has no valid data object.');
         }
@@ -234,14 +250,15 @@ final class MtUniCreditControlPanelClient
      * @param string $method
      * @param string $path
      * @param array<string, mixed>|null $payload
+     * @param array<string, string> $extraHeaders
      * @return array<string, mixed>
      */
-    private function authenticatedRequest($method, $path, $payload = null)
+    private function authenticatedRequest($method, $path, $payload = null, array $extraHeaders = array())
     {
         $token = $this->ensureToken();
 
         try {
-            return $this->send($method, $path, $payload, $token);
+            return $this->send($method, $path, $payload, $token, $extraHeaders);
         } catch (MtUniCreditCpAuthenticationException $exception) {
             $this->tokens->invalidate();
             $this->login();
@@ -251,7 +268,7 @@ final class MtUniCreditControlPanelClient
             }
 
             try {
-                return $this->send($method, $path, $payload, $retryToken);
+                return $this->send($method, $path, $payload, $retryToken, $extraHeaders);
             } catch (MtUniCreditCpAuthenticationException $retryException) {
                 $this->tokens->invalidate();
                 throw $retryException;
@@ -293,9 +310,10 @@ final class MtUniCreditControlPanelClient
      * @param string $path
      * @param array<string, mixed>|null $payload
      * @param string|null $token
+     * @param array<string, string> $extraHeaders
      * @return array<string, mixed>
      */
-    private function send($method, $path, $payload = null, $token = null)
+    private function send($method, $path, $payload = null, $token = null, array $extraHeaders = array())
     {
         $headers = array(
             'Accept' => 'application/json',
@@ -303,6 +321,9 @@ final class MtUniCreditControlPanelClient
         );
         if ($token !== null) {
             $headers['Authorization'] = $this->tokens->getTokenType() . ' ' . $token;
+        }
+        foreach ($extraHeaders as $name => $value) {
+            $headers[(string) $name] = (string) $value;
         }
 
         $response = $this->transport->request(
