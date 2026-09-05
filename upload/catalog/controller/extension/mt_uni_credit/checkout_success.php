@@ -187,8 +187,7 @@ class ControllerExtensionMtUniCreditCheckoutSuccess extends Controller
      */
     private function ownershipChecks($storeId, $orderId)
     {
-        // OC3 Registry: never gate customer via isset() — Controller has no __isset().
-        if (!is_object($this->customer) || !method_exists($this->customer, 'isLogged')) {
+        if (!isset($this->customer) || !is_object($this->customer) || !method_exists($this->customer, 'isLogged')) {
             return array('ok' => true, 'order_exists' => true, 'store_match' => true);
         }
         if (!$this->customer->isLogged()) {
