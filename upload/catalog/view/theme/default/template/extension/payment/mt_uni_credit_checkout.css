@@ -31,6 +31,9 @@
   color: #222;
 }
 
+/* Helper/subtitle — OC4 `.mt-uni-credit-checkout-panel__helper` computed family value.
+ * Authority uses 0.875rem (=14px at 16px root). Use 14px so Journal/html rem shrink
+ * cannot make the intro smaller than the shared UniCredit consent/note typography. */
 #mt-uni-credit-checkout-root .mt-uni-credit-checkout-panel__helper {
   margin: 0 0 0.85rem;
   padding: 0;
@@ -38,7 +41,7 @@
   background: transparent;
   color: var(--mtuc-popup-red, #ed1c24);
   font-family: inherit;
-  font-size: 0.875rem;
+  font-size: 14px;
   font-weight: 400;
   line-height: 1.45;
   text-transform: none;
@@ -188,28 +191,54 @@
   display: none;
 }
 
+/* Consent block — parity with OC4 checkout + Product/Cart storefront consent component */
 #mt-uni-credit-checkout-root .mt-uni-credit-storefront__consents {
   display: grid;
-  gap: 12px;
-  margin: 12px 0 8px;
+  gap: 10px;
+  margin: 0 0 20px;
 }
 
 #mt-uni-credit-checkout-root .mt-uni-credit-storefront__consent {
   display: flex;
   align-items: flex-start;
   gap: 10px;
+  margin: 0;
+}
+
+#mt-uni-credit-checkout-root .mt-uni-credit-storefront__consent--info {
+  padding-left: 28px;
 }
 
 #mt-uni-credit-checkout-root .mt-uni-credit-storefront__consent-checkbox {
-  margin-top: 3px;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  accent-color: var(--mtuc-popup-red, #ed1c24);
+  cursor: pointer;
 }
 
 #mt-uni-credit-checkout-root .mt-uni-credit-storefront__consent-label,
 #mt-uni-credit-checkout-root .mt-uni-credit-storefront__consent-text {
   margin: 0;
+  color: #000;
+  font-family: var(--mtuc-font-family);
   font-size: 14px;
+  font-weight: 400;
   line-height: 1.4;
-  color: #222;
+}
+
+#mt-uni-credit-checkout-root .mt-uni-credit-storefront__consent-label a,
+#mt-uni-credit-checkout-root .mt-uni-credit-storefront__consent-text a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+#mt-uni-credit-checkout-root .mt-uni-credit-storefront__consent-label a:hover,
+#mt-uni-credit-checkout-root .mt-uni-credit-storefront__consent-text a:hover,
+#mt-uni-credit-checkout-root .mt-uni-credit-storefront__consent-label a:focus,
+#mt-uni-credit-checkout-root .mt-uni-credit-storefront__consent-text a:focus {
+  color: var(--mtuc-popup-red, #ed1c24);
 }
 
 #mt-uni-credit-checkout-root .mt-uni-credit-storefront__label-mobile {

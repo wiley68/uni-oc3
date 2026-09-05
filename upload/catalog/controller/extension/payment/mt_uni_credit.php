@@ -347,9 +347,10 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
             $selection
         );
 
-        if (!empty($submit['apply_native_order_status'])) {
-            $this->applyPreparedOrderStatus($orderId);
-        }
+        // Native status after durable P1/P2 handoff only (OC4 Checkout success boundary).
+        // Do not gate on apply_native_order_status alone — localReplay after CP_CREATED
+        // suppresses that flag and left successful Checkout orders at status 0.
+        $this->maybeApplyCheckoutNativeOrderStatusAfterHandoff($orderId, $submit);
 
         if (!empty($submit['success'])) {
             // Success-only live cart clear AFTER durable bank handoff (P1/P2).
@@ -562,9 +563,7 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
             $process2
         );
 
-        if (!empty($result['apply_native_order_status'])) {
-            $this->applyPreparedOrderStatus((int) $context['order_id']);
-        }
+        $this->maybeApplyCheckoutNativeOrderStatusAfterHandoff((int) $context['order_id'], $result);
 
         if (!empty($result['success'])) {
             MtUniCreditFinancingTerminalNavigationSupport::clearCartAfterSuccessfulHandoff(
@@ -600,6 +599,25 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
     }
 
     /**
+     * Apply configured payment order status after durable Checkout bank handoff.
+     *
+     * Root cause of Missing Orders: success with localReplay (CP already created)
+     * returned apply_native_order_status=false, so addOrderHistory never ran and
+     * the native OC order stayed at status 0.
+     *
+     * @param int $orderId
+     * @param array<string, mixed> $submit
+     * @return void
+     */
+    private function maybeApplyCheckoutNativeOrderStatusAfterHandoff($orderId, array $submit)
+    {
+        if (!MtUniCreditFinancingTerminalNavigationSupport::isSuccessfulBankHandoff($submit)) {
+            return;
+        }
+        $this->applyPreparedOrderStatus((int) $orderId);
+    }
+
+    /**
      * @param int $orderId
      * @return void
      */
@@ -611,9 +629,21 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
         }
         $this->load->model('checkout/order');
         $statusId = (int) $this->config->get(MtUniCreditConstants::PAYMENT_SETTING_ORDER_STATUS_ID);
-        if ($statusId > 0 && method_exists($this->model_checkout_order, 'addOrderHistory')) {
-            $this->model_checkout_order->addOrderHistory($orderId, $statusId);
+        if ($statusId <= 0 || !method_exists($this->model_checkout_order, 'addOrderHistory')) {
+            return;
         }
+
+        $order = $this->model_checkout_order->getOrder($orderId);
+        if (!is_array($order)) {
+            return;
+        }
+        $current = (int) (isset($order['order_status_id']) ? $order['order_status_id'] : 0);
+        // Idempotent: replay / localReplay must not insert a second history row or re-mail.
+        if ($current === $statusId) {
+            return;
+        }
+
+        $this->model_checkout_order->addOrderHistory($orderId, $statusId);
     }
 
     /**
