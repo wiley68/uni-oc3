@@ -60,14 +60,7 @@ final class MtUniCreditFinancingPresentationService
      */
     public function customerThankYouRows($storeId, $orderId)
     {
-        $rows = $this->filterCustomerFacingRows(
-            $this->rowsForOrder($storeId, $orderId, MtUniCreditFinancingPresentationAudience::CUSTOMER)
-        );
-        if ($rows !== array()) {
-            return $rows;
-        }
-
-        // Process 1 may lack leasing_presentation_json; still show bank-status terminal failure.
+        // Terminal bank failures own the customer message (override P2 leasing snapshot).
         $status = $this->repository->findBankStatusLabel((int) $storeId, (int) $orderId);
         if ($status === MtUniCreditBankStatus::LABEL_SEND_FAILED_SMARTUCF) {
             return array(
@@ -81,6 +74,26 @@ final class MtUniCreditFinancingPresentationService
                 ),
             );
         }
+        if ($status === MtUniCreditBankStatus::LABEL_SEND_FAILED_CP) {
+            return array(
+                array(
+                    'label' => MtUniCreditFinancingLeasingPresenter::LABEL_BANK_STATUS,
+                    'value' => $status,
+                ),
+                array(
+                    'label' => MtUniCreditFinancingLeasingPresenter::LABEL_MESSAGE,
+                    'value' => MtUniCreditFinancingLeasingPresenter::CP_TERMINAL_FAILURE_MESSAGE,
+                ),
+            );
+        }
+
+        $rows = $this->filterCustomerFacingRows(
+            $this->rowsForOrder($storeId, $orderId, MtUniCreditFinancingPresentationAudience::CUSTOMER)
+        );
+        if ($rows !== array()) {
+            return $rows;
+        }
+
         if ($status !== '') {
             return array(
                 array(
@@ -126,7 +139,20 @@ final class MtUniCreditFinancingPresentationService
             return '';
         }
 
-        return $this->presenter->renderHtml($rows, MtUniCreditFinancingLeasingPresenter::TITLE);
+        $title = MtUniCreditFinancingLeasingPresenter::TITLE;
+        foreach ($rows as $row) {
+            $label = (string) (isset($row['label']) ? $row['label'] : '');
+            $value = (string) (isset($row['value']) ? $row['value'] : '');
+            if (
+                $label === MtUniCreditFinancingLeasingPresenter::LABEL_MESSAGE
+                && $value === MtUniCreditFinancingLeasingPresenter::CP_TERMINAL_FAILURE_MESSAGE
+            ) {
+                $title = MtUniCreditFinancingLeasingPresenter::CP_TERMINAL_FAILURE_TITLE;
+                break;
+            }
+        }
+
+        return $this->presenter->renderHtml($rows, $title);
     }
 
     /**

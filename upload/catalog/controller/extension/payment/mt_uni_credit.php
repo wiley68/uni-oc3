@@ -416,6 +416,36 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
             return;
         }
 
+        // Woo/PS Checkout parity (not OC4): definitive CP create failure → Thank You.
+        if (MtUniCreditFinancingTerminalNavigationSupport::isDefinitiveCheckoutCpFailureTerminal($submit)) {
+            $this->maybeApplyCheckoutNativeOrderStatusOnDefinitiveFailure($orderId, $submit);
+            $json = array(
+                'success' => false,
+                'error' => isset($submit['error']) ? (string) $submit['error'] : 'cp_rejected',
+                'order_id' => $orderId,
+                'cp_succeeded' => false,
+                'control_panel_order_id' => isset($submit['control_panel_order_id'])
+                    ? (int) $submit['control_panel_order_id']
+                    : 0,
+                'bank_status' => isset($submit['bank_status']) ? (string) $submit['bank_status'] : '',
+                'apply_native_order_status' => !empty($submit['apply_native_order_status']),
+            );
+            if (array_key_exists('recoverable', $submit)) {
+                $json['recoverable'] = !empty($submit['recoverable']);
+            }
+            if (array_key_exists('ambiguous_blocked', $submit)) {
+                $json['ambiguous_blocked'] = !empty($submit['ambiguous_blocked']);
+            }
+            $json = MtUniCreditFinancingTerminalNavigationSupport::enrichDefinitiveCheckoutCpFailureThankYou(
+                $json,
+                $this->session->data,
+                $orderId,
+                $this->url->link(MtUniCreditConstants::CHECKOUT_SUCCESS_ROUTE, '', true)
+            );
+            $this->respondJson($json);
+            return;
+        }
+
         $json['error'] = isset($submit['message']) && is_string($submit['message'])
             ? (string) $submit['message']
             : $this->language->get('error_unavailable');
@@ -624,6 +654,24 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
             return;
         }
 
+        if (MtUniCreditFinancingTerminalNavigationSupport::isDefinitiveCheckoutCpFailureTerminal($result)) {
+            $this->maybeApplyCheckoutNativeOrderStatusOnDefinitiveFailure($preparedOrderId, $result);
+            $payload = MtUniCreditFinancingTerminalNavigationSupport::enrichDefinitiveCheckoutCpFailureThankYou(
+                array(
+                    'success' => false,
+                    'error' => isset($result['error']) ? (string) $result['error'] : 'cp_rejected',
+                    'order_id' => $preparedOrderId,
+                    'cp_succeeded' => false,
+                    'bank_status' => isset($result['bank_status']) ? (string) $result['bank_status'] : '',
+                ),
+                $this->session->data,
+                $preparedOrderId,
+                $this->url->link(MtUniCreditConstants::CHECKOUT_SUCCESS_ROUTE, '', true)
+            );
+            $this->response->redirect((string) $payload['redirect']);
+            return;
+        }
+
         if (empty($result['success']) && isset($result['message']) && is_string($result['message'])) {
             $this->session->data['mt_uni_credit_checkout_flash'] = (string) $result['message'];
         }
@@ -681,7 +729,7 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
     }
 
     /**
-     * Definitive SmartUCF remote_reject after CP success — leave Missing Orders (status 0).
+     * Definitive failure finalization after CP success+SmartUCF reject OR Checkout CP create fail.
      *
      * Uses the same payment_mt_uni_credit_order_status_id as Product/Cart and OC4
      * applyCheckoutUniCreditOrderStatus. Must NOT broaden isSuccessfulBankHandoff().
@@ -709,7 +757,7 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
 
             return;
         }
-        if (!MtUniCreditFinancingTerminalNavigationSupport::isDefinitiveRemoteRejectTerminal($submit)) {
+        if (MtUniCreditFinancingTerminalNavigationSupport::isSuccessfulBankHandoff($submit)) {
             return;
         }
         $this->applyPreparedOrderStatus($orderId, $submit);

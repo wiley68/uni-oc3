@@ -13,6 +13,21 @@ final class MtUniCreditFinancingLeasingPresenter
     'Поръчката Ви е регистрирана успешно в магазина, но заявката за финансиране не беше приета/стартирана успешно от банковата система. '
         . 'Не изпращайте поръчката повторно. При необходимост търговецът ще се свърже с Вас.';
 
+    /**
+     * Checkout definitive CP-create failure Thank You title (Woo/PS cross-module).
+     * Not used for Product/Cart stay-page error modal.
+     */
+    const CP_TERMINAL_FAILURE_TITLE = 'Поръчката е създадена';
+
+    /**
+     * Checkout definitive CP-create failure body — exact PS order_confirmation_cp_outcome_unknown wording.
+     * Paragraphs separated by blank lines; preserve punctuation.
+     */
+    const CP_TERMINAL_FAILURE_MESSAGE =
+    "Поръчката е създадена в магазина, но потвърждението за регистрацията на финансирането не беше получено.\n\n"
+        . "Не изпращайте поръчката повторно.\n\n"
+        . "Търговецът ще провери статуса на заявката.";
+
     const LABEL_BANK_STATUS = 'Статус към банката';
     const LABEL_CP_INTERNAL_ID = 'КП поръчка (ID)';
     const LABEL_CP_SHOP_ORDER_ID = 'КП shop order_id';
@@ -97,6 +112,11 @@ final class MtUniCreditFinancingLeasingPresenter
             && $status === MtUniCreditBankStatus::LABEL_SEND_FAILED_SMARTUCF
         ) {
             $rows[] = array('label' => self::LABEL_MESSAGE, 'value' => self::SMARTUCF_TERMINAL_FAILURE_MESSAGE);
+        } elseif (
+            $audience === MtUniCreditFinancingPresentationAudience::CUSTOMER
+            && $status === MtUniCreditBankStatus::LABEL_SEND_FAILED_CP
+        ) {
+            $rows[] = array('label' => self::LABEL_MESSAGE, 'value' => self::CP_TERMINAL_FAILURE_MESSAGE);
         }
 
         return $rows;
@@ -123,7 +143,7 @@ final class MtUniCreditFinancingLeasingPresenter
             $html .= '<tr><th style="text-align:left;padding:4px 16px 4px 0;vertical-align:top;">'
                 . htmlspecialchars($row['label'], ENT_QUOTES, 'UTF-8')
                 . '</th><td style="padding:4px 0;">'
-                . htmlspecialchars($row['value'], ENT_QUOTES, 'UTF-8')
+                . nl2br(htmlspecialchars($row['value'], ENT_QUOTES, 'UTF-8'), false)
                 . '</td></tr>';
         }
         $html .= '</table></div>';

@@ -212,7 +212,7 @@ final class MtUniCreditCheckoutFinancingSubmissionService
                 ? MtUniCreditControlPanelOrderLifecycleService::CUSTOMER_AMBIGUOUS_MESSAGE
                 : MtUniCreditControlPanelOrderLifecycleService::CUSTOMER_FAILURE_MESSAGE);
 
-        return array(
+        $failure = array(
             'success' => false,
             'error' => $result->errorClass !== null ? $result->errorClass : 'cp_submit_failed',
             'message' => $message,
@@ -225,6 +225,19 @@ final class MtUniCreditCheckoutFinancingSubmissionService
             'apply_native_order_status' => $result->applyNativeOrderStatus,
             'bank_status' => $this->resolveBankStatusId($storeId, $orderId),
         );
+
+        // Checkout Woo/PS parity: definitive CP create failure → local bank_send_failed_cp
+        // (no CP PATCH — no CP order). Authorises native status for Thank You finalization.
+        if (MtUniCreditFinancingTerminalNavigationSupport::isDefinitiveCheckoutCpFailureTerminal($failure)) {
+            $this->persistCheckoutCpFailureBankStatus($storeId, $orderId);
+            $failure['bank_status'] = MtUniCreditBankStatus::SEND_FAILED_CP;
+            $failure['apply_native_order_status'] = true;
+            $failure['message'] = MtUniCreditFinancingLeasingPresenter::CP_TERMINAL_FAILURE_TITLE
+                . "\n\n"
+                . MtUniCreditFinancingLeasingPresenter::CP_TERMINAL_FAILURE_MESSAGE;
+        }
+
+        return $failure;
     }
 
     /**
@@ -358,6 +371,34 @@ final class MtUniCreditCheckoutFinancingSubmissionService
             return isset($row['status_id']) ? (string) $row['status_id'] : '';
         } catch (Exception $exception) {
             return '';
+        }
+    }
+
+    /**
+     * Persist local bank_send_failed_cp after definitive Checkout CP create failure.
+     * No CP PATCH (no remote CP order).
+     *
+     * @param int $storeId
+     * @param int $orderId
+     * @return void
+     */
+    private function persistCheckoutCpFailureBankStatus($storeId, $orderId)
+    {
+        $storeId = (int) $storeId;
+        $orderId = (int) $orderId;
+        if ($storeId < 0 || $orderId <= 0) {
+            return;
+        }
+        try {
+            $status = MtUniCreditBankStatus::controlPanelFailure(false);
+            MtUniCreditProcess1ServiceFactory::bankStatuses($this->attempts->database())
+                ->updateByOrderIdentifier(
+                    $storeId,
+                    (string) $orderId,
+                    $status['status_id'],
+                    $status['status_label']
+                );
+        } catch (Exception $ignored) {
         }
     }
 }

@@ -14,6 +14,8 @@ final class MtUniCreditFinancingTerminalNavigationSupport
 
     const STEP_SMARTUCF_TERMINAL_FAILED = 'smartucf_terminal_failed';
 
+    const STEP_CP_TERMINAL_FAILED = 'cp_terminal_failed';
+
     /** Storefront must close the financing modal and show the error dialog (no redirect). */
     const UI_ERROR_MODAL = 'error_modal';
 
@@ -40,6 +42,62 @@ final class MtUniCreditFinancingTerminalNavigationSupport
         $error = (string) (isset($result['error']) ? $result['error'] : '');
 
         return $error === MtUniCreditSmartUcfFailureClassification::CLASS_REMOTE_REJECT;
+    }
+
+    /**
+     * Checkout-only: definitive CP create failure (no CP order, not ambiguous).
+     * Woo/PS Thank You authority — NOT Product/Cart stay-page modal.
+     * Current OC4 stay-on-Checkout is known parity debt and is not authority.
+     *
+     * @param array<string, mixed> $result
+     * @return bool
+     */
+    public static function isDefinitiveCheckoutCpFailureTerminal(array $result)
+    {
+        if (!empty($result['success'])) {
+            return false;
+        }
+        if ((int) (isset($result['order_id']) ? $result['order_id'] : 0) <= 0) {
+            return false;
+        }
+        if (!empty($result['cp_succeeded'])) {
+            return false;
+        }
+        if (!empty($result['ambiguous_blocked'])) {
+            return false;
+        }
+        if (self::isDefinitiveRemoteRejectTerminal($result)) {
+            return false;
+        }
+        $cpId = (int) (isset($result['control_panel_order_id']) ? $result['control_panel_order_id'] : 0);
+        if ($cpId > 0) {
+            return false;
+        }
+
+        $bankStatus = isset($result['bank_status']) ? (string) $result['bank_status'] : '';
+        if ($bankStatus === MtUniCreditBankStatus::SEND_FAILED_CP) {
+            return true;
+        }
+
+        $attempt = isset($result['attempt']) && is_array($result['attempt']) ? $result['attempt'] : null;
+        if (
+            is_array($attempt)
+            && (string) (isset($attempt['state']) ? $attempt['state'] : '')
+            === MtUniCreditFinancingAttemptState::CP_FAILED_RETRYABLE
+        ) {
+            return true;
+        }
+
+        $error = (string) (isset($result['error']) ? $result['error'] : '');
+        $definitive = array(
+            MtUniCreditControlPanelErrorClass::REJECTED,
+            MtUniCreditControlPanelErrorClass::AUTH_FAILED,
+            MtUniCreditControlPanelErrorClass::INVALID_RESPONSE,
+            MtUniCreditControlPanelErrorClass::CONFLICT,
+            MtUniCreditControlPanelErrorClass::VALIDATION_FAILED,
+        );
+
+        return in_array($error, $definitive, true);
     }
 
     /**
@@ -115,6 +173,44 @@ final class MtUniCreditFinancingTerminalNavigationSupport
         $payload['bank_failure_known'] = true;
         $payload['step'] = self::STEP_SMARTUCF_TERMINAL_FAILED;
         $payload['message'] = MtUniCreditFinancingLeasingPresenter::SMARTUCF_TERMINAL_FAILURE_MESSAGE;
+
+        return $payload;
+    }
+
+    /**
+     * Checkout definitive CP failure → Thank You ownership (session + redirect).
+     * Does not imply bank/financing success.
+     *
+     * @param array<string, mixed> $payload
+     * @param array<string, mixed> $sessionData
+     * @param int $orderId
+     * @param string $thankYouUrl
+     * @return array<string, mixed>
+     */
+    public static function enrichDefinitiveCheckoutCpFailureThankYou(
+        array $payload,
+        array &$sessionData,
+        $orderId,
+        $thankYouUrl
+    ) {
+        $orderId = (int) $orderId;
+        $thankYouUrl = trim((string) $thankYouUrl);
+        if ($orderId <= 0 || $thankYouUrl === '') {
+            return $payload;
+        }
+
+        $sessionData['order_id'] = $orderId;
+        $sessionData[self::SESSION_SUCCESS_ORDER_ID] = $orderId;
+        unset($sessionData[MtUniCreditCheckoutConfirmPreparation::SESSION_PREPARED_ORDER_ID]);
+
+        $payload['redirect'] = $thankYouUrl;
+        $payload['bank_redirect'] = false;
+        $payload['terminal'] = true;
+        $payload['bank_failure_known'] = true;
+        $payload['step'] = self::STEP_CP_TERMINAL_FAILED;
+        $payload['message'] = MtUniCreditFinancingLeasingPresenter::CP_TERMINAL_FAILURE_TITLE
+            . "\n\n"
+            . MtUniCreditFinancingLeasingPresenter::CP_TERMINAL_FAILURE_MESSAGE;
 
         return $payload;
     }
