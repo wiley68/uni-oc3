@@ -333,6 +333,45 @@ class ControllerExtensionMtUniCreditCart extends Controller
         $json['cart_unchanged'] = true;
         if (!empty($result['order_id'])) {
             $json['order_id'] = (int) $result['order_id'];
+        }
+        if (!empty($result['cp_succeeded'])) {
+            $json['cp_succeeded'] = true;
+        }
+        if (array_key_exists('recoverable', $result)) {
+            $json['recoverable'] = !empty($result['recoverable']);
+        }
+        if (!empty($result['ambiguous_blocked'])) {
+            $json['ambiguous_blocked'] = true;
+        }
+        if (!empty($result['apply_native_order_status'])) {
+            $json['apply_native_order_status'] = true;
+        }
+
+        // Product parity: definitive remote_reject after OC+CP → Thank You (not prepared/checkout).
+        if (MtUniCreditFinancingTerminalNavigationSupport::isDefinitiveRemoteRejectTerminal($result)) {
+            $json = MtUniCreditFinancingTerminalNavigationSupport::enrichDefinitiveRemoteRejectThankYou(
+                $json,
+                $this->session->data,
+                (int) $result['order_id'],
+                $this->url->link(MtUniCreditConstants::CHECKOUT_SUCCESS_ROUTE, '', true)
+            );
+            MtUniCreditStorefrontRuntime::respondJson($this, $json);
+
+            return;
+        }
+
+        // Product parity: CP create failed (no CP order) → stay on Cart with error modal.
+        if (MtUniCreditFinancingTerminalNavigationSupport::isCpCreateFailureStayOnPage($result)) {
+            $json = MtUniCreditFinancingTerminalNavigationSupport::enrichCpCreateFailureModal(
+                $json,
+                $this->session->data
+            );
+            MtUniCreditStorefrontRuntime::respondJson($this, $json);
+
+            return;
+        }
+
+        if (!empty($result['order_id'])) {
             $json['redirect'] = $this->url->link(MtUniCreditConstants::CHECKOUT_PREPARED_ROUTE, '', true);
             $this->session->data[MtUniCreditCheckoutConfirmPreparation::SESSION_PREPARED_ORDER_ID] = (int) $result['order_id'];
         }
