@@ -191,6 +191,7 @@ final class MtUniCreditCheckoutFinancingSubmissionService
                 'cp_succeeded' => $result->cpSucceeded,
                 'attempt' => $fresh !== null ? $fresh : $attempt,
                 'apply_native_order_status' => $result->applyNativeOrderStatus,
+                'bank_status' => $this->resolveBankStatusId($storeId, $orderId),
             );
             if ($result->redirectUrl !== '') {
                 $out['redirect'] = $result->redirectUrl;
@@ -324,5 +325,32 @@ final class MtUniCreditCheckoutFinancingSubmissionService
             'calculation' => $calculation,
             'unicid' => $unicid,
         );
+    }
+
+    /**
+     * Durable local bank status after lifecycle (empty when none).
+     *
+     * @param int $storeId
+     * @param int $orderId
+     * @return string
+     */
+    private function resolveBankStatusId($storeId, $orderId)
+    {
+        $storeId = (int) $storeId;
+        $orderId = (int) $orderId;
+        if ($storeId < 0 || $orderId <= 0) {
+            return '';
+        }
+        try {
+            $row = MtUniCreditProcess1ServiceFactory::bankStatuses($this->attempts->database())
+                ->findByOrderId($storeId, $orderId);
+            if ($row === null) {
+                return '';
+            }
+
+            return isset($row['status_id']) ? (string) $row['status_id'] : '';
+        } catch (Exception $exception) {
+            return '';
+        }
     }
 }

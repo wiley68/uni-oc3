@@ -54,6 +54,7 @@
     var lastCalculation = null;
     var calcBusy = false;
     var confirmBusy = false;
+    var redirectTerminal = false;
     var firstTimer = null;
     var sequence = 0;
 
@@ -109,10 +110,7 @@
     }
 
     function consentsRequired() {
-      var consents =
-        (state.modal && state.modal.consents) ||
-        (state.calculator && state.calculator.consents) ||
-        [];
+      var consents = (state.modal && state.modal.consents) || [];
       if (!$.isArray(consents)) {
         return [];
       }
@@ -155,12 +153,43 @@
       var $btn = submitBtn();
       var enabled =
         !!selectedScheme() &&
+        !!lastCalculation &&
         !calcBusy &&
         !confirmBusy &&
         consentsAccepted() &&
         process2Ok();
       $btn.prop("disabled", !enabled);
       $btn.attr("aria-disabled", enabled ? "false" : "true");
+    }
+
+    function setProcessing(active) {
+      var $panel = $root.find("[data-mtuc-processing]");
+      var $status = $panel.find("[role='status']");
+      if ($panel.length) {
+        $panel.prop("hidden", !active);
+      }
+      if ($status.length) {
+        $status.attr("aria-busy", active ? "true" : "false");
+      }
+      $root.toggleClass("mt-uni-credit-checkout--processing", !!active);
+      $root.attr("aria-busy", active ? "true" : "false");
+      $(document.documentElement).toggleClass(
+        "mt-uni-credit-checkout-processing-active",
+        !!active,
+      );
+      var $btn = submitBtn();
+      if (active) {
+        $btn
+          .prop("disabled", true)
+          .attr("aria-disabled", "true")
+          .attr("aria-busy", "true");
+        if ($btn.length && document.activeElement === $btn.get(0)) {
+          $btn.blur();
+        }
+      } else {
+        $btn.removeAttr("aria-busy");
+        updateConfirmState();
+      }
     }
 
     function renderCalculation(calculation) {
@@ -201,10 +230,15 @@
         $root.find('[data-mtuc-display="' + key + '"]').text(value);
       });
 
+      var showFirst = calculation.show_first_installment !== false;
+      var firstAmount = showFirst ? calculation.first_installment || 0 : 0;
       var $first = $(firstInput());
       if ($first.length) {
-        $first.val(formatMoney(calculation.first_installment || 0));
-        if (calculation.first_installment_locked) {
+        $first.val(formatMoney(firstAmount));
+        if (!showFirst) {
+          $first.val("0");
+          $first.attr("readonly", "readonly");
+        } else if (calculation.first_installment_locked) {
           $first.attr("readonly", "readonly");
         } else {
           $first.removeAttr("readonly");
@@ -212,9 +246,24 @@
       }
       var $firstRow = $root.find("[data-mtuc-first-row]");
       if ($firstRow.length) {
-        $firstRow.prop("hidden", calculation.show_first_installment === false);
+        $firstRow.prop("hidden", !showFirst);
       }
       updateConfirmState();
+    }
+
+    /** OC4: wipe stale first installment before server recalculation on scheme change. */
+    function resetFirstInstallmentForSchemeChange() {
+      lastCalculation = null;
+      var first = firstInput();
+      if (first) {
+        first.value = "0";
+        first.removeAttribute("readonly");
+        first.removeAttribute("disabled");
+      }
+      var $btn = submitBtn();
+      $btn.prop("disabled", true).attr("aria-disabled", "true");
+      $root.find("[data-mtuc-popup-error]").text("");
+      $root.find("[data-mtuc-submit-error]").text("");
     }
 
     function applySchemeFromSelect() {
@@ -225,20 +274,26 @@
         updateConfirmState();
         return;
       }
-      recalculate(scheme);
+      resetFirstInstallmentForSchemeChange();
+      recalculate(scheme, 0);
     }
 
-    function recalculate(scheme) {
+    function recalculate(scheme, forcedFirst) {
       if (!scheme || !state.recalculate_url) {
         return;
       }
       calcBusy = true;
       updateConfirmState();
       var seq = ++sequence;
-      var first = firstInput();
-      var firstVal = first
-        ? parseFloat(String(first.value).replace(",", ".")) || 0
-        : 0;
+      var firstVal;
+      if (typeof forcedFirst === "number") {
+        firstVal = forcedFirst;
+      } else {
+        var first = firstInput();
+        firstVal = first
+          ? parseFloat(String(first.value).replace(",", ".")) || 0
+          : 0;
+      }
       $.ajax({
         url: state.recalculate_url,
         type: "POST",
@@ -284,15 +339,25 @@
       });
     }
 
-    function setProcessing(active) {
-      var $panel = $root.find("[data-mtuc-processing]");
-      if (!$panel.length) {
-        return;
+    function resolveSubmitFirstInstallment(scheme) {
+      if (
+        !lastCalculation ||
+        lastCalculation.show_first_installment === false
+      ) {
+        return 0;
       }
-      $panel.prop("hidden", !active);
-      $panel
-        .find("[role='status']")
-        .attr("aria-busy", active ? "true" : "false");
+      if (lastCalculation.first_installment_locked) {
+        return (
+          parseFloat(
+            String(lastCalculation.first_installment || 0).replace(",", "."),
+          ) || 0
+        );
+      }
+      var first = firstInput();
+      if (first) {
+        return parseFloat(String(first.value).replace(",", ".")) || 0;
+      }
+      return scheme && scheme.first_installment ? scheme.first_installment : 0;
     }
 
     function collectConsentIds() {
@@ -304,7 +369,12 @@
     }
 
     function confirmOrder() {
-      if (confirmBusy || !selectedScheme()) {
+      if (
+        confirmBusy ||
+        redirectTerminal ||
+        !selectedScheme() ||
+        !lastCalculation
+      ) {
         return;
       }
       if (!consentsAccepted()) {
@@ -318,31 +388,23 @@
       }
 
       confirmBusy = true;
-      updateConfirmState();
+      redirectTerminal = false;
       setProcessing(true);
       $root.find("[data-mtuc-submit-error]").text("");
 
       var scheme = selectedScheme();
-      var first = firstInput();
-      var firstVal =
-        lastCalculation && lastCalculation.first_installment_locked
-          ? lastCalculation.first_installment
-          : first
-            ? parseFloat(String(first.value).replace(",", ".")) || 0
-            : 0;
-
       var data = {
         csrf_token: state.csrf_token,
         scheme_key: scheme.key,
-        first_installment: firstVal,
+        first_installment: resolveSubmitFirstInstallment(scheme),
         egn: String($root.find('[name="egn"]').val() || ""),
         phone2: String($root.find('[name="phone2"]').val() || ""),
       };
       $.each(collectConsentIds(), function (_, id) {
-        if (!data["consent"]) {
-          data["consent"] = [];
+        if (!data.consent) {
+          data.consent = [];
         }
-        data["consent"].push(id);
+        data.consent.push(id);
       });
 
       $.ajax({
@@ -352,9 +414,13 @@
         data: data,
         success: function (json) {
           if (json && json.redirect) {
+            redirectTerminal = true;
+            // Keep loader ON until navigation leaves the page.
             window.location = json.redirect;
             return;
           }
+          confirmBusy = false;
+          setProcessing(false);
           $root
             .find("[data-mtuc-submit-error]")
             .text(
@@ -364,14 +430,11 @@
             );
         },
         error: function () {
+          confirmBusy = false;
+          setProcessing(false);
           $root
             .find("[data-mtuc-submit-error]")
             .text((state.i18n && state.i18n.unavailable) || "");
-        },
-        complete: function () {
-          confirmBusy = false;
-          setProcessing(false);
-          updateConfirmState();
         },
       });
     }
@@ -417,19 +480,7 @@
 
     var initial = selectedScheme();
     if (initial) {
-      renderCalculation({
-        price: state.calculator && state.calculator.price,
-        financed_amount: initial.financed_amount,
-        monthly_installment: initial.monthly_installment,
-        total_payable: initial.total_payable,
-        glp: initial.glp,
-        gpr: initial.gpr,
-        first_installment: initial.first_installment,
-        first_installment_locked: initial.first_installment_locked,
-        show_first_installment:
-          state.calculator && state.calculator.show_first_installment,
-      });
-      recalculate(initial);
+      recalculate(initial, 0);
     } else {
       updateConfirmState();
     }

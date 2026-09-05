@@ -1,3 +1,12 @@
+{% if fonts_href %}
+<link rel="stylesheet" href="{{ fonts_href }}" data-mtuc-checkout-asset="css" />
+{% endif %}
+{% if product_css_href %}
+<link rel="stylesheet" href="{{ product_css_href }}" data-mtuc-checkout-asset="css" />
+{% endif %}
+{% if checkout_css_href %}
+<link rel="stylesheet" href="{{ checkout_css_href }}" data-mtuc-checkout-asset="css" />
+{% endif %}
 <div id="mt-uni-credit-checkout-root"
      class="mt-uni-credit-storefront mt-uni-credit-checkout-panel"
      data-mtuc-source="checkout"
@@ -130,20 +139,36 @@
     return;
   }
   function ensureLink(href) {
-    if (!href || document.querySelector('link[href="' + String(href).replace(/"/g, '\\"') + '"]')) {
+    if (!href) {
+      return;
+    }
+    var escaped = String(href).replace(/"/g, '\\"');
+    if (
+      document.querySelector('link[data-mtuc-checkout-asset="css"][href="' + escaped + '"]')
+      || document.querySelector('link[href="' + escaped + '"]')
+    ) {
       return;
     }
     var link = document.createElement('link');
     link.rel = 'stylesheet';
     link.href = href;
+    link.setAttribute('data-mtuc-checkout-asset', 'css');
     document.head.appendChild(link);
   }
   function ensureScript(href) {
-    if (!href || document.querySelector('script[src="' + String(href).replace(/"/g, '\\"') + '"]')) {
+    if (!href) {
+      return;
+    }
+    var escaped = String(href).replace(/"/g, '\\"');
+    if (
+      document.querySelector('script[data-mtuc-checkout-asset="js"][src="' + escaped + '"]')
+      || document.querySelector('script[src="' + escaped + '"]')
+    ) {
       return;
     }
     var script = document.createElement('script');
     script.src = href;
+    script.setAttribute('data-mtuc-checkout-asset', 'js');
     document.head.appendChild(script);
   }
   ensureLink(state.fonts_href);

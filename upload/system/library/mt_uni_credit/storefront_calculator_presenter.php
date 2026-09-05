@@ -400,7 +400,7 @@ final class MtUniCreditStorefrontCalculatorPresenter
             'gpr' => $result->gpr,
             'first_installment' => $result->firstInstallment->amount,
             'first_installment_locked' => !empty($result->firstInstallment->locked),
-            'show_first_installment' => $this->flag(isset($shop['uni_first_vnoska']) ? $shop['uni_first_vnoska'] : 0),
+            'show_first_installment' => !empty($result->firstInstallment->visible),
             'key' => self::keyForScheme($scheme),
         );
     }

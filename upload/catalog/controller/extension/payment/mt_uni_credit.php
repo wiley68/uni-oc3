@@ -14,8 +14,24 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
             return '';
         }
 
-        $calculator = $panel['calculator'];
-        $modal = $panel['modal'];
+        return $this->load->view(
+            'extension/payment/mt_uni_credit',
+            $this->buildCheckoutPanelViewData($panel)
+        );
+    }
+
+    /**
+     * Checkout payment panel view payload (extracted so IDE type inference stays within limits).
+     *
+     * @param array<string, mixed> $panel
+     * @return array<string, mixed>
+     */
+    private function buildCheckoutPanelViewData(array $panel)
+    {
+        $calculator = isset($panel['calculator']) && is_array($panel['calculator'])
+            ? $panel['calculator']
+            : array();
+        $modal = isset($panel['modal']) && is_array($panel['modal']) ? $panel['modal'] : array();
         $storeId = (int) $this->config->get('config_store_id');
         $selection = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection(
             $calculator,
@@ -23,98 +39,169 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
             $storeId
         );
         $initialSchemeKey = isset($selection['key']) ? $selection['key'] : null;
-        if (!empty($selection['buy_matched']) && $initialSchemeKey) {
-            foreach (array('standard', 'promo') as $offerType) {
-                if (isset($calculator['offers'][$offerType]) && is_array($calculator['offers'][$offerType])) {
-                    $calculator['offers'][$offerType]['preferred_scheme_key'] = $initialSchemeKey;
-                }
-            }
-            $calculator['buy_preference_scheme_key'] = $initialSchemeKey;
-        }
+        $calculator = $this->applyCheckoutBuyPreference($calculator, $selection, $initialSchemeKey);
 
-        $csrfToken = MtUniCreditStorefrontCsrf::issue($this->session->data);
-        $assets = MtUniCreditStorefrontRuntime::assetUrls($this);
-        $checkoutCss = MtUniCreditStorefrontAssetUrls::versionedUrl(
-            defined('DIR_APPLICATION')
-                ? rtrim(DIR_APPLICATION, '/\\') . DIRECTORY_SEPARATOR . 'view' . DIRECTORY_SEPARATOR . 'theme'
-                . DIRECTORY_SEPARATOR . 'default' . DIRECTORY_SEPARATOR . 'template' . DIRECTORY_SEPARATOR
-                . 'extension' . DIRECTORY_SEPARATOR . 'payment' . DIRECTORY_SEPARATOR . 'mt_uni_credit_checkout.css'
-                : '',
-            MtUniCreditConstants::CHECKOUT_ASSET_CSS_RELATIVE
-        );
-        $checkoutJs = MtUniCreditStorefrontAssetUrls::versionedUrl(
-            defined('DIR_APPLICATION')
-                ? rtrim(DIR_APPLICATION, '/\\') . DIRECTORY_SEPARATOR . 'view' . DIRECTORY_SEPARATOR . 'theme'
-                . DIRECTORY_SEPARATOR . 'default' . DIRECTORY_SEPARATOR . 'template' . DIRECTORY_SEPARATOR
-                . 'extension' . DIRECTORY_SEPARATOR . 'payment' . DIRECTORY_SEPARATOR . 'mt_uni_credit_checkout.js'
-                : '',
-            MtUniCreditConstants::CHECKOUT_ASSET_JS_RELATIVE
-        );
-
+        $assets = $this->resolveCheckoutAssetUrls();
         $process2 = !empty($modal['process2']);
         $consents = isset($modal['consents']) && is_array($modal['consents']) ? $modal['consents'] : array();
+        $csrfToken = MtUniCreditStorefrontCsrf::issue($this->session->data);
+        $orderId = (int) (isset($panel['order_id']) ? $panel['order_id'] : 0);
 
-        $data = array(
-            'heading_title' => $this->language->get('heading_title'),
-            'button_confirm' => $this->language->get('button_confirm'),
-            'text_loading' => $this->language->get('text_loading'),
-            'text_price' => $this->language->get('text_price'),
-            'text_months' => $this->language->get('text_months'),
-            'text_months_short' => $this->language->get('text_months_short'),
-            'text_first_installment' => $this->language->get('text_first_installment'),
-            'text_financed_amount' => $this->language->get('text_financed_amount'),
-            'text_monthly_installment' => $this->language->get('text_monthly_installment'),
-            'text_monthly_installment_short' => $this->language->get('text_monthly_installment_short'),
-            'text_total_payable' => $this->language->get('text_total_payable'),
-            'text_glp' => $this->language->get('text_glp'),
-            'text_gpr' => $this->language->get('text_gpr'),
-            'text_consents' => $this->language->get('text_consents'),
-            'text_egn' => $this->language->get('text_egn'),
-            'text_phone2' => $this->language->get('text_phone2'),
-            'text_required' => $this->language->get('text_required'),
-            'text_processing_title' => $this->language->get('text_processing_title'),
-            'text_processing_message' => $this->language->get('text_processing_message'),
-            'error_unavailable' => $this->language->get('error_unavailable'),
-            'error_consent' => $this->language->get('error_consent'),
-            'order_id' => (int) $panel['order_id'],
-            'process2' => $process2,
-            'consents' => $consents,
-            'show_first_installment' => !empty($calculator['show_first_installment']),
-            'checkout_helper' => $this->language->get(
-                $process2 ? 'text_checkout_helper_process2' : 'text_checkout_helper_process1'
-            ),
-            'scheme_options' => MtUniCreditCheckoutSchemeSelection::buildCheckoutSchemeOptions(
-                $calculator,
-                $initialSchemeKey
-            ),
-            'mt_uni_credit_bootstrap_json' => json_encode(array(
-                'source' => 'checkout',
-                'order_id' => (int) $panel['order_id'],
-                'calculator' => $calculator,
-                'modal' => array(
-                    'process2' => $process2,
-                    'consents' => $consents,
-                ),
-                'csrf_token' => $csrfToken,
-                'confirm_url' => $this->url->link('extension/payment/mt_uni_credit/confirm', '', true),
-                'calculate_url' => $this->url->link('extension/payment/mt_uni_credit/calculate', '', true),
-                'recalculate_url' => $this->url->link('extension/payment/mt_uni_credit/recalculate', '', true),
-                'fonts_href' => $assets['fonts'],
-                'product_css_href' => $assets['css'],
-                'checkout_css_href' => $checkoutCss,
-                'script_href' => $checkoutJs,
-                'i18n' => array(
-                    'order_changed' => (string) $this->language->get('error_order_changed'),
-                    'order_missing' => (string) $this->language->get('error_order'),
-                    'confirm' => (string) $this->language->get('button_confirm'),
-                    'processing' => (string) $this->language->get('text_processing_message'),
-                    'consent' => (string) $this->language->get('error_consent'),
-                    'unavailable' => (string) $this->language->get('error_unavailable'),
-                ),
-            ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        $data = $this->checkoutPanelLanguageData();
+        $data['order_id'] = $orderId;
+        $data['process2'] = $process2;
+        $data['consents'] = $consents;
+        $data['show_first_installment'] = !empty($calculator['show_first_installment']);
+        $data['checkout_helper'] = $this->language->get(
+            $process2 ? 'text_checkout_helper_process2' : 'text_checkout_helper_process1'
+        );
+        $data['scheme_options'] = MtUniCreditCheckoutSchemeSelection::buildCheckoutSchemeOptions(
+            $calculator,
+            $initialSchemeKey
+        );
+        $data['fonts_href'] = $assets['fonts'];
+        $data['product_css_href'] = $assets['css'];
+        $data['checkout_css_href'] = $assets['checkout_css'];
+        $data['script_href'] = $assets['checkout_js'];
+        $data['mt_uni_credit_bootstrap_json'] = $this->encodeCheckoutBootstrapJson(
+            $orderId,
+            $calculator,
+            $process2,
+            $consents,
+            $csrfToken,
+            $assets
         );
 
-        return $this->load->view('extension/payment/mt_uni_credit', $data);
+        return $data;
+    }
+
+    /**
+     * @param array<string, mixed> $calculator
+     * @param array<string, mixed> $selection
+     * @param string|null $initialSchemeKey
+     * @return array<string, mixed>
+     */
+    private function applyCheckoutBuyPreference(array $calculator, array $selection, $initialSchemeKey)
+    {
+        if (empty($selection['buy_matched']) || !$initialSchemeKey) {
+            return $calculator;
+        }
+
+        foreach (array('standard', 'promo') as $offerType) {
+            if (isset($calculator['offers'][$offerType]) && is_array($calculator['offers'][$offerType])) {
+                $calculator['offers'][$offerType]['preferred_scheme_key'] = $initialSchemeKey;
+            }
+        }
+        $calculator['buy_preference_scheme_key'] = $initialSchemeKey;
+
+        return $calculator;
+    }
+
+    /**
+     * @return array{fonts:string,css:string,checkout_css:string,checkout_js:string}
+     */
+    private function resolveCheckoutAssetUrls()
+    {
+        $assets = MtUniCreditStorefrontRuntime::assetUrls($this);
+        $base = '';
+        if (defined('DIR_APPLICATION')) {
+            $base = rtrim(DIR_APPLICATION, '/\\') . DIRECTORY_SEPARATOR . 'view' . DIRECTORY_SEPARATOR . 'theme'
+                . DIRECTORY_SEPARATOR . 'default' . DIRECTORY_SEPARATOR . 'template' . DIRECTORY_SEPARATOR
+                . 'extension' . DIRECTORY_SEPARATOR . 'payment' . DIRECTORY_SEPARATOR;
+        }
+
+        return array(
+            'fonts' => $assets['fonts'],
+            'css' => $assets['css'],
+            'checkout_css' => MtUniCreditStorefrontAssetUrls::versionedUrl(
+                $base . 'mt_uni_credit_checkout.css',
+                MtUniCreditConstants::CHECKOUT_ASSET_CSS_RELATIVE
+            ),
+            'checkout_js' => MtUniCreditStorefrontAssetUrls::versionedUrl(
+                $base . 'mt_uni_credit_checkout.js',
+                MtUniCreditConstants::CHECKOUT_ASSET_JS_RELATIVE
+            ),
+        );
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function checkoutPanelLanguageData()
+    {
+        $keys = array(
+            'heading_title',
+            'button_confirm',
+            'text_loading',
+            'text_price',
+            'text_months',
+            'text_months_short',
+            'text_first_installment',
+            'text_financed_amount',
+            'text_monthly_installment',
+            'text_monthly_installment_short',
+            'text_total_payable',
+            'text_glp',
+            'text_gpr',
+            'text_consents',
+            'text_egn',
+            'text_phone2',
+            'text_required',
+            'text_processing_title',
+            'text_processing_message',
+            'error_unavailable',
+            'error_consent',
+        );
+        $data = array();
+        foreach ($keys as $key) {
+            $data[$key] = $this->language->get($key);
+        }
+
+        return $data;
+    }
+
+    /**
+     * @param int $orderId
+     * @param array<string, mixed> $calculator
+     * @param bool $process2
+     * @param array<int, array<string, mixed>> $consents
+     * @param string $csrfToken
+     * @param array{fonts:string,css:string,checkout_css:string,checkout_js:string} $assets
+     * @return string
+     */
+    private function encodeCheckoutBootstrapJson(
+        $orderId,
+        array $calculator,
+        $process2,
+        array $consents,
+        $csrfToken,
+        array $assets
+    ) {
+        return json_encode(array(
+            'source' => 'checkout',
+            'order_id' => (int) $orderId,
+            'calculator' => $calculator,
+            'modal' => array(
+                'process2' => (bool) $process2,
+                'consents' => $consents,
+            ),
+            'csrf_token' => (string) $csrfToken,
+            'confirm_url' => $this->url->link('extension/payment/mt_uni_credit/confirm', '', true),
+            'calculate_url' => $this->url->link('extension/payment/mt_uni_credit/calculate', '', true),
+            'recalculate_url' => $this->url->link('extension/payment/mt_uni_credit/recalculate', '', true),
+            'fonts_href' => $assets['fonts'],
+            'product_css_href' => $assets['css'],
+            'checkout_css_href' => $assets['checkout_css'],
+            'script_href' => $assets['checkout_js'],
+            'i18n' => array(
+                'order_changed' => (string) $this->language->get('error_order_changed'),
+                'order_missing' => (string) $this->language->get('error_order'),
+                'confirm' => (string) $this->language->get('button_confirm'),
+                'processing' => (string) $this->language->get('text_processing_message'),
+                'consent' => (string) $this->language->get('error_consent'),
+                'unavailable' => (string) $this->language->get('error_unavailable'),
+            ),
+        ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
 
     public function calculate()
@@ -264,9 +351,19 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
             $this->applyPreparedOrderStatus($orderId);
         }
 
+        if (!empty($submit['success'])) {
+            // Success-only live cart clear AFTER durable bank handoff (P1/P2).
+            // Pass $this->cart directly — never use isset on cart (OC3 Registry trap).
+            MtUniCreditFinancingTerminalNavigationSupport::clearCartAfterSuccessfulHandoff(
+                $submit,
+                $this->cart
+            );
+        }
+
         if (!empty($submit['success']) && !empty($submit['bank_redirect']) && !empty($submit['redirect'])) {
             $json['redirect'] = (string) $submit['redirect'];
             $json['success'] = true;
+            $json['bank_status'] = isset($submit['bank_status']) ? (string) $submit['bank_status'] : '';
             $this->respondJson($json);
             return;
         }
@@ -284,6 +381,7 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
             );
             $json['success'] = true;
             $json['redirect'] = (string) $payload['redirect'];
+            $json['bank_status'] = isset($submit['bank_status']) ? (string) $submit['bank_status'] : '';
             $this->respondJson($json);
             return;
         }
@@ -466,6 +564,13 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
 
         if (!empty($result['apply_native_order_status'])) {
             $this->applyPreparedOrderStatus((int) $context['order_id']);
+        }
+
+        if (!empty($result['success'])) {
+            MtUniCreditFinancingTerminalNavigationSupport::clearCartAfterSuccessfulHandoff(
+                $result,
+                $this->cart
+            );
         }
 
         if (empty($result['success']) && isset($result['message']) && is_string($result['message'])) {

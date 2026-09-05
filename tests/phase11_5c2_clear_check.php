@@ -140,8 +140,16 @@ mtuc115c2c_assert(
     'Product: no cart clear wiring'
 );
 mtuc115c2c_assert(
-    strpos($paymentCtrl, 'cart->clear') === false,
-    'Checkout/payment: no cart clear regression'
+    strpos($paymentCtrl, 'clearCartAfterSuccessfulHandoff') !== false
+        && preg_match(
+            '/clearCartAfterSuccessfulHandoff\\s*\\([\\s\\S]*?\\$this->cart\\s*\\)/s',
+            $paymentCtrl
+        ) === 1,
+    'Checkout/payment: success-only cart clear via $this->cart'
+);
+mtuc115c2c_assert(
+    strpos($paymentCtrl, 'isset($this->cart)') === false,
+    'Checkout/payment: no isset($this->cart) Registry trap'
 );
 
 // Detector edges
