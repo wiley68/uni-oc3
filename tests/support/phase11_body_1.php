@@ -100,6 +100,7 @@ final class Mtuc11EventFakeDb
                 || stripos($sql, 'mt_uni_credit_mail_order') !== false
                 || stripos($sql, 'mt_uni_credit_admin_order') !== false
                 || stripos($sql, 'mt_uni_credit_home') !== false
+                || stripos($sql, 'mt_uni_credit_buy_guard') !== false
             ) {
                 $keepIn = array();
                 if (preg_match('/NOT IN \(([^)]+)\)/', $sql, $mIn)) {
@@ -114,7 +115,8 @@ final class Mtuc11EventFakeDb
                     $isManaged = (strpos($code, 'mt_uni_credit_checkout_success') === 0)
                         || (strpos($code, 'mt_uni_credit_mail_order') === 0)
                         || (strpos($code, 'mt_uni_credit_admin_order') === 0)
-                        || (strpos($code, 'mt_uni_credit_home') === 0);
+                        || (strpos($code, 'mt_uni_credit_home') === 0)
+                        || (strpos($code, 'mt_uni_credit_buy_guard') === 0);
                     if (!$isManaged) {
                         return true;
                     }
@@ -134,10 +136,10 @@ final class Mtuc11EventFakeDb
 }
 
 // ---------------------------------------------------------------------------
-// 1) Event registry — exactly 10 defs + Phase 11 OC3 triggers/actions
+// 1) Event registry — catalog event defs + Phase 11 OC3 triggers/actions
 // ---------------------------------------------------------------------------
 $defs = MtUniCreditCatalogEventRegistry::definitions();
-mtuc11_assert(count($defs) === 10, 'events: exactly 10 definitions');
+mtuc11_assert(count($defs) === 13, 'events: exactly 13 definitions');
 
 $byCode = array();
 foreach ($defs as $def) {
@@ -165,6 +167,18 @@ $expected = array(
         'trigger' => 'catalog/view/common/footer/after',
         'action' => 'extension/mt_uni_credit/home/afterFooter',
     ),
+    'mt_uni_credit_buy_guard_cart' => array(
+        'trigger' => 'catalog/controller/checkout/cart/before',
+        'action' => 'extension/mt_uni_credit/product_buy/releaseCheckoutGuard',
+    ),
+    'mt_uni_credit_buy_guard_product' => array(
+        'trigger' => 'catalog/controller/product/product/before',
+        'action' => 'extension/mt_uni_credit/product_buy/releaseActiveCheckoutGuard',
+    ),
+    'mt_uni_credit_buy_guard_home' => array(
+        'trigger' => 'catalog/controller/common/home/before',
+        'action' => 'extension/mt_uni_credit/product_buy/releaseCheckoutGuard',
+    ),
 );
 foreach ($expected as $code => $pair) {
     mtuc11_assert(isset($byCode[$code]), 'events: registry has ' . $code);
@@ -187,13 +201,13 @@ foreach ($expected as $code => $pair) {
 $fakeDb = new Mtuc11EventFakeDb();
 $repair = MtUniCreditInstaller::ensureCatalogEvents($fakeDb);
 mtuc11_assert(!empty($repair['healthy']), 'events: ensureCatalogEvents healthy');
-mtuc11_assert((int) $repair['inserted'] === 10, 'events: ensure inserts 10');
-mtuc11_assert(count($fakeDb->rows) === 10, 'events: 10 rows after ensure');
+mtuc11_assert((int) $repair['inserted'] === 13, 'events: ensure inserts 13');
+mtuc11_assert(count($fakeDb->rows) === 13, 'events: 13 rows after ensure');
 $health = MtUniCreditCatalogEventHealth::report($fakeDb, 'oc_');
 mtuc11_assert(!empty($health['ok']), 'events: health ok after ensure');
 
 $repairAgain = MtUniCreditInstaller::ensureCatalogEvents($fakeDb);
-mtuc11_assert(count($fakeDb->rows) === 10, 'events: repeated ensure no duplicates');
+mtuc11_assert(count($fakeDb->rows) === 13, 'events: repeated ensure no duplicates');
 mtuc11_assert((int) $repairAgain['inserted'] === 0, 'events: repeated ensure inserts 0');
 mtuc11_assert(!empty($repairAgain['healthy']), 'events: repeated ensure still healthy');
 

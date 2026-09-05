@@ -200,6 +200,7 @@ final class MtUniCreditInstaller
                         . " OR `code` LIKE 'mt_uni_credit_mail_order%'"
                         . " OR `code` LIKE 'mt_uni_credit_admin_order%'"
                         . " OR `code` LIKE 'mt_uni_credit_home%'"
+                        . " OR `code` LIKE 'mt_uni_credit_buy_guard%'"
                         . ")"
                         . " AND `code` NOT IN (" . implode(',', $escaped) . ")"
                 );
@@ -253,6 +254,7 @@ final class MtUniCreditInstaller
                     . " OR `code` LIKE 'mt_uni_credit_mail_order%'"
                     . " OR `code` LIKE 'mt_uni_credit_admin_order%'"
                     . " OR `code` LIKE 'mt_uni_credit_home%'"
+                    . " OR `code` LIKE 'mt_uni_credit_buy_guard%'"
                     . ")"
             );
             $result['removed'] = true;

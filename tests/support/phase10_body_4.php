@@ -103,6 +103,7 @@ final class Mtuc10EventFakeDb
                 || stripos($sql, 'mt_uni_credit_mail_order') !== false
                 || stripos($sql, 'mt_uni_credit_admin_order') !== false
                 || stripos($sql, 'mt_uni_credit_home') !== false
+                || stripos($sql, 'mt_uni_credit_buy_guard') !== false
             ) {
                 $keepIn = array();
                 if (preg_match('/NOT IN \(([^)]+)\)/', $sql, $mIn)) {
@@ -117,7 +118,8 @@ final class Mtuc10EventFakeDb
                     $isManaged = (strpos($code, 'mt_uni_credit_checkout_success') === 0)
                         || (strpos($code, 'mt_uni_credit_mail_order') === 0)
                         || (strpos($code, 'mt_uni_credit_admin_order') === 0)
-                        || (strpos($code, 'mt_uni_credit_home') === 0);
+                        || (strpos($code, 'mt_uni_credit_home') === 0)
+                        || (strpos($code, 'mt_uni_credit_buy_guard') === 0);
                     if (!$isManaged) {
                         return true;
                     }
@@ -196,7 +198,7 @@ final class Mtuc10Oc3MagicHost
 }
 
 $defsCount = count(MtUniCreditCatalogEventRegistry::definitions());
-mtuc10_assert($defsCount === 10, 'events: exactly 10 presentation definitions');
+mtuc10_assert($defsCount === 13, 'events: exactly 13 catalog event definitions');
 
 $expectedCodes = array(
     'mt_uni_credit_checkout_success_order',
@@ -209,6 +211,9 @@ $expectedCodes = array(
     'mt_uni_credit_admin_order_info_after',
     'mt_uni_credit_home_controller_before',
     'mt_uni_credit_home_footer_after',
+    'mt_uni_credit_buy_guard_cart',
+    'mt_uni_credit_buy_guard_product',
+    'mt_uni_credit_buy_guard_home',
 );
 
 // Prove OC3 magic isset trap (old guard would early-return).
@@ -227,8 +232,8 @@ mtuc10_assert($oldWouldInsert === 0, 'oc3 magic: no rows before explicit-$db rep
 
 $repairMagic = MtUniCreditInstaller::ensureCatalogEvents($magicHost->db);
 mtuc10_assert(!empty($repairMagic['healthy']), 'oc3 magic: ensureCatalogEvents($db) healthy');
-mtuc10_assert((int) $repairMagic['inserted'] === 10, 'oc3 magic: inserted 10 rows');
-mtuc10_assert(count($magicDb->rows) === 10, 'oc3 magic: 10 event rows after repair');
+mtuc10_assert((int) $repairMagic['inserted'] === 13, 'oc3 magic: inserted 13 rows');
+mtuc10_assert(count($magicDb->rows) === 13, 'oc3 magic: 13 event rows after repair');
 foreach ($expectedCodes as $code) {
     $found = null;
     foreach ($magicDb->rows as $row) {
@@ -245,9 +250,9 @@ foreach ($expectedCodes as $code) {
 
 $fakeDb = new Mtuc10EventFakeDb();
 $repairEmpty = MtUniCreditInstaller::ensureCatalogEvents($fakeDb);
-mtuc10_assert(count($fakeDb->rows) === 10, 'events: missing table repaired to 10 rows');
+mtuc10_assert(count($fakeDb->rows) === 13, 'events: missing table repaired to 13 rows');
 mtuc10_assert(!empty($repairEmpty['healthy']), 'events: repair result healthy after insert');
-mtuc10_assert((int) $repairEmpty['inserted'] === 10, 'events: repair reports inserted=10');
+mtuc10_assert((int) $repairEmpty['inserted'] === 13, 'events: repair reports inserted=13');
 $health = MtUniCreditCatalogEventHealth::report($fakeDb, 'oc_');
 mtuc10_assert(!empty($health['ok']), 'events: health ok after insert');
 mtuc10_assert(
@@ -264,7 +269,7 @@ foreach ($health['events'] as $eventRow) {
     );
 }
 $repairAgain = MtUniCreditInstaller::ensureCatalogEvents($fakeDb);
-mtuc10_assert(count($fakeDb->rows) === 10, 'events: repeated upsert creates no duplicates');
+mtuc10_assert(count($fakeDb->rows) === 13, 'events: repeated upsert creates no duplicates');
 mtuc10_assert(!empty($repairAgain['healthy']), 'events: repeated repair still healthy');
 mtuc10_assert((int) $repairAgain['inserted'] === 0, 'events: repeated repair inserts 0');
 

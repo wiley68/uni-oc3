@@ -25,6 +25,9 @@ class ControllerExtensionMtUniCreditCheckoutSuccess extends Controller
         if ((string) $route !== 'checkout/success') {
             return;
         }
+        if (isset($this->session->data) && is_array($this->session->data)) {
+            MtUniCreditProductBuyPreference::clear($this->session->data);
+        }
         $orderId = (int) (isset($this->session->data['order_id']) ? $this->session->data['order_id'] : 0);
         if ($orderId > 0) {
             $this->session->data[MtUniCreditFinancingTerminalNavigationSupport::SESSION_SUCCESS_ORDER_ID] = $orderId;

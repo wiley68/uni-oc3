@@ -67,6 +67,21 @@ final class MtUniCreditCatalogEventRegistry
                 'trigger' => 'catalog/view/common/footer/after',
                 'action' => 'extension/mt_uni_credit/home/afterFooter',
             ),
+            array(
+                'code' => 'mt_uni_credit_buy_guard_cart',
+                'trigger' => 'catalog/controller/checkout/cart/before',
+                'action' => 'extension/mt_uni_credit/product_buy/releaseCheckoutGuard',
+            ),
+            array(
+                'code' => 'mt_uni_credit_buy_guard_product',
+                'trigger' => 'catalog/controller/product/product/before',
+                'action' => 'extension/mt_uni_credit/product_buy/releaseActiveCheckoutGuard',
+            ),
+            array(
+                'code' => 'mt_uni_credit_buy_guard_home',
+                'trigger' => 'catalog/controller/common/home/before',
+                'action' => 'extension/mt_uni_credit/product_buy/releaseCheckoutGuard',
+            ),
         );
     }
 }

@@ -400,9 +400,10 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
         // suppresses that flag and left successful Checkout orders at status 0.
         $this->maybeApplyCheckoutNativeOrderStatusAfterHandoff($orderId, $submit);
 
+        // Success-only live cart clear AFTER durable bank handoff (P1/P2).
+        // Pass $this->cart directly — never use isset on cart (OC3 Registry trap).
         if (!empty($submit['success'])) {
-            // Success-only live cart clear AFTER durable bank handoff (P1/P2).
-            // Pass $this->cart directly — never use isset on cart (OC3 Registry trap).
+            MtUniCreditProductBuyPreference::clear($this->session->data);
             MtUniCreditFinancingTerminalNavigationSupport::clearCartAfterSuccessfulHandoff(
                 $submit,
                 $this->cart

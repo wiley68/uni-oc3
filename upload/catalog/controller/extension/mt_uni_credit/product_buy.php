@@ -46,4 +46,37 @@ class ControllerExtensionMtUniCreditProductBuy extends Controller
         }
         MtUniCreditProductBuyPreference::clearIfPaymentChangedAway($this->session->data);
     }
+
+    /**
+     * Leaving Checkout via cart/home: drop Buy preference entirely so a later
+     * normal Checkout cannot reuse it. Safe for pending (Buy abandoned before Checkout)
+     * and active (left an in-progress Buy Checkout).
+     *
+     * @param string $route
+     * @param mixed $data
+     * @return void
+     */
+    public function releaseCheckoutGuard(&$route, &$data)
+    {
+        if (!isset($this->session->data) || !is_array($this->session->data)) {
+            return;
+        }
+        MtUniCreditProductBuyPreference::clear($this->session->data);
+    }
+
+    /**
+     * Product page entry: keep pending Buy handoff (Купи stash lives here), but drop an
+     * already-activated Buy Checkout preference (customer left Checkout to browse).
+     *
+     * @param string $route
+     * @param mixed $data
+     * @return void
+     */
+    public function releaseActiveCheckoutGuard(&$route, &$data)
+    {
+        if (!isset($this->session->data) || !is_array($this->session->data)) {
+            return;
+        }
+        MtUniCreditProductBuyPreference::clearIfActivated($this->session->data);
+    }
 }
