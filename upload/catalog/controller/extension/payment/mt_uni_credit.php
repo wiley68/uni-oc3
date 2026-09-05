@@ -276,13 +276,21 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
         $this->load->language('extension/payment/mt_uni_credit');
         $json = array();
 
+        $this->recordCheckoutPreSubmitTrace('confirm_enter', array());
+
         if (!$this->isUniCreditPaymentSelected()) {
+            $this->recordCheckoutPreSubmitTrace('payment_method_gate', array(
+                'gate' => 'payment_not_selected',
+            ));
             $json['error'] = $this->language->get('error_unavailable');
             $this->respondJson($json);
             return;
         }
 
         if (!$this->isPost()) {
+            $this->recordCheckoutPreSubmitTrace('payment_method_gate', array(
+                'gate' => 'not_post',
+            ));
             $json['error'] = $this->language->get('error_unavailable');
             $this->respondJson($json);
             return;
@@ -290,6 +298,9 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
 
         $csrf = $this->posted('csrf_token', $this->posted('csrf', ''));
         if (!MtUniCreditStorefrontCsrf::verify($this->session->data, $csrf)) {
+            $this->recordCheckoutPreSubmitTrace('payment_method_gate', array(
+                'gate' => 'csrf',
+            ));
             $json['error'] = $this->language->get('error_submit_token');
             $this->respondJson($json);
             return;
@@ -298,15 +309,27 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
         $this->load->model('extension/payment/mt_uni_credit');
         $panel = $this->model_extension_payment_mt_uni_credit->presentCheckoutFinancingPanel();
         if ($panel === null) {
+            $this->recordCheckoutPreSubmitTrace('panel_present', array(
+                'gate' => 'panel_null',
+                'panel_available' => false,
+            ));
             $json['error'] = $this->language->get('error_unavailable');
             $this->respondJson($json);
             return;
         }
 
+        $this->recordCheckoutPreSubmitTrace('panel_present', array(
+            'panel_available' => true,
+        ));
+
         $shop = isset($panel['shop']) && is_array($panel['shop']) ? $panel['shop'] : array();
         $consents = (new MtUniCreditStorefrontConsentResolver())->normalize($shop);
         $postedConsent = isset($this->request->post['consent']) ? $this->request->post['consent'] : array();
         if ($consents !== array() && !(new MtUniCreditStorefrontConsentResolver())->isSatisfied($shop, $postedConsent)) {
+            $this->recordCheckoutPreSubmitTrace('panel_present', array(
+                'gate' => 'consent',
+                'panel_available' => true,
+            ));
             $json['error'] = $this->language->get('error_consent');
             $json['error_code'] = 'consent';
             $this->respondJson($json);
@@ -315,6 +338,11 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
 
         $schemeKey = trim((string) $this->posted('scheme_key', ''));
         if ($schemeKey === '' || MtUniCreditStorefrontCalculatorPresenter::parseSchemeKey($schemeKey) === null) {
+            $this->recordCheckoutPreSubmitTrace('panel_present', array(
+                'gate' => 'scheme_key',
+                'panel_available' => true,
+                'scheme_key_present' => false,
+            ));
             $json['error'] = $this->language->get('error_unavailable');
             $this->respondJson($json);
             return;
@@ -322,7 +350,14 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
 
         $result = $this->model_extension_payment_mt_uni_credit->prepareCheckoutConfirm();
         if (empty($result['success'])) {
-            $json['error'] = $this->mapConfirmError(isset($result['error']) ? (string) $result['error'] : 'request_failed');
+            $prepareError = isset($result['error']) ? (string) $result['error'] : 'request_failed';
+            $this->recordCheckoutPreSubmitTrace('prepare_confirm', array(
+                'gate' => 'prepare_failed',
+                'prepare_error' => $prepareError,
+                'panel_available' => true,
+                'scheme_key_present' => true,
+            ));
+            $json['error'] = $this->mapConfirmError($prepareError);
             $this->respondJson($json);
             return;
         }
@@ -340,6 +375,12 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
             'scheme_key' => $schemeKey,
             'first_installment' => (float) str_replace(',', '.', (string) $this->posted('first_installment', '0')),
         );
+
+        $this->recordCheckoutPreSubmitTrace('before_submit', array(
+            'panel_available' => true,
+            'scheme_key_present' => true,
+            'prepared_access_ok' => true,
+        ));
 
         $submit = $this->model_extension_payment_mt_uni_credit->submitCheckoutFinancing(
             $orderId,
@@ -818,6 +859,130 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
         $diag['applied'] = true;
         $diag['current_status_id'] = MtUniCreditNativeOrderStatusSupport::readOrderStatusId($this->db, $orderId);
         $this->recordNativeOrderStatusDiagnostic($diag);
+    }
+
+    /**
+     * Temporary Phase 11.5C.3: pre-submit gate isolation (no PII).
+     *
+     * @param string $stage
+     * @param array<string, mixed> $extra
+     * @return void
+     */
+    private function recordCheckoutPreSubmitTrace($stage, array $extra = array())
+    {
+        try {
+            $storeId = (int) $this->config->get('config_store_id');
+            $orderId = (int) (isset($this->session->data['order_id']) ? $this->session->data['order_id'] : 0);
+            $preparedOrderId = (int) (isset($this->session->data[MtUniCreditCheckoutConfirmPreparation::SESSION_PREPARED_ORDER_ID])
+                ? $this->session->data[MtUniCreditCheckoutConfirmPreparation::SESSION_PREPARED_ORDER_ID]
+                : 0);
+
+            $orderAvailable = false;
+            $orderStatusId = -1;
+            $orderPaymentCode = '';
+            $order = null;
+            if ($orderId > 0) {
+                $this->load->model('checkout/order');
+                $order = $this->model_checkout_order->getOrder($orderId);
+                if (is_array($order)) {
+                    $orderAvailable = true;
+                    $orderStatusId = (int) (isset($order['order_status_id']) ? $order['order_status_id'] : 0);
+                    $orderPaymentCode = isset($order['payment_code']) ? (string) $order['payment_code'] : '';
+                }
+            }
+
+            $sessionPaymentCode = isset($this->session->data['payment_method']['code'])
+                ? (string) $this->session->data['payment_method']['code']
+                : '';
+
+            $db = MtUniCreditBootstrap::dbFromRegistry($this->db);
+            $unicid = '';
+            $shopCacheAvailable = false;
+            $shopCacheFresh = false;
+            try {
+                $credentials = MtUniCreditBootstrap::credentialsRepositoryFromDb($db);
+                $unicid = $credentials->getUnicid($storeId);
+                if ($unicid !== '') {
+                    $cache = MtUniCreditBootstrap::shopConfigurationCacheFromDb($db);
+                    $fresh = $cache->getFreshShopData($storeId, $unicid);
+                    $latest = $cache->getLatestShopData($storeId, $unicid);
+                    $shopCacheAvailable = is_array($latest) && $latest !== array();
+                    $shopCacheFresh = is_array($fresh) && $fresh !== array();
+                }
+            } catch (Exception $ignored) {
+            }
+
+            $cartAvailable = false;
+            $cartTotal = 0.0;
+            try {
+                $products = $this->cart->getProducts();
+                $cartAvailable = is_array($products) && $products !== array();
+                $cartTotal = round((float) $this->cart->getTotal(), 2);
+            } catch (Exception $ignored) {
+            }
+
+            $attemptFound = false;
+            $attemptState = '';
+            if ($orderId > 0) {
+                try {
+                    $attempt = (new MtUniCreditFinancingAttemptRepository($db))->findByStoreOrder($storeId, $orderId);
+                    if (is_array($attempt)) {
+                        $attemptFound = true;
+                        $attemptState = isset($attempt['state']) ? (string) $attempt['state'] : '';
+                    }
+                } catch (Exception $ignored) {
+                }
+            }
+
+            $schemeKey = trim((string) $this->posted('scheme_key', ''));
+            $fields = array(
+                'stage' => (string) $stage,
+                'order_id' => $orderId,
+                'prepared_order_id' => $preparedOrderId,
+                'store_id' => $storeId,
+                'payment_selected' => $this->isUniCreditPaymentSelected(),
+                'panel_available' => array_key_exists('panel_available', $extra)
+                    ? !empty($extra['panel_available'])
+                    : null,
+                'shop_cache_available' => $shopCacheAvailable,
+                'shop_cache_fresh' => $shopCacheFresh,
+                'cart_available' => $cartAvailable,
+                'cart_total' => $cartTotal,
+                'order_available' => $orderAvailable,
+                'order_status_id' => $orderStatusId,
+                'order_payment_code' => $orderPaymentCode,
+                'session_payment_code' => $sessionPaymentCode,
+                'prepared_access_ok' => array_key_exists('prepared_access_ok', $extra)
+                    ? !empty($extra['prepared_access_ok'])
+                    : null,
+                'attempt_found' => $attemptFound,
+                'attempt_state' => $attemptState,
+                'scheme_key_present' => array_key_exists('scheme_key_present', $extra)
+                    ? !empty($extra['scheme_key_present'])
+                    : ($schemeKey !== ''),
+                'outcome' => 'checkout.pre_submit_trace',
+                'message' => 'Checkout pre-submit gate trace.',
+            );
+            foreach (array('gate', 'prepare_error') as $key) {
+                if (array_key_exists($key, $extra)) {
+                    $fields[$key] = $extra[$key];
+                }
+            }
+
+            $log = new MtUniCreditPhase9LifecycleLog($db);
+            if ($orderId <= 0) {
+                return;
+            }
+            $log->record(
+                $storeId,
+                $orderId,
+                MtUniCreditOperationEntryPoint::CHECKOUT,
+                'checkout.pre_submit_trace',
+                $fields
+            );
+        } catch (Exception $exception) {
+            // Diagnostics must never break financing handoff.
+        }
     }
 
     /**

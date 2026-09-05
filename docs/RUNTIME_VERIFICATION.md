@@ -1052,75 +1052,56 @@ Automated gate: `php tests/phase11_5c3_broken_cp_check.php`.
 
 ### Failed remote mechanisms (do not reuse for definitive CP-create)
 
-| Attempt | Setup                                            | Actual                                                                                             | Classification                                      |
-| ------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| 1       | `control_panel_url = …/__broken_cp__`            | `cp_create_outcome_unknown`, `ambiguous_blocked=true`                                              | **AMBIGUOUS CP OUTCOME TEST** (keep as safety case) |
-| 2       | Change Module Secret after Checkout panel loaded | `"Плащането с UniCredit не е налично в момента."`, status 0, no `checkout.cp_failure_branch_trace` | **PRE-SUBMIT AVAILABILITY FAILURE** (not CP-create) |
+| Attempt | Setup                                   | Actual                                                | Classification                                                            |
+| ------- | --------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------- |
+| 1       | `control_panel_url = …/__broken_cp__`   | `cp_create_outcome_unknown`, `ambiguous_blocked=true` | **AMBIGUOUS CP OUTCOME**                                                  |
+| 2       | Change Module Secret after panel loaded | `error_unavailable`, no branch trace                  | **PRE-SUBMIT AVAILABILITY FAILURE** (shop cache cleared → `panel_null`)   |
+| 3       | Admin edit order telephone=`abc`        | `error_unavailable`, 2 mails, no branch trace         | **PRE-SUBMIT ORDER/PREPARATION INVALIDATION** (`order_already_processed`) |
 
-**Why wrong Secret fails too early:** `CredentialChangeHandler::onCredentialsChanged()` clears shop cache. On confirm, `ControllerExtensionPaymentMtUniCredit::confirm()` calls `presentCheckoutFinancingPanel()`; that returns `null` when `getFreshShopData()` is empty → `$panel === null` → `error_unavailable` **before** `prepareCheckoutConfirm()` / `submitCheckoutFinancing()`. No CP HTTP create, no branch trace.
+**Why wrong Secret fails too early:** `CredentialChangeHandler` clears shop cache → `presentCheckoutFinancingPanel()` → `null` → `error_unavailable` before submit.
 
-Do **not** broaden `isDefinitiveCheckoutCpFailureTerminal()` to accept `cp_outcome_unknown` / `ambiguous_blocked=true`.
+**Why Admin telephone edit fails too early:** API `order/edit` calls `editOrder()` then `addOrderHistory(..., config_order_status_id)` → status **0→>0** → `prepareCheckoutConfirm()` returns `order_already_processed` → mapped to `error_unavailable`. Protection is correct; do not bypass.
+
+Do **not** broaden `isDefinitiveCheckoutCpFailureTerminal()` for `cp_outcome_unknown`.
 
 ### CP order-create boundary (from frozen CP contract fixtures)
 
-Sources recorded in `tests/fixtures/cp_order_payload.json`:
+Sources in `tests/fixtures/cp_order_payload.json`:
 
 ```text
-routes/api.php
-  → POST /api/v1/orders (Bearer)
-app/Http/Requests/StoreOrderRequest.php   # validation
-app/Support/IdempotentOrderCreator.php    # persistence / idempotency
+routes/api.php → POST /api/v1/orders
+app/Http/Requests/StoreOrderRequest.php
+app/Support/IdempotentOrderCreator.php
 ```
 
-Laravel Form Request validation runs **before** the controller invokes `IdempotentOrderCreator`. Therefore a `StoreOrderRequest` rejection yields stable HTTP **422** JSON with **CP order count delta = 0**.
+Form Request validation runs before persistence ⇒ 422 ⇒ CP order delta 0. OC3 maps 4xx (not 401/409) → `cp_rejected` / `cp_failed_retryable` / `ambiguous_blocked=false`.
 
-OC3 mapping (unchanged production client): HTTP 4xx (not 401/409) → `cp_rejected` + `cp_failed_retryable` + `ambiguous_blocked=false`.
+### Manual matrix
 
-### Manual matrix (three distinct cases)
+#### A. Ambiguous CP — `__broken_cp__`
 
-#### A. Definitive broken CP (Thank You) — preferred remote: StoreOrderRequest rejection
+Stay Checkout; no `bank_send_failed_cp`. Keep as safety regression.
 
-No OC3 production change. No Secret change. Real CP host. Keep Checkout available.
+#### B. Pre-submit availability — wrong Secret
 
-**Procedure (test store / one throwaway OC order only):**
+Payment unavailable; no submit. Document only.
 
-1. Valid Secret + fresh shop cache + real `control_panel_url` (not `__broken_cp__`).
-2. Checkout P1 logged through UniCredit panel until Confirm is ready (native OC order exists, status 0).
-3. Admin → Orders → open **that** order → set Telephone to `abc` (letters; matches CP fixture invalid sample `phone contains letters` / regex `^[\d\s\-\+\(\)]+$`).
-4. Return to Checkout → Confirm financing once (do not change Secret; do not clear cache).
-5. Expect path: `confirm` → `submitCheckoutFinancing` → authenticated `POST /api/v1/orders` → **422** → `cp_rejected` / `cp_failed_retryable` / `ambiguous_blocked=false` → Thank You + `bank_send_failed_cp`.
-6. Journal: `checkout.cp_failure_branch_trace` with `controller_branch=cp_failure_thankyou`, `error=cp_rejected`, `http_status=422`.
-7. CP: order count delta **0**. SmartUCF **0**. Same `order_id`, native status > 0.
+#### C. Pre-submit preparation — Admin order mutation
 
-First acceptance: **P1 logged only**. STOP on FAIL.
+**INVALID** definitive CP test (see above). Temporary `checkout.pre_submit_trace` confirms `prepare_confirm` + `prepare_error=order_already_processed`.
 
-Local automated equivalent: order **422** fixtures in `phase11_5c3_broken_cp_check.php` (Option B). Login-401 remains a local Option A fixture only (remote Secret change is fragile — see pre-submit failure above).
+### Recommended definitive mechanism
 
-#### B. Ambiguous CP outcome (stay Checkout) — `__broken_cp__`
-
-```php
-'control_panel_url' => 'https://uni.avalonbg.com/__broken_cp__',
-```
-
-Expected: `cp_outcome_unknown` / stay Checkout / no `bank_send_failed_cp` / no auto-resend. Keep as safety regression.
-
-#### C. Pre-submit availability (not CP-create)
-
-Wrong Secret / empty shop cache → payment unavailable. Document only; do not use for this audit path.
-
-### Optional future: CP-side test hook (design only — do not implement until approved)
-
-If phone-mutation Option A is rejected operationally, add a **test-CP-only** guard in the orders controller **after** auth middleware and **after** `StoreOrderRequest` auth context, **before** `IdempotentOrderCreator`:
+**CP-side test-only 422 hook** (design only, not implemented):
 
 ```text
-if (config test_force_order_reject enabled
-    && request has signed shop-scoped test header)
-  → HTTP 422 JSON { success:false, error:"test_force_reject" }
-  → return (no insert)
+authenticated POST /api/v1/orders
+→ before IdempotentOrderCreator
+→ APP_ENV != production AND config flag AND special test header
+→ HTTP 422 JSON { success:false, error:"test_force_reject" }
+→ no insert
 ```
 
-Activation: test environment config flag + authenticated Bearer + explicit non-customer header. Never from ordinary financing form fields. Production default off.
+OC3 must send the header only under a temporary non-released test flag (remove after remote proof). No customer-triggerable body field.
 
-### Production lifecycle
-
-No production failure-semantics change for this design phase. Keep `checkout.cp_failure_branch_trace` until definitive remote P1 logged PASSes.
+Local automated 422 fixtures in `phase11_5c3_broken_cp_check.php` remain valid offline proofs of Checkout Thank You once a real 422 reaches submit.
