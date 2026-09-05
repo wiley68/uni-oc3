@@ -60,9 +60,37 @@ final class MtUniCreditFinancingPresentationService
      */
     public function customerThankYouRows($storeId, $orderId)
     {
-        return $this->filterCustomerFacingRows(
+        $rows = $this->filterCustomerFacingRows(
             $this->rowsForOrder($storeId, $orderId, MtUniCreditFinancingPresentationAudience::CUSTOMER)
         );
+        if ($rows !== array()) {
+            return $rows;
+        }
+
+        // Process 1 may lack leasing_presentation_json; still show bank-status terminal failure.
+        $status = $this->repository->findBankStatusLabel((int) $storeId, (int) $orderId);
+        if ($status === MtUniCreditBankStatus::LABEL_SEND_FAILED_SMARTUCF) {
+            return array(
+                array(
+                    'label' => MtUniCreditFinancingLeasingPresenter::LABEL_BANK_STATUS,
+                    'value' => $status,
+                ),
+                array(
+                    'label' => MtUniCreditFinancingLeasingPresenter::LABEL_MESSAGE,
+                    'value' => MtUniCreditFinancingLeasingPresenter::SMARTUCF_TERMINAL_FAILURE_MESSAGE,
+                ),
+            );
+        }
+        if ($status !== '') {
+            return array(
+                array(
+                    'label' => MtUniCreditFinancingLeasingPresenter::LABEL_BANK_STATUS,
+                    'value' => $status,
+                ),
+            );
+        }
+
+        return array();
     }
 
     /**
