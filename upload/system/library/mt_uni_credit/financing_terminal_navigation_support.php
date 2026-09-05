@@ -3,7 +3,8 @@
 /**
  * Shared Product/Cart/Checkout terminal navigation
  * (Process 2 Thank You, Process 1 definitive SmartUCF failure Thank You,
- * Process 1 CP-create failure stay-on-page error modal).
+ * Process 1/2 CP-create failure stay-on-page error modal,
+ * Cart success-only live cart clear after bank handoff).
  *
  * Successful Process 1 bank redirect is never rewritten here.
  */
@@ -186,5 +187,46 @@ final class MtUniCreditFinancingTerminalNavigationSupport
         }
 
         return $payload;
+    }
+
+    /**
+     * True only after durable bank handoff:
+     * bank_sent_process1 (P1 SmartUCF success) or bank_sent_process2 (P2).
+     *
+     * Does not treat generic success / redirect / order_id as sufficient alone.
+     *
+     * @param array<string, mixed> $result Storefront submission result
+     * @return bool
+     */
+    public static function isSuccessfulBankHandoff(array $result)
+    {
+        if (empty($result['success'])) {
+            return false;
+        }
+        $bankStatus = isset($result['bank_status']) ? (string) $result['bank_status'] : '';
+
+        return $bankStatus === MtUniCreditBankStatus::SENT_PROCESS1
+            || $bankStatus === MtUniCreditBankStatus::SENT_PROCESS2;
+    }
+
+    /**
+     * Cart entry only: clear live OC cart after successful bank handoff.
+     * Idempotent. Safe no-op when cart object is missing or handoff was not successful.
+     *
+     * @param array<string, mixed> $result
+     * @param object|null $cart OpenCart cart with clear()
+     * @return bool True when clear() was invoked
+     */
+    public static function clearCartAfterSuccessfulHandoff(array $result, $cart)
+    {
+        if (!self::isSuccessfulBankHandoff($result)) {
+            return false;
+        }
+        if (!is_object($cart) || !method_exists($cart, 'clear')) {
+            return false;
+        }
+        $cart->clear();
+
+        return true;
     }
 }

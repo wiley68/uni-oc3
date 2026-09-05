@@ -293,7 +293,7 @@ class ControllerExtensionMtUniCreditCart extends Controller
             $this->session->data = $result['session'];
         }
 
-        // Cart submit never clears the live cart here — checkout/success clears after Process 2 Thank You.
+        // Cart live clear only after durable bank handoff (bank_sent_process1 / bank_sent_process2).
         if (!empty($result['success'])) {
             $this->maybeApplyNativeOrderStatus($result);
             $this->session->data[MtUniCreditCheckoutConfirmPreparation::SESSION_PREPARED_ORDER_ID] = (int) $result['order_id'];
@@ -314,13 +314,19 @@ class ControllerExtensionMtUniCreditCart extends Controller
                 $redirect = (string) $payload['redirect'];
                 $bankRedirect = !empty($payload['bank_redirect']);
             }
+            $cartCleared = MtUniCreditFinancingTerminalNavigationSupport::clearCartAfterSuccessfulHandoff(
+                $result,
+                isset($this->cart) ? $this->cart : null
+            );
             MtUniCreditStorefrontRuntime::respondJson($this, array(
                 'success' => true,
                 'order_id' => (int) $result['order_id'],
                 'message' => isset($result['message']) ? (string) $result['message'] : $this->language->get('text_success'),
                 'redirect' => $redirect,
                 'bank_redirect' => $bankRedirect,
-                'cart_unchanged' => true,
+                'bank_status' => isset($result['bank_status']) ? (string) $result['bank_status'] : '',
+                'cart_unchanged' => !$cartCleared,
+                'cart_cleared' => $cartCleared,
                 'apply_native_order_status' => !empty($result['apply_native_order_status']),
             ));
             return;
