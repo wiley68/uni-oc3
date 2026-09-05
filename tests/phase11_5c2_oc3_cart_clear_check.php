@@ -249,7 +249,7 @@ mtuc115c2oc3_assert(
     'broken CP: magic cart still NOT cleared'
 );
 
-// Source wiring
+// Source wiring — only the Cart clear Registry fix is retained after recovery.
 $cartCtrl = mtuc115c2oc3_read(
     $root . DIRECTORY_SEPARATOR . 'upload' . DIRECTORY_SEPARATOR . 'catalog' . DIRECTORY_SEPARATOR
         . 'controller' . DIRECTORY_SEPARATOR . 'extension' . DIRECTORY_SEPARATOR . 'mt_uni_credit'
@@ -260,18 +260,10 @@ $productCtrl = mtuc115c2oc3_read(
         . 'controller' . DIRECTORY_SEPARATOR . 'extension' . DIRECTORY_SEPARATOR . 'mt_uni_credit'
         . DIRECTORY_SEPARATOR . 'product.php'
 );
-$successCtrl = mtuc115c2oc3_read(
-    $root . DIRECTORY_SEPARATOR . 'upload' . DIRECTORY_SEPARATOR . 'catalog' . DIRECTORY_SEPARATOR
-        . 'controller' . DIRECTORY_SEPARATOR . 'extension' . DIRECTORY_SEPARATOR . 'mt_uni_credit'
-        . DIRECTORY_SEPARATOR . 'checkout_success.php'
-);
-$runtimeSrc = mtuc115c2oc3_read(
-    $lib . DIRECTORY_SEPARATOR . 'storefront_runtime.php'
-);
 
 mtuc115c2oc3_assert(
     strpos($cartCtrl, 'isset($this->cart)') === false,
-    'cart.php: no isset($this->cart)'
+    'cart.php: no isset($this->cart) in clear call'
 );
 mtuc115c2oc3_assert(
     preg_match(
@@ -284,19 +276,6 @@ mtuc115c2oc3_assert(
     strpos($productCtrl, 'clearCartAfterSuccessfulHandoff') === false
         && strpos($productCtrl, 'cart->clear') === false,
     'Product: still no cart clear'
-);
-mtuc115c2oc3_assert(
-    strpos($cartCtrl, 'isset($this->model_localisation_country)') === false
-        && strpos($productCtrl, 'isset($this->model_localisation_country)') === false,
-    'address defaults: no isset($this->model_localisation_*)'
-);
-mtuc115c2oc3_assert(
-    strpos($successCtrl, 'isset($this->customer)') === false,
-    'checkout_success: no isset($this->customer)'
-);
-mtuc115c2oc3_assert(
-    strpos($runtimeSrc, 'isset($controller->model_extension_mt_uni_credit_product)') === false,
-    'storefront_runtime: no isset($controller->model_*)'
 );
 
 echo PHP_EOL . 'Phase 11.5C.2 OC3 cart-clear checks: ' . $passes . ' passed';
