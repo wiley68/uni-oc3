@@ -64,6 +64,10 @@ final class MtUniCreditConstants
 
     const STOREFRONT_ASSET_FONTS_CSS_RELATIVE = 'catalog/view/theme/default/template/extension/mt_uni_credit/storefront_fonts.css';
 
+    const CHECKOUT_ASSET_CSS_RELATIVE = 'catalog/view/theme/default/template/extension/payment/mt_uni_credit_checkout.css';
+
+    const CHECKOUT_ASSET_JS_RELATIVE = 'catalog/view/theme/default/template/extension/payment/mt_uni_credit_checkout.js';
+
     const STOREFRONT_LOGO_STANDARD_RELATIVE = 'catalog/view/theme/default/template/extension/mt_uni_credit/image/uni_logo.svg';
 
     const STOREFRONT_LOGO_ALTERNATIVE_RELATIVE = 'catalog/view/theme/default/template/extension/mt_uni_credit/image/uni_logo_red.svg';

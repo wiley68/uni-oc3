@@ -1,31 +1,154 @@
-<div class="alert alert-info">{{ text_instruction }}</div>
-<div class="buttons">
-  <div class="pull-right">
-    <input type="button" value="{{ button_confirm }}" id="button-confirm" data-loading-text="{{ text_loading }}" class="btn btn-primary" />
+<div id="mt-uni-credit-checkout-root"
+     class="mt-uni-credit-storefront mt-uni-credit-checkout-panel"
+     data-mtuc-source="checkout"
+     data-order-id="{{ order_id }}">
+  <script type="application/json" id="mt-uni-credit-checkout-bootstrap">{{ mt_uni_credit_bootstrap_json|raw }}</script>
+
+  <div class="mt-uni-credit-storefront__popup-panel mt-uni-credit-checkout-panel__body">
+    <h2 class="mt-uni-credit-storefront__popup-title">{{ heading_title }}</h2>
+
+    {% if checkout_helper %}
+      <p class="mt-uni-credit-checkout-panel__helper" data-mtuc-checkout-helper>{{ checkout_helper }}</p>
+    {% endif %}
+
+    <div class="mt-uni-credit-storefront__popup-calc">
+      <div class="mt-uni-credit-storefront__popup-row">
+        <div class="mt-uni-credit-storefront__popup-label">{{ text_price }}</div>
+        <div class="mt-uni-credit-storefront__popup-value" data-mtuc-display="price"></div>
+      </div>
+      <div class="mt-uni-credit-storefront__popup-row">
+        <label class="mt-uni-credit-storefront__popup-label" for="mtuc-checkout-months">
+          <span class="mt-uni-credit-storefront__label-desktop">{{ text_months }}</span>
+          <span class="mt-uni-credit-storefront__label-mobile">{{ text_months_short }}</span>
+        </label>
+        <div class="mt-uni-credit-storefront__popup-value">
+          <select id="mtuc-checkout-months" class="mt-uni-credit-storefront__popup-select" data-mtuc-schemes>
+            {% for option in scheme_options %}
+              <option value="{{ option.key }}"{% if option.selected %} selected{% endif %}>{{ option.label }}&nbsp;&nbsp;&nbsp;</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="mt-uni-credit-storefront__popup-row" data-mtuc-first-row{% if not show_first_installment %} hidden{% endif %}>
+        <label class="mt-uni-credit-storefront__popup-label" for="mtuc-checkout-first">{{ text_first_installment }}</label>
+        <div class="mt-uni-credit-storefront__popup-value">
+          <input id="mtuc-checkout-first" class="mt-uni-credit-storefront__popup-input" data-mtuc-first type="text" inputmode="numeric" pattern="[0-9]*" value="0">
+        </div>
+      </div>
+      <div class="mt-uni-credit-storefront__popup-row">
+        <div class="mt-uni-credit-storefront__popup-label">{{ text_financed_amount }}</div>
+        <div class="mt-uni-credit-storefront__popup-value" data-mtuc-display="financed_amount"></div>
+      </div>
+      <div class="mt-uni-credit-storefront__popup-row">
+        <div class="mt-uni-credit-storefront__popup-label">
+          <span class="mt-uni-credit-storefront__label-desktop">{{ text_monthly_installment }}</span>
+          <span class="mt-uni-credit-storefront__label-mobile">{{ text_monthly_installment_short }}</span>
+        </div>
+        <div class="mt-uni-credit-storefront__popup-value" data-mtuc-display="monthly_installment"></div>
+      </div>
+      <div class="mt-uni-credit-storefront__popup-row">
+        <div class="mt-uni-credit-storefront__popup-label">{{ text_total_payable }}</div>
+        <div class="mt-uni-credit-storefront__popup-value" data-mtuc-display="total_payable"></div>
+      </div>
+      <div class="mt-uni-credit-storefront__popup-row">
+        <div class="mt-uni-credit-storefront__popup-label">{{ text_glp }}</div>
+        <div class="mt-uni-credit-storefront__popup-value mt-uni-credit-storefront__popup-value--red" data-mtuc-display="glp"></div>
+      </div>
+      <div class="mt-uni-credit-storefront__popup-row">
+        <div class="mt-uni-credit-storefront__popup-label">{{ text_gpr }}</div>
+        <div class="mt-uni-credit-storefront__popup-value mt-uni-credit-storefront__popup-value--red" data-mtuc-display="gpr"></div>
+      </div>
+      <div class="mt-uni-credit-storefront__popup-row mt-uni-credit-storefront__popup-row--note" data-mtuc-popup-error role="alert"></div>
+    </div>
+
+    <form id="mt-uni-credit-checkout-form" novalidate>
+      {% if process2 %}
+        <div class="mt-uni-credit-storefront__customer-form" data-mtuc-customer-form>
+          <div class="mt-uni-credit-storefront__customer-field">
+            <label class="mt-uni-credit-storefront__customer-label" for="mtuc-checkout-egn">{{ text_egn }} <span class="mt-uni-credit-storefront__required" aria-hidden="true">{{ text_required }}</span></label>
+            <input class="mt-uni-credit-storefront__customer-input" id="mtuc-checkout-egn" name="egn" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="10" value="" required aria-required="true" autocomplete="off">
+            <span class="mt-uni-credit-storefront__field-error" data-mtuc-field-error="egn" role="alert"></span>
+          </div>
+          <div class="mt-uni-credit-storefront__customer-field">
+            <label class="mt-uni-credit-storefront__customer-label" for="mtuc-checkout-phone2">{{ text_phone2 }} <span class="mt-uni-credit-storefront__required" aria-hidden="true">{{ text_required }}</span></label>
+            <input class="mt-uni-credit-storefront__customer-input" id="mtuc-checkout-phone2" name="phone2" type="tel" value="" required aria-required="true" autocomplete="tel" inputmode="tel">
+            <span class="mt-uni-credit-storefront__field-error" data-mtuc-field-error="phone2" role="alert"></span>
+          </div>
+        </div>
+      {% endif %}
+      {% if consents %}
+        <div class="mt-uni-credit-storefront__consents" data-mtuc-consents aria-label="{{ text_consents }}">
+          {% for consent in consents %}
+            <div class="mt-uni-credit-storefront__consent{% if not consent.has_checkbox %} mt-uni-credit-storefront__consent--info{% endif %}">
+              {% if consent.has_checkbox %}
+                <input type="checkbox" class="mt-uni-credit-storefront__consent-checkbox" id="mtuc-checkout-consent-{{ consent.id }}" name="consent[]" value="{{ consent.id }}" data-mtuc-consent-checkbox>
+                <label class="mt-uni-credit-storefront__consent-label" for="mtuc-checkout-consent-{{ consent.id }}">
+                  {% if consent.url %}<a href="{{ consent.url }}" target="_blank" rel="noopener noreferrer">{{ consent.name }}</a>{% else %}{{ consent.name }}{% endif %}
+                </label>
+              {% else %}
+                <p class="mt-uni-credit-storefront__consent-text">
+                  {% if consent.url %}<a href="{{ consent.url }}" target="_blank" rel="noopener noreferrer">{{ consent.name }}</a>{% else %}{{ consent.name }}{% endif %}
+                </p>
+              {% endif %}
+              <span class="mt-uni-credit-storefront__field-error" data-mtuc-field-error="consent-{{ consent.id }}" role="alert"></span>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+      <span class="mt-uni-credit-storefront__field-error" data-mtuc-submit-error role="alert"></span>
+    </form>
+
+    <div class="mt-uni-credit-storefront__processing" data-mtuc-processing hidden>
+      <div class="mt-uni-credit-storefront__processing-panel" role="status" aria-live="polite" aria-busy="false">
+        <span class="mt-uni-credit-storefront__processing-spinner" aria-hidden="true"></span>
+        <strong>{{ text_processing_title }}</strong>
+        <span>{{ text_processing_message }}</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="buttons mt-uni-credit-checkout-panel__actions">
+    <div class="pull-right">
+      <button type="button" id="button-confirm" class="btn btn-primary" data-mtuc-submit data-loading-text="{{ text_loading }}" disabled aria-disabled="true">{{ button_confirm }}</button>
+    </div>
   </div>
 </div>
 <script type="text/javascript"><!--
-$('#button-confirm').on('click', function() {
-	$.ajax({
-		url: 'index.php?route=extension/payment/mt_uni_credit/confirm',
-		dataType: 'json',
-		beforeSend: function() {
-			$('#button-confirm').button('loading');
-		},
-		complete: function() {
-			$('#button-confirm').button('reset');
-		},
-		success: function(json) {
-			if (json['redirect']) {
-				location = json['redirect'];
-			}
-			if (json['error']) {
-				alert(json['error']);
-			}
-		},
-		error: function() {
-			alert('{{ error_unavailable }}');
-		}
-	});
-});
+(function () {
+  var root = document.getElementById('mt-uni-credit-checkout-root');
+  if (!root) {
+    return;
+  }
+  var boot = document.getElementById('mt-uni-credit-checkout-bootstrap');
+  if (!boot) {
+    return;
+  }
+  var state;
+  try {
+    state = JSON.parse(boot.textContent || '{}');
+  } catch (e) {
+    return;
+  }
+  function ensureLink(href) {
+    if (!href || document.querySelector('link[href="' + String(href).replace(/"/g, '\\"') + '"]')) {
+      return;
+    }
+    var link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = href;
+    document.head.appendChild(link);
+  }
+  function ensureScript(href) {
+    if (!href || document.querySelector('script[src="' + String(href).replace(/"/g, '\\"') + '"]')) {
+      return;
+    }
+    var script = document.createElement('script');
+    script.src = href;
+    document.head.appendChild(script);
+  }
+  ensureLink(state.fonts_href);
+  ensureLink(state.product_css_href);
+  ensureLink(state.checkout_css_href);
+  ensureScript(state.script_href);
+})();
 //--></script>

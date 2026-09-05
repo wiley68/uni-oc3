@@ -88,9 +88,10 @@ class ModelExtensionPaymentMtUniCredit extends Model
      *
      * @param int $orderId
      * @param array<string, mixed> $process2
+     * @param array<string, mixed> $selection scheme_key / first_installment
      * @return array<string, mixed>
      */
-    public function submitCheckoutFinancing($orderId, array $process2 = array())
+    public function submitCheckoutFinancing($orderId, array $process2 = array(), array $selection = array())
     {
         $orderId = (int) $orderId;
         $storeId = $this->resolveStoreId();
@@ -116,7 +117,115 @@ class ModelExtensionPaymentMtUniCredit extends Model
             'order_products' => is_array($orderProducts) ? $orderProducts : array(),
             'cart_context' => $this->createCheckoutCartContext(),
             'process2' => is_array($process2) ? $process2 : array(),
+            'scheme_key' => isset($selection['scheme_key']) ? (string) $selection['scheme_key'] : '',
+            'first_installment' => isset($selection['first_installment'])
+                ? (float) $selection['first_installment']
+                : 0.0,
         ));
+    }
+
+    /**
+     * Read-only Checkout financing panel payload (no CP / SmartUCF / mail side effects).
+     *
+     * @return array{calculator: array<string, mixed>, modal: array<string, mixed>, order_id: int, currency: string}|null
+     */
+    public function presentCheckoutFinancingPanel()
+    {
+        $orderId = (int) (isset($this->session->data['order_id']) ? $this->session->data['order_id'] : 0);
+        if ($orderId <= 0) {
+            return null;
+        }
+
+        $this->load->model('checkout/order');
+        $order = $this->model_checkout_order->getOrder($orderId);
+        if (!is_array($order)) {
+            return null;
+        }
+
+        $db = MtUniCreditBootstrap::dbFromModel($this);
+        $storeId = $this->resolveStoreId();
+        $settings = new MtUniCreditSettingStore($db, MtUniCreditConstants::MODULE_SETTINGS_CODE);
+        $stack = MtUniCreditCpServiceFactory::create(
+            $db,
+            $settings,
+            $storeId,
+            (string) $this->config->get('config_ssl'),
+            (string) $this->config->get('config_url')
+        );
+        $unicid = $stack['credentials']->getUnicid($storeId);
+        if ($unicid === '') {
+            return null;
+        }
+        $shop = MtUniCreditBootstrap::shopConfigurationCacheFromDb($db)->getFreshShopData($storeId, $unicid);
+        if (!is_array($shop) || $shop === array()) {
+            return null;
+        }
+
+        $currency = (string) (isset($order['currency_code']) && $order['currency_code'] !== ''
+            ? $order['currency_code']
+            : (isset($this->session->data['currency'])
+                ? $this->session->data['currency']
+                : $this->config->get('config_currency')));
+        $cart = $this->createCheckoutCartContext();
+        $resolver = new MtUniCreditCartSchemeResolver(new MtUniCreditCalculator());
+        $resolution = $resolver->resolve($shop, $cart);
+        $fingerprint = MtUniCreditStorefrontOperationIdentity::cartFingerprintFromContext($cart, $currency);
+        $calculator = (new MtUniCreditStorefrontCalculatorPresenter())->presentCart(
+            $shop,
+            $cart,
+            $resolution,
+            $currency,
+            $fingerprint
+        );
+        if ($calculator === null) {
+            return null;
+        }
+
+        $calculator['source'] = 'checkout';
+        $calculator['order_id'] = $orderId;
+        $calculator['price'] = round((float) (isset($order['total']) ? $order['total'] : $cart->total), 2);
+
+        $modal = MtUniCreditStorefrontModalPresenter::present($shop, $currency, array());
+
+        return array(
+            'calculator' => $calculator,
+            'modal' => $modal,
+            'order_id' => $orderId,
+            'currency' => $currency,
+            'shop' => $shop,
+        );
+    }
+
+    /**
+     * @param string $schemeKey
+     * @param float $firstInstallment
+     * @return array<string, mixed>|null
+     */
+    public function recalculateCheckoutSelection($schemeKey, $firstInstallment)
+    {
+        $panel = $this->presentCheckoutFinancingPanel();
+        if ($panel === null) {
+            return null;
+        }
+
+        $parsed = MtUniCreditStorefrontCalculatorPresenter::parseSchemeKey((string) $schemeKey);
+        if ($parsed === null) {
+            return null;
+        }
+
+        $shop = $panel['shop'];
+        $cart = $this->createCheckoutCartContext();
+        $resolver = new MtUniCreditCartSchemeResolver(new MtUniCreditCalculator());
+        $resolution = $resolver->resolve($shop, $cart);
+        $presenter = new MtUniCreditStorefrontCalculatorPresenter();
+        $scheme = $presenter->findCartScheme($resolution, $shop, $parsed);
+        if ($scheme === null) {
+            return null;
+        }
+
+        $orderTotal = round((float) $panel['calculator']['price'], 2);
+
+        return $presenter->presentSchemeCalculation($shop, $orderTotal, $scheme, (float) $firstInstallment);
     }
 
     /**

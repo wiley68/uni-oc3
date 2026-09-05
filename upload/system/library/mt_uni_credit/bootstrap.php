@@ -68,6 +68,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'storefront_consent_resolver.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'storefront_popup_form_normalizer.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'storefront_process_two_field_validator.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'product_buy_preference.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'checkout_scheme_selection.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'storefront_order_draft_builder.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'storefront_financing_submission_service.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'storefront_runtime.php';

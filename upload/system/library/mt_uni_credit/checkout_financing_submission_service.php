@@ -76,7 +76,7 @@ final class MtUniCreditCheckoutFinancingSubmissionService
             ? (string) $input['lock_owner_token']
             : MtUniCreditLockOwnerTokenGenerator::generate();
 
-        $validation = $this->revalidate($storeId, $orderId, $order, $orderProducts, $cartContext);
+        $validation = $this->revalidate($storeId, $orderId, $order, $orderProducts, $cartContext, $input);
         if (isset($validation['error'])) {
             return array(
                 'success' => false,
@@ -225,9 +225,10 @@ final class MtUniCreditCheckoutFinancingSubmissionService
      * @param array<string, mixed>|null $order
      * @param array<int, array<string, mixed>> $orderProducts
      * @param MtUniCreditCartContext|null $cartContext
+     * @param array<string, mixed> $input
      * @return array<string, mixed>
      */
-    private function revalidate($storeId, $orderId, $order, array $orderProducts, $cartContext)
+    private function revalidate($storeId, $orderId, $order, array $orderProducts, $cartContext, array $input = array())
     {
         MtUniCreditStoreScope::requireStoreId($storeId);
         if ($orderId <= 0 || !is_array($order)) {
@@ -278,18 +279,30 @@ final class MtUniCreditCheckoutFinancingSubmissionService
         }
 
         $resolution = $this->cartSchemes->resolve($shop, $cartContext);
-        $preferred = $resolution->promoOffer !== null
-            ? $resolution->promoOffer
-            : $resolution->standardOffer;
-        if (!$preferred instanceof MtUniCreditOffer) {
-            return array('error' => 'unavailable');
-        }
-
+        $schemeKey = trim((string) (isset($input['scheme_key']) ? $input['scheme_key'] : ''));
+        $firstInstallment = isset($input['first_installment'])
+            ? (float) $input['first_installment']
+            : 0.0;
+        $parsed = $schemeKey !== ''
+            ? MtUniCreditStorefrontCalculatorPresenter::parseSchemeKey($schemeKey)
+            : null;
+        $presenter = new MtUniCreditStorefrontCalculatorPresenter($this->calculator, $this->cartSchemes);
         $scheme = null;
-        foreach ($this->cartSchemes->unifiedSchemes($resolution, $shop) as $candidate) {
-            if ($candidate->kopCode === $preferred->kopCode && $candidate->months === $preferred->months) {
-                $scheme = $candidate;
-                break;
+        if (is_array($parsed)) {
+            $scheme = $presenter->findCartScheme($resolution, $shop, $parsed);
+        }
+        if ($scheme === null) {
+            $preferred = $resolution->promoOffer !== null
+                ? $resolution->promoOffer
+                : $resolution->standardOffer;
+            if (!$preferred instanceof MtUniCreditOffer) {
+                return array('error' => 'unavailable');
+            }
+            foreach ($this->cartSchemes->unifiedSchemes($resolution, $shop) as $candidate) {
+                if ($candidate->kopCode === $preferred->kopCode && $candidate->months === $preferred->months) {
+                    $scheme = $candidate;
+                    break;
+                }
             }
         }
         if ($scheme === null) {
@@ -297,7 +310,7 @@ final class MtUniCreditCheckoutFinancingSubmissionService
         }
 
         try {
-            $calculation = $this->calculator->calculateScheme($shop, $orderTotal, $scheme, 0.0);
+            $calculation = $this->calculator->calculateScheme($shop, $orderTotal, $scheme, $firstInstallment);
         } catch (Exception $exception) {
             return array('error' => 'unavailable');
         }

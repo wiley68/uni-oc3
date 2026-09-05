@@ -1,0 +1,47 @@
+/* Checkout payment panel — visual family: storefront.css (Product/Cart). */
+
+.mt-uni-credit-checkout-panel {
+  margin: 0 0 1rem;
+  max-width: 100%;
+}
+
+.mt-uni-credit-checkout-panel__body {
+  border: 1px solid #d0d5dd;
+  padding: 1rem 1.1rem 0.75rem;
+  background: #fff;
+}
+
+#mt-uni-credit-checkout-root .mt-uni-credit-checkout-panel__helper {
+  margin: 0 0 0.85rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #ed1c24;
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.45;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.mt-uni-credit-checkout-panel__actions {
+  margin-top: 0.75rem;
+}
+
+#mt-uni-credit-checkout-root .mt-uni-credit-storefront__processing[hidden] {
+  display: none !important;
+}
+
+#mt-uni-credit-checkout-root .mt-uni-credit-storefront__label-mobile {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  #mt-uni-credit-checkout-root .mt-uni-credit-storefront__label-desktop {
+    display: none;
+  }
+  #mt-uni-credit-checkout-root .mt-uni-credit-storefront__label-mobile {
+    display: inline;
+  }
+}
