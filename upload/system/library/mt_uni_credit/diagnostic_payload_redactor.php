@@ -3,7 +3,9 @@
 /**
  * Redacts sensitive diagnostic payload keys before persistence or export.
  *
- * SmartUCF PII keys follow Woo Mtuc_Debug_Log::SMARTUCF_PII_KEYS (exact case).
+ * SmartUCF PII keys follow Woo Mtuc_Debug_Log::SMARTUCF_PII_KEYS (exact case),
+ * except sucfOnlineSessionID which remains visible for bank/support log correlation
+ * (OC4 + CP parity — bank-side session reference, not a credential).
  * Additional credential/token keys keep the broader OC3/OC4 safety net.
  */
 final class MtUniCreditDiagnosticPayloadRedactor
@@ -18,7 +20,8 @@ final class MtUniCreditDiagnosticPayloadRedactor
     const NON_JSON_RESPONSE_MARKER = '[NON_JSON_RESPONSE_REDACTED]';
 
     /**
-     * Exact Woo SmartUCF contract keys (case-sensitive).
+     * Exact SmartUCF request PII keys (case-sensitive).
+     * sucfOnlineSessionID is intentionally NOT listed — support must see it.
      *
      * @var array<int, string>
      */
@@ -30,7 +33,6 @@ final class MtUniCreditDiagnosticPayloadRedactor
         'clientPhone',
         'clientEmail',
         'clientDeliveryAddress',
-        'sucfOnlineSessionID',
     );
 
     /**
@@ -76,7 +78,6 @@ final class MtUniCreditDiagnosticPayloadRedactor
         'user',
         'uni_password',
         'uni_user',
-        'sucfonlineessionid',
     );
 
     /**

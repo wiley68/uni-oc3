@@ -261,7 +261,7 @@ $cpFixture = array(
                 ),
             ),
             'response' => array(
-                'sucfOnlineSessionID' => '[REDACTED]',
+                'sucfOnlineSessionID' => 'abc-123-visible',
                 'errorCode' => 0,
                 'errorText' => 'ok',
             ),
@@ -279,6 +279,10 @@ mtuc115a4_assert($cpView['data']['log']['http_code'] === 200, 'CP shape: http_co
 mtuc115a4_assert($cpView['data']['log']['created_at'] === '2026-09-04 12:00:00', 'CP shape: created_at');
 mtuc115a4_assert(is_array($cpView['data']['log']['request']), 'CP shape: request is decoded object');
 mtuc115a4_assert(is_array($cpView['data']['log']['response']), 'CP shape: response is decoded object');
+mtuc115a4_assert(
+    $cpView['data']['log']['response']['sucfOnlineSessionID'] === 'abc-123-visible',
+    'CP shape: sucfOnlineSessionID remains visible'
+);
 mtuc115a4_assert($cpView['data']['log']['summary'] === null, 'CP shape: array summary coerced to null (scalarString)');
 
 // ---------------------------------------------------------------------------
@@ -321,9 +325,32 @@ $resp = MtUniCreditDiagnosticPayloadRedactor::redactMixed(json_encode(array(
     'errorCode' => 121,
     'errorText' => 'Already registered',
 )));
-mtuc115a4_assert($resp['sucfOnlineSessionID'] === '[REDACTED]', 'redact: sucfOnlineSessionID');
+mtuc115a4_assert($resp['sucfOnlineSessionID'] === $fakeSession, 'preserve: sucfOnlineSessionID visible');
 mtuc115a4_assert($resp['errorCode'] === 121, 'preserve: errorCode');
 mtuc115a4_assert($resp['errorText'] === 'Already registered', 'preserve: errorText');
+
+// Session ID visible; credentials/PII still redacted (including nested).
+$sessionVisible = MtUniCreditDiagnosticPayloadRedactor::redact(array(
+    'sucfOnlineSessionID' => '123456789',
+    'password' => 'secret-pass',
+    'secret' => 'top-secret',
+    'token' => 'bearer-token',
+    'egn' => '1990010112',
+    'response' => array(
+        'sucfOnlineSessionID' => 'nested-sess-987',
+        'password' => 'nested-pass',
+    ),
+));
+mtuc115a4_assert($sessionVisible['sucfOnlineSessionID'] === '123456789', 'session: top-level visible');
+mtuc115a4_assert($sessionVisible['password'] === '[REDACTED]', 'session: password redacted');
+mtuc115a4_assert($sessionVisible['secret'] === '[REDACTED]', 'session: secret redacted');
+mtuc115a4_assert($sessionVisible['token'] === '[REDACTED]', 'session: token redacted');
+mtuc115a4_assert($sessionVisible['egn'] === '[REDACTED]', 'session: egn redacted');
+mtuc115a4_assert(
+    $sessionVisible['response']['sucfOnlineSessionID'] === 'nested-sess-987',
+    'session: nested sucfOnlineSessionID visible'
+);
+mtuc115a4_assert($sessionVisible['response']['password'] === '[REDACTED]', 'session: nested password redacted');
 
 // ---------------------------------------------------------------------------
 // SmartUCF success — actual bodies + CP selection
@@ -354,6 +381,12 @@ mtuc115a4_assert(
 mtuc115a4_assert(
     is_array($smartOk) && is_array($smartOk['response']),
     'P1 success: redacted response present'
+);
+mtuc115a4_assert(
+    is_array($smartOk)
+        && isset($smartOk['response']['sucfOnlineSessionID'])
+        && $smartOk['response']['sucfOnlineSessionID'] === 'sess-phase9-ok',
+    'P1 success: sucfOnlineSessionID preserved in diagnostic response'
 );
 mtuc115a4_assert(
     is_array($smartOk) && (int) $smartOk['http_code'] === 200,
