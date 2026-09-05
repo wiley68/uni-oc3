@@ -621,13 +621,14 @@ class ControllerExtensionMtUniCreditProduct extends Controller
         $zone = '';
         $this->load->model('localisation/country');
         $this->load->model('localisation/zone');
-        if (isset($this->model_localisation_country) && method_exists($this->model_localisation_country, 'getCountry')) {
+        // OC3 Registry: never gate with isset($this->model_*) — Controller has no __isset().
+        if (method_exists($this->model_localisation_country, 'getCountry')) {
             $row = $this->model_localisation_country->getCountry($countryId);
             if (is_array($row) && isset($row['name'])) {
                 $country = (string) $row['name'];
             }
         }
-        if (isset($this->model_localisation_zone) && method_exists($this->model_localisation_zone, 'getZone')) {
+        if (method_exists($this->model_localisation_zone, 'getZone')) {
             $row = $this->model_localisation_zone->getZone($zoneId);
             if (is_array($row) && isset($row['name'])) {
                 $zone = (string) $row['name'];

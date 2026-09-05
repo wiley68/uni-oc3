@@ -124,6 +124,17 @@ mtuc115c2c_assert(
     'cart controller wires success-only cart clear'
 );
 mtuc115c2c_assert(
+    strpos($cartCtrl, 'isset($this->cart)') === false,
+    'cart controller: no isset($this->cart) Registry trap'
+);
+mtuc115c2c_assert(
+    preg_match(
+        '/clearCartAfterSuccessfulHandoff\\s*\\(\\s*\\$result\\s*,\\s*\\$this->cart\\s*\\)/s',
+        $cartCtrl
+    ) === 1,
+    'cart controller: passes $this->cart directly'
+);
+mtuc115c2c_assert(
     strpos($productCtrl, 'clearCartAfterSuccessfulHandoff') === false
         && strpos($productCtrl, 'cart->clear') === false,
     'Product: no cart clear wiring'

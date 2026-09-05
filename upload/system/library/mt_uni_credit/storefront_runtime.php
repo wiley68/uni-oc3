@@ -165,7 +165,8 @@ final class MtUniCreditStorefrontRuntime
         }
         try {
             $controller->load->model('extension/mt_uni_credit/product');
-            if (isset($controller->model_extension_mt_uni_credit_product)) {
+            // OC3 Registry: never gate with isset($controller->model_*) — no __isset().
+            if (method_exists($controller->model_extension_mt_uni_credit_product, 'getCategories')) {
                 return $controller->model_extension_mt_uni_credit_product->getCategories($productId);
             }
         } catch (Exception $exception) {

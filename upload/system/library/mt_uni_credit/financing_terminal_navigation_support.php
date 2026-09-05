@@ -213,6 +213,9 @@ final class MtUniCreditFinancingTerminalNavigationSupport
      * Cart entry only: clear live OC cart after successful bank handoff.
      * Idempotent. Safe no-op when cart object is missing or handoff was not successful.
      *
+     * Callers on OC3 Controllers must pass `$this->cart` directly — never
+     * `isset($this->cart) ? $this->cart : null` (Controller has __get, no __isset).
+     *
      * @param array<string, mixed> $result
      * @param object|null $cart OpenCart cart with clear()
      * @return bool True when clear() was invoked
