@@ -347,6 +347,13 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
             $selection
         );
 
+        // Temporary Phase 11.5C.3 branch isolation — controller-time $submit shape only.
+        $this->recordCheckoutCpFailureBranchTrace(
+            $orderId,
+            $submit,
+            MtUniCreditShopConfigurationFlags::isSecondaryProcess($shop)
+        );
+
         // Native status after durable P1/P2 handoff only (OC4 Checkout success boundary).
         // Do not gate on apply_native_order_status alone — localReplay after CP_CREATED
         // suppresses that flag and left successful Checkout orders at status 0.
@@ -811,6 +818,98 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
         $diag['applied'] = true;
         $diag['current_status_id'] = MtUniCreditNativeOrderStatusSupport::readOrderStatusId($this->db, $orderId);
         $this->recordNativeOrderStatusDiagnostic($diag);
+    }
+
+    /**
+     * Temporary Phase 11.5C.3: capture controller-time submit shape before navigation.
+     * Structural / non-PII only. Fail-soft.
+     *
+     * @param int $orderId
+     * @param array<string, mixed> $submit
+     * @param bool $process2
+     * @return void
+     */
+    private function recordCheckoutCpFailureBranchTrace($orderId, array $submit, $process2)
+    {
+        try {
+            $probe = $submit;
+            $sessionOrderId = (int) $orderId;
+            if (empty($probe['order_id']) && $sessionOrderId > 0) {
+                $probe['order_id'] = $sessionOrderId;
+            }
+
+            $definitiveCp = MtUniCreditFinancingTerminalNavigationSupport::isDefinitiveCheckoutCpFailureTerminal($probe);
+            $definitiveSmart = MtUniCreditFinancingTerminalNavigationSupport::isDefinitiveRemoteRejectTerminal($probe);
+            $successfulHandoff = MtUniCreditFinancingTerminalNavigationSupport::isSuccessfulBankHandoff($probe);
+
+            $branch = 'generic_error';
+            if (!empty($probe['success']) && !empty($probe['bank_redirect']) && !empty($probe['redirect'])) {
+                $branch = 'success_bank_redirect';
+            } elseif (!empty($probe['success'])) {
+                $branch = 'success_thankyou';
+            } elseif ($definitiveSmart) {
+                $branch = 'smartucf_failure_thankyou';
+            } elseif ($definitiveCp) {
+                $branch = 'cp_failure_thankyou';
+            }
+
+            $attempt = isset($probe['attempt']) && is_array($probe['attempt']) ? $probe['attempt'] : array();
+            $lastErrorClass = '';
+            if (isset($attempt['last_error_class']) && $attempt['last_error_class'] !== null && $attempt['last_error_class'] !== '') {
+                $lastErrorClass = (string) $attempt['last_error_class'];
+            } elseif (isset($probe['error'])) {
+                $lastErrorClass = (string) $probe['error'];
+            }
+
+            $cpOrderRaw = array_key_exists('control_panel_order_id', $probe)
+                ? $probe['control_panel_order_id']
+                : null;
+            $cpOrderType = $cpOrderRaw === null ? 'null' : gettype($cpOrderRaw);
+
+            $fields = array(
+                'order_id' => isset($probe['order_id']) ? (int) $probe['order_id'] : 0,
+                'success' => !empty($probe['success']),
+                'cp_succeeded' => !empty($probe['cp_succeeded']),
+                'control_panel_order_id' => $cpOrderRaw === null ? null : (int) $cpOrderRaw,
+                'control_panel_order_id_type' => $cpOrderType,
+                'bank_status' => isset($probe['bank_status']) ? (string) $probe['bank_status'] : '',
+                'error' => isset($probe['error']) ? (string) $probe['error'] : '',
+                'last_error_class' => $lastErrorClass,
+                'recoverable' => !empty($probe['recoverable']),
+                'ambiguous_blocked' => !empty($probe['ambiguous_blocked']),
+                'local_replay' => !empty($probe['local_replay']),
+                'apply_native_order_status' => !empty($probe['apply_native_order_status']),
+                'attempt_state' => isset($attempt['state']) ? (string) $attempt['state'] : '',
+                'has_redirect' => !empty($probe['redirect']),
+                'bank_redirect' => !empty($probe['bank_redirect']),
+                'process2' => !empty($process2),
+                'http_status' => array_key_exists('http_status', $probe) && $probe['http_status'] !== null
+                    ? (int) $probe['http_status']
+                    : null,
+                'definitive_cp_detector_result' => $definitiveCp,
+                'definitive_smartucf_detector_result' => $definitiveSmart,
+                'successful_handoff_detector_result' => $successfulHandoff,
+                'controller_branch' => $branch,
+                'outcome' => 'checkout.cp_failure_branch_trace',
+                'message' => 'Checkout CP failure branch trace (controller-time submit).',
+            );
+
+            $db = MtUniCreditBootstrap::dbFromRegistry($this->db);
+            $log = new MtUniCreditPhase9LifecycleLog($db);
+            $storeId = (int) $this->config->get('config_store_id');
+            $logOrderId = isset($fields['order_id']) && (int) $fields['order_id'] > 0
+                ? (int) $fields['order_id']
+                : $sessionOrderId;
+            $log->record(
+                $storeId,
+                $logOrderId,
+                MtUniCreditOperationEntryPoint::CHECKOUT,
+                'checkout.cp_failure_branch_trace',
+                $fields
+            );
+        } catch (Exception $exception) {
+            // Diagnostics must never break financing handoff.
+        }
     }
 
     /**

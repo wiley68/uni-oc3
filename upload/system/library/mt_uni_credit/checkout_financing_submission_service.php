@@ -224,6 +224,8 @@ final class MtUniCreditCheckoutFinancingSubmissionService
             'attempt' => $fresh !== null ? $fresh : $attempt,
             'apply_native_order_status' => $result->applyNativeOrderStatus,
             'bank_status' => $this->resolveBankStatusId($storeId, $orderId),
+            // Structural only — controller branch isolation / remote CP classification.
+            'http_status' => $result->httpStatus,
         );
 
         // Checkout Woo/PS parity: definitive CP create failure → local bank_send_failed_cp
