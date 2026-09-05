@@ -183,6 +183,11 @@ final class MtUniCreditCheckoutFinancingSubmissionService
         $fresh = $this->attempts->findById((int) $attempt['attempt_id']);
 
         if ($result->success) {
+            $bankStatus = MtUniCreditNativeOrderStatusSupport::resolveCheckoutHandoffBankStatus(
+                $this->resolveBankStatusId($storeId, $orderId),
+                $result,
+                $shop
+            );
             $out = array(
                 'success' => true,
                 'message' => MtUniCreditControlPanelOrderLifecycleService::CUSTOMER_SUCCESS_MESSAGE,
@@ -191,7 +196,7 @@ final class MtUniCreditCheckoutFinancingSubmissionService
                 'cp_succeeded' => $result->cpSucceeded,
                 'attempt' => $fresh !== null ? $fresh : $attempt,
                 'apply_native_order_status' => $result->applyNativeOrderStatus,
-                'bank_status' => $this->resolveBankStatusId($storeId, $orderId),
+                'bank_status' => $bankStatus,
             );
             if ($result->redirectUrl !== '') {
                 $out['redirect'] = $result->redirectUrl;

@@ -601,9 +601,8 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
     /**
      * Apply configured payment order status after durable Checkout bank handoff.
      *
-     * Root cause of Missing Orders: success with localReplay (CP already created)
-     * returned apply_native_order_status=false, so addOrderHistory never ran and
-     * the native OC order stayed at status 0.
+     * Same setting key / addOrderHistory path as Product/Cart. Idempotency uses a
+     * direct SQL status read so status-0 Missing Orders are never skipped.
      *
      * @param int $orderId
      * @param array<string, mixed> $submit
@@ -611,39 +610,97 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
      */
     private function maybeApplyCheckoutNativeOrderStatusAfterHandoff($orderId, array $submit)
     {
-        if (!MtUniCreditFinancingTerminalNavigationSupport::isSuccessfulBankHandoff($submit)) {
+        $orderId = (int) $orderId;
+        $handoff = MtUniCreditFinancingTerminalNavigationSupport::isSuccessfulBankHandoff($submit);
+        if (!$handoff) {
+            $this->recordNativeOrderStatusDiagnostic(array(
+                'order_id' => $orderId,
+                'handoff' => false,
+                'success' => !empty($submit['success']),
+                'bank_status' => isset($submit['bank_status']) ? (string) $submit['bank_status'] : '',
+                'applied' => false,
+                'skipped_reason' => 'handoff_gate',
+                'history_called' => false,
+            ));
+
             return;
         }
-        $this->applyPreparedOrderStatus((int) $orderId);
+        $this->applyPreparedOrderStatus($orderId, $submit);
     }
 
     /**
      * @param int $orderId
+     * @param array<string, mixed> $submit
      * @return void
      */
-    private function applyPreparedOrderStatus($orderId)
+    private function applyPreparedOrderStatus($orderId, array $submit = array())
     {
         $orderId = (int) $orderId;
+        $statusId = MtUniCreditNativeOrderStatusSupport::configuredStatusId($this->config);
+        $diag = array(
+            'order_id' => $orderId,
+            'handoff' => true,
+            'success' => !empty($submit['success']),
+            'bank_status' => isset($submit['bank_status']) ? (string) $submit['bank_status'] : '',
+            'configured_status_id' => $statusId,
+            'applied' => false,
+            'history_called' => false,
+        );
+
         if ($orderId <= 0) {
+            $diag['skipped_reason'] = 'order_id';
+            $this->recordNativeOrderStatusDiagnostic($diag);
+
             return;
         }
+        if ($statusId <= 0) {
+            $diag['skipped_reason'] = 'configured_status_id';
+            $this->recordNativeOrderStatusDiagnostic($diag);
+
+            return;
+        }
+
+        $current = MtUniCreditNativeOrderStatusSupport::readOrderStatusId($this->db, $orderId);
+        $diag['current_status_id'] = $current;
+        if (!MtUniCreditNativeOrderStatusSupport::shouldApplyHistory($current, $statusId)) {
+            $diag['skipped_reason'] = $current < 0 ? 'order_missing' : 'already_applied';
+            $this->recordNativeOrderStatusDiagnostic($diag);
+
+            return;
+        }
+
+        // Product/Cart parity: call addOrderHistory directly (no getOrder / method_exists gate).
         $this->load->model('checkout/order');
-        $statusId = (int) $this->config->get(MtUniCreditConstants::PAYMENT_SETTING_ORDER_STATUS_ID);
-        if ($statusId <= 0 || !method_exists($this->model_checkout_order, 'addOrderHistory')) {
-            return;
-        }
-
-        $order = $this->model_checkout_order->getOrder($orderId);
-        if (!is_array($order)) {
-            return;
-        }
-        $current = (int) (isset($order['order_status_id']) ? $order['order_status_id'] : 0);
-        // Idempotent: replay / localReplay must not insert a second history row or re-mail.
-        if ($current === $statusId) {
-            return;
-        }
-
         $this->model_checkout_order->addOrderHistory($orderId, $statusId);
+        $diag['history_called'] = true;
+        $diag['applied'] = true;
+        $diag['current_status_id'] = MtUniCreditNativeOrderStatusSupport::readOrderStatusId($this->db, $orderId);
+        $this->recordNativeOrderStatusDiagnostic($diag);
+    }
+
+    /**
+     * Safe diagnostic journal row for remote gate tracing (no PII).
+     *
+     * @param array<string, mixed> $fields
+     * @return void
+     */
+    private function recordNativeOrderStatusDiagnostic(array $fields)
+    {
+        try {
+            $db = MtUniCreditBootstrap::dbFromRegistry($this->db);
+            $log = new MtUniCreditPhase9LifecycleLog($db);
+            $storeId = (int) $this->config->get('config_store_id');
+            $orderId = isset($fields['order_id']) ? (int) $fields['order_id'] : 0;
+            $log->record(
+                $storeId,
+                $orderId,
+                MtUniCreditOperationEntryPoint::CHECKOUT,
+                MtUniCreditNativeOrderStatusSupport::DIAG_EVENT,
+                MtUniCreditNativeOrderStatusSupport::diagnosticSummary($fields)
+            );
+        } catch (Exception $exception) {
+            // Diagnostics must never break financing handoff.
+        }
     }
 
     /**

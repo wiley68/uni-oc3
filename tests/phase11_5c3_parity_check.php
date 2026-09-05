@@ -211,8 +211,8 @@ mtuc115c3p_assert(
     'Checkout no longer gates solely on apply_native_order_status (localReplay bug)'
 );
 mtuc115c3p_assert(
-    strpos($controller, 'current === $statusId') !== false
-        || strpos($controller, '$current === $statusId') !== false,
+    strpos($controller, 'shouldApplyHistory') !== false
+        || strpos($controller, 'readOrderStatusId') !== false,
     'idempotent skip when native status already applied'
 );
 mtuc115c3p_assert(strpos($controller, 'addOrder(') === false || preg_match(
