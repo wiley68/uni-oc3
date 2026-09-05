@@ -54,11 +54,15 @@ final class MtUniCreditProcessTwoSubmissionSupport
     }
 
     /**
+     * Durable financing presentation for Thank You / native order mail.
+     * Process 1: process2=false (no EGN / P2 message). Process 2: process2=true.
+     *
      * @param MtUniCreditCalculationResult $calculation
      * @param int $shopOrderId
      * @param int $attemptId
      * @param MtUniCreditDbAdapter $db
      * @param int|null $cpOrderId
+     * @param bool $process2
      * @return void
      */
     public static function persistLeasingSnapshot(
@@ -66,12 +70,13 @@ final class MtUniCreditProcessTwoSubmissionSupport
         $shopOrderId,
         $attemptId,
         MtUniCreditDbAdapter $db,
-        $cpOrderId = null
+        $cpOrderId = null,
+        $process2 = true
     ) {
         $snapshot = MtUniCreditFinancingPresentationSnapshot::fromCalculation(
             $calculation,
             (int) $shopOrderId,
-            true,
+            (bool) $process2,
             $cpOrderId
         );
         try {

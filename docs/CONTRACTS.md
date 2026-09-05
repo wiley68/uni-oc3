@@ -797,7 +797,7 @@ Cart in JET uses `Document::addStyle/addScript`; product uses inline tags. UniCr
 - Product template (theme wildcard, `error="skip"`): after quantity group closing → `{{ mt_uni_credit_product_widget }}` with markers `<!-- mt_uni_credit:product -->`.
 - Cart controller: after `setTitle(heading_title)` → load cart widget.
 - Cart template (theme wildcard, `error="skip"`): before `{{ content_bottom }}</div>` → cart widget + markers.
-- Product Buy payment-method OCMOD: **skipped** (no safe stable anchor across OC3.0.3.x); preference stash only (soft handoff).
+- Product Buy payment-method: OCMOD on `checkout/payment_method` → `extension/mt_uni_credit/product_buy/applyPaymentPreselect` when Buy preference is valid; clear on other payment save.
 
 ### OC3-ROUTE-001 — Nested catalog API routes
 

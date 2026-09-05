@@ -59,9 +59,23 @@
     </file>
 
     <!--
-      Product Buy payment preselect: skipped — no safe stable OCMOD anchor found in
-      catalog/controller/checkout/payment_method.php across OC3.0.3.x without risking
-      broad churn. Preference is stashed in session (MtUniCreditProductBuyPreference);
-      soft handoff only — UniCredit remains selectable via getMethod when eligible.
+      Product Buy → Checkout: native payment_method preselect when Buy preference is valid.
+      Thin OCMOD → module controller (OCMOD-001). Session + $data['code'] stay in sync.
     -->
+    <file path="catalog/controller/checkout/payment_method.php">
+        <operation>
+            <search><![CDATA[$this->session->data['payment_methods'] = $method_data;]]></search>
+            <add position="after"><![CDATA[
+			// mt_uni_credit:product_buy_payment_preselect
+			$this->load->controller('extension/mt_uni_credit/product_buy/applyPaymentPreselect');
+            ]]></add>
+        </operation>
+        <operation>
+            <search><![CDATA[$this->session->data['payment_method'] = $this->session->data['payment_methods'][$this->request->post['payment_method']];]]></search>
+            <add position="after"><![CDATA[
+			// mt_uni_credit:product_buy_payment_clear
+			$this->load->controller('extension/mt_uni_credit/product_buy/onPaymentMethodSaved');
+            ]]></add>
+        </operation>
+    </file>
 </modification>

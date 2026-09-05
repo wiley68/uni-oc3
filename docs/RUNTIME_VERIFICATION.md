@@ -850,7 +850,9 @@ Test Product and Cart separately after hard-refresh.
 ### Explicit exclusions (Phase 8)
 
 - [ ] No SmartUCF / Process 1/2 / EGN / email / Thank You / homepage ads (Phase 9+).
-- [ ] Product Buy payment preselect OCMOD skipped (soft session preference only).
+- [ ] Product Buy → Checkout: UniCredit payment auto-selected when Buy preference is valid (OCMOD on payment_method).
+- [ ] Normal Checkout: initial scheme = longest 0% → else longest promo → else CP preferred_scheme_key.
+- [ ] Successful P1 native order emails include financing summary from durable leasing snapshot (process2=false).
 - [ ] This Product OCMOD anchor closure does not change Cart calculation/lifecycle or Checkout Phase 7.
 - [ ] Popup Step 1 closure does **not** redesign Step 2 content (separate later task).
 

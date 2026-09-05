@@ -88,4 +88,62 @@ final class MtUniCreditProductBuyPreference
     {
         unset($sessionData[self::SESSION_KEY]);
     }
+
+    /**
+     * @param array<string, mixed> $preference
+     * @return bool
+     */
+    public static function shouldPreferPayment(array $preference)
+    {
+        return !empty($preference['prefer_payment']);
+    }
+
+    /**
+     * Apply UniCredit into session.payment_method when Buy preference is active
+     * and the method is present in discovered payment_methods.
+     *
+     * @param array<string, mixed> $sessionData
+     * @param array<string, mixed> $paymentMethods
+     * @param int $storeId
+     * @return bool
+     */
+    public static function applyPaymentIfAvailable(array &$sessionData, array $paymentMethods, $storeId)
+    {
+        $preference = self::load($sessionData, (int) $storeId);
+        if ($preference === null || !self::shouldPreferPayment($preference)) {
+            return false;
+        }
+
+        $code = MtUniCreditConstants::EXTENSION_CODE;
+        if (!isset($paymentMethods[$code]) || !is_array($paymentMethods[$code])) {
+            return false;
+        }
+
+        $sessionData['payment_method'] = $paymentMethods[$code];
+
+        return true;
+    }
+
+    /**
+     * Clear Buy preference when the customer saves a different payment method.
+     *
+     * @param array<string, mixed> $sessionData
+     * @return void
+     */
+    public static function clearIfPaymentChangedAway(array &$sessionData)
+    {
+        if (!isset($sessionData[self::SESSION_KEY]) || !is_array($sessionData[self::SESSION_KEY])) {
+            return;
+        }
+
+        $code = '';
+        if (isset($sessionData['payment_method']['code'])) {
+            $code = (string) $sessionData['payment_method']['code'];
+        }
+        if ($code === MtUniCreditConstants::EXTENSION_CODE) {
+            return;
+        }
+
+        self::clear($sessionData);
+    }
 }
