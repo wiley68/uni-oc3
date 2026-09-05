@@ -1090,28 +1090,24 @@ Payment unavailable; no submit. Document only.
 
 **INVALID** definitive CP test (see above). Temporary `checkout.pre_submit_trace` confirms `prepare_confirm` + `prepare_error=order_already_processed`.
 
-### Recommended definitive mechanism — IMPLEMENTED (test-only)
-
-CP (`wiley68/uni.avalonbg.com`):
+### Definitive remote CP failure — testability status
 
 ```text
-UNIPAYMENT_ENABLE_TEST_FAILURES=true
-+ Bearer shop.token
-+ X-UniPayment-Test-Failure: cp-create-422
-→ after StoreOrderRequest validation
-→ before IdempotentOrderCreator
-→ HTTP 422 { success:false, error:"test_force_reject" }
-→ no order insert
+CHECKOUT DEFINITIVE BROKEN CP REMOTE ACCEPTANCE:
+BLOCKED BY TESTABILITY
 ```
 
-OC3 temporary trigger (`config/environment.php`):
+Meaning:
 
 ```text
-'force_test_cp_create_422' => false  (default)
+local definitive 422 path = covered (Option B offline fixtures)
+remote real CP definitive reject = not reproducible
+without modifying CP or shared test infrastructure
 ```
 
-When true, only `createOrder()` adds the header. Login / GET shop / status PATCH / inbound / SmartUCF unchanged.
+This is **not** a functional module failure. Do **not** invent production workarounds
+(`__broken_cp__`, wrong Secret, Admin order mutation) — those are classified above.
 
-**Release recommendation:** keep key in deployment `environment.php` with **default false** (test infrastructure). Enable only for remote P1 logged definitive proof, then set back to false. Do not ship production packages with `true`.
-
-HMAC/replay: shop→CP order create uses Bearer; ModuleRequestSigner canonical string is timestamp+nonce+body only — extra header does not affect signing.
+A coordinated CP-side test hook may be revisited only when the real CP development
+repository is intentionally opened for that work. Local `uni.avalonbg.com` is a
+**read-only reference copy** and must not be modified from this workspace.

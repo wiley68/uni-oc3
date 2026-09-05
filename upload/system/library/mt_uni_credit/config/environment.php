@@ -12,12 +12,4 @@
 
 return array(
     'control_panel_url' => 'https://uni.avalonbg.com',
-
-    /**
-     * Temporary remote definitive CP create failure probe (Phase 11.5C.3).
-     * When true, POST /orders adds X-UniPayment-Test-Failure: cp-create-422.
-     * Requires matching CP UNIPAYMENT_ENABLE_TEST_FAILURES=true.
-     * Default false — leave false in production packages after remote verification.
-     */
-    'force_test_cp_create_422' => false,
 );

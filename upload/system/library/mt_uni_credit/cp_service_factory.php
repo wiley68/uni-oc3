@@ -46,8 +46,7 @@ final class MtUniCreditCpServiceFactory
             $shopName,
             $storeId,
             $baseUrl,
-            $wallClock,
-            $environmentConfigPath
+            $wallClock
         );
 
         $cache = new MtUniCreditShopCacheRepository($db);

@@ -1,0 +1,20 @@
+---
+description: Write scope — uni-oc3 only; all references and local CP copy are read-only
+alwaysApply: true
+---
+
+# Workspace write scope
+
+## WRITE
+
+Only modify files under the `uni-oc3` repository.
+
+## READ-ONLY (never modify / create / delete / format / stage / commit)
+
+- `reference-uni-oc4`
+- `reference-jet-oc3`
+- `reference-oc3-store`
+- `reference-oc3-core`
+- `uni.avalonbg.com` (local CP reference copy — inspection only, not active CP development)
+
+If a task appears to require changes outside `uni-oc3`: STOP, report the proposed external change, and do not implement it.
