@@ -1,8 +1,9 @@
 <?php
 
 /**
- * Shared Product/Cart/Checkout terminal Thank You navigation
- * (Process 2 success + Process 1 definitive SmartUCF failure).
+ * Shared Product/Cart/Checkout terminal navigation
+ * (Process 2 Thank You, Process 1 definitive SmartUCF failure Thank You,
+ * Process 1 CP-create failure stay-on-page error modal).
  *
  * Successful Process 1 bank redirect is never rewritten here.
  */
@@ -11,6 +12,9 @@ final class MtUniCreditFinancingTerminalNavigationSupport
     const SESSION_SUCCESS_ORDER_ID = 'mt_uni_credit_success_order_id';
 
     const STEP_SMARTUCF_TERMINAL_FAILED = 'smartucf_terminal_failed';
+
+    /** Storefront must close the financing modal and show the error dialog (no redirect). */
+    const UI_ERROR_MODAL = 'error_modal';
 
     /**
      * Definitive remote_reject after CP create (frozen Phase 9 terminal bank_send_failed_*).
@@ -129,5 +133,58 @@ final class MtUniCreditFinancingTerminalNavigationSupport
         $thankYouUrl
     ) {
         return self::enrichDefinitiveRemoteRejectThankYou($payload, $sessionData, $orderId, $thankYouUrl);
+    }
+
+    /**
+     * CP create did not succeed (no CP financing order). Local OC order/attempt may exist.
+     * Customer stays on Product/Cart — never prepared/cart/Thank You.
+     *
+     * @param array<string, mixed> $result
+     * @return bool
+     */
+    public static function isCpCreateFailureStayOnPage(array $result)
+    {
+        if (!empty($result['success'])) {
+            return false;
+        }
+        if (!empty($result['cp_succeeded'])) {
+            return false;
+        }
+        if (self::isDefinitiveRemoteRejectTerminal($result)) {
+            return false;
+        }
+
+        // Local order materialization before CP is expected for Product Apply.
+        return (int) (isset($result['order_id']) ? $result['order_id'] : 0) > 0;
+    }
+
+    /**
+     * Structured storefront result: error modal, no navigation redirect.
+     *
+     * @param array<string, mixed> $payload
+     * @param array<string, mixed> $sessionData
+     * @return array<string, mixed>
+     */
+    public static function enrichCpCreateFailureModal(array $payload, array &$sessionData)
+    {
+        unset($payload['redirect']);
+        unset($sessionData[MtUniCreditCheckoutConfirmPreparation::SESSION_PREPARED_ORDER_ID]);
+        // Never promote CP-create failure to Thank You ownership.
+        unset($sessionData[self::SESSION_SUCCESS_ORDER_ID]);
+
+        $payload['success'] = false;
+        $payload['bank_redirect'] = false;
+        $payload['terminal_ui'] = self::UI_ERROR_MODAL;
+        $payload['stay_on_page'] = true;
+
+        if (!isset($payload['message']) || trim((string) $payload['message']) === '') {
+            if (!empty($payload['ambiguous_blocked'])) {
+                $payload['message'] = MtUniCreditControlPanelOrderLifecycleService::CUSTOMER_AMBIGUOUS_MESSAGE;
+            } else {
+                $payload['message'] = MtUniCreditControlPanelOrderLifecycleService::CUSTOMER_FAILURE_MESSAGE;
+            }
+        }
+
+        return $payload;
     }
 }

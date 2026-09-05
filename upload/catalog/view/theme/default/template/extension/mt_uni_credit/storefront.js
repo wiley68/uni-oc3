@@ -94,6 +94,18 @@
 
     var modalHomeParent = $modal.parent()[0];
     var modalHomeNext = $modal[0].nextSibling;
+    var $errorModal = $root.find(modalId + "-error");
+    if (!$errorModal.length) {
+      $errorModal = $(modalId + "-error");
+    }
+    if (!$errorModal.length) {
+      $errorModal = $root.find("[data-mtuc-error-modal]").first();
+    }
+    var errorModalHomeParent = $errorModal.length
+      ? $errorModal.parent()[0]
+      : null;
+    var errorModalHomeNext =
+      $errorModal.length && $errorModal[0] ? $errorModal[0].nextSibling : null;
     var selectedOfferType = Object.keys(state.offers || {})[0] || "standard";
     var selectedSchemeKey =
       (state.offers &&
@@ -134,6 +146,53 @@
       } else {
         modalHomeParent.appendChild($modal[0]);
       }
+    }
+
+    function moveErrorModalToBody() {
+      if (!$errorModal.length) {
+        return;
+      }
+      if ($errorModal.parent()[0] !== document.body) {
+        $(document.body).append($errorModal);
+      }
+    }
+
+    function restoreErrorModal() {
+      if (!$errorModal.length || !errorModalHomeParent) {
+        return;
+      }
+      if (
+        errorModalHomeNext &&
+        errorModalHomeNext.parentNode === errorModalHomeParent
+      ) {
+        errorModalHomeParent.insertBefore($errorModal[0], errorModalHomeNext);
+      } else {
+        errorModalHomeParent.appendChild($errorModal[0]);
+      }
+    }
+
+    function showErrorModal(message) {
+      if (!$errorModal.length) {
+        $modal
+          .find("[data-mtuc-submit-error]")
+          .text(message || "Заявката не беше успешна.");
+        return;
+      }
+      moveErrorModalToBody();
+      $errorModal
+        .find("[data-mtuc-error-message]")
+        .text(message || "Заявката не беше успешна.");
+      $errorModal.removeAttr("hidden").attr("aria-hidden", "false");
+      $errorModal.find(".mt-uni-credit-storefront__dialog").trigger("focus");
+    }
+
+    function closeErrorModal() {
+      if (!$errorModal.length) {
+        return;
+      }
+      $errorModal.attr("hidden", true).attr("aria-hidden", "true");
+      $errorModal.find("[data-mtuc-error-message]").text("");
+      restoreErrorModal();
     }
 
     function currentOffer() {
@@ -496,6 +555,7 @@
     }
 
     function openModal(offerType, preferredKey) {
+      closeErrorModal();
       selectedOfferType = offerType || selectedOfferType;
       var offer = currentOffer();
       if (preferredKey) {
@@ -933,6 +993,8 @@
 
     $modal.data("mtucApi", {
       closeModal: closeModal,
+      closeErrorModal: closeErrorModal,
+      showErrorModal: showErrorModal,
       setStep: setStep,
       setProcessing: setProcessing,
       isTerminalSubmitLocked: isTerminalSubmitLocked,
@@ -1063,9 +1125,8 @@
             if (err || !response) {
               terminalSubmitInFlight = false;
               setProcessing(false);
-              $modal
-                .find("[data-mtuc-submit-error]")
-                .text("Заявката не беше успешна.");
+              closeModal();
+              showErrorModal("Заявката не беше успешна.");
               return;
             }
             // Bank / terminal redirect: keep loader locked until navigation leaves the page.
@@ -1078,6 +1139,15 @@
             setProcessing(false);
             if (response.success) {
               closeModal();
+              return;
+            }
+            // CP-create failure (and similar stay-on-page results): close financing UI, show error dialog.
+            if (
+              response.terminal_ui === "error_modal" ||
+              response.stay_on_page === true
+            ) {
+              closeModal();
+              showErrorModal(response.message || "Заявката не беше успешна.");
               return;
             }
             $modal
@@ -1125,6 +1195,23 @@
         }
         if (api) {
           api.closeModal();
+        }
+      },
+    );
+
+    $(document).on(
+      "click.mtuc",
+      "#mt-uni-credit-product-modal-error [data-mtuc-error-dismiss], #mt-uni-credit-cart-modal-error [data-mtuc-error-dismiss]",
+      function (e) {
+        e.preventDefault();
+        var $err = $(this).closest("[data-mtuc-error-modal]");
+        var errId = $err.attr("id") || "";
+        var financingId = errId.replace(/-error$/, "");
+        var api = financingId ? $("#" + financingId).data("mtucApi") : null;
+        if (api && typeof api.closeErrorModal === "function") {
+          api.closeErrorModal();
+        } else {
+          $err.attr("hidden", true).attr("aria-hidden", "true");
         }
       },
     );
@@ -1245,6 +1332,22 @@
       if (!(e.key === "Escape" || e.keyCode === 27)) {
         return;
       }
+      $(
+        "#mt-uni-credit-product-modal-error, #mt-uni-credit-cart-modal-error",
+      ).each(function () {
+        var $err = $(this);
+        if ($err.attr("hidden")) {
+          return;
+        }
+        var errId = $err.attr("id") || "";
+        var financingId = errId.replace(/-error$/, "");
+        var api = financingId ? $("#" + financingId).data("mtucApi") : null;
+        if (api && typeof api.closeErrorModal === "function") {
+          api.closeErrorModal();
+        } else {
+          $err.attr("hidden", true).attr("aria-hidden", "true");
+        }
+      });
       $("#mt-uni-credit-product-modal, #mt-uni-credit-cart-modal").each(
         function () {
           var $m = $(this);

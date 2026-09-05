@@ -420,11 +420,13 @@ class ControllerExtensionMtUniCreditCart extends Controller
         $data['text_egn'] = $this->language->get('text_egn');
         $data['text_required'] = $this->language->get('text_required');
         $data['text_cancel'] = $this->language->get('button_cancel');
+        $data['text_close'] = $this->language->get('button_close');
         $data['text_back'] = $this->language->get('button_back');
         $data['text_processing_title'] = $this->language->get('text_processing_title');
         $data['text_processing'] = $this->language->get('text_processing');
         $data['text_modal_title_scheme'] = $this->language->get('text_modal_title_scheme');
         $data['text_modal_title_customer'] = $this->language->get('text_modal_title_customer');
+        $data['text_error_title'] = $this->language->get('text_error_title');
         $data['text_price'] = $this->language->get('text_price');
         $data['text_months'] = $this->language->get('text_months');
         $data['text_first_installment'] = $modalMeta['text_first_installment'];
