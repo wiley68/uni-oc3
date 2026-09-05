@@ -216,12 +216,14 @@ final class MtUniCreditCheckoutFinancingSubmissionService
             'success' => false,
             'error' => $result->errorClass !== null ? $result->errorClass : 'cp_submit_failed',
             'message' => $message,
+            'order_id' => $orderId,
             'control_panel_order_id' => $result->controlPanelOrderId,
             'recoverable' => $result->recoverable,
             'ambiguous_blocked' => $result->ambiguousBlocked,
             'cp_succeeded' => $result->cpSucceeded,
             'attempt' => $fresh !== null ? $fresh : $attempt,
             'apply_native_order_status' => $result->applyNativeOrderStatus,
+            'bank_status' => $this->resolveBankStatusId($storeId, $orderId),
         );
     }
 

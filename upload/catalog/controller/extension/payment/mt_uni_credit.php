@@ -387,6 +387,35 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
             return;
         }
 
+        // Session order is authoritative for Checkout; ensure shared terminal detector sees it.
+        if (empty($submit['order_id']) && $orderId > 0) {
+            $submit['order_id'] = $orderId;
+        }
+
+        // Product/Cart parity: definitive SmartUCF remote_reject → Thank You (not stay Checkout).
+        if (MtUniCreditFinancingTerminalNavigationSupport::isDefinitiveRemoteRejectTerminal($submit)) {
+            $this->maybeApplyCheckoutNativeOrderStatusOnDefinitiveFailure($orderId, $submit);
+            $json = array(
+                'success' => false,
+                'error' => isset($submit['error']) ? (string) $submit['error'] : 'remote_reject',
+                'order_id' => $orderId,
+                'cp_succeeded' => !empty($submit['cp_succeeded']),
+                'bank_status' => isset($submit['bank_status']) ? (string) $submit['bank_status'] : '',
+                'apply_native_order_status' => !empty($submit['apply_native_order_status']),
+            );
+            if (array_key_exists('recoverable', $submit)) {
+                $json['recoverable'] = !empty($submit['recoverable']);
+            }
+            $json = MtUniCreditFinancingTerminalNavigationSupport::enrichDefinitiveRemoteRejectThankYou(
+                $json,
+                $this->session->data,
+                $orderId,
+                $this->url->link(MtUniCreditConstants::CHECKOUT_SUCCESS_ROUTE, '', true)
+            );
+            $this->respondJson($json);
+            return;
+        }
+
         $json['error'] = isset($submit['message']) && is_string($submit['message'])
             ? (string) $submit['message']
             : $this->language->get('error_unavailable');
@@ -572,6 +601,29 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
             );
         }
 
+        $preparedOrderId = (int) $context['order_id'];
+        if (empty($result['order_id']) && $preparedOrderId > 0) {
+            $result['order_id'] = $preparedOrderId;
+        }
+
+        if (MtUniCreditFinancingTerminalNavigationSupport::isDefinitiveRemoteRejectTerminal($result)) {
+            $this->maybeApplyCheckoutNativeOrderStatusOnDefinitiveFailure($preparedOrderId, $result);
+            $payload = MtUniCreditFinancingTerminalNavigationSupport::enrichDefinitiveRemoteRejectThankYou(
+                array(
+                    'success' => false,
+                    'error' => isset($result['error']) ? (string) $result['error'] : 'remote_reject',
+                    'order_id' => $preparedOrderId,
+                    'cp_succeeded' => !empty($result['cp_succeeded']),
+                    'bank_status' => isset($result['bank_status']) ? (string) $result['bank_status'] : '',
+                ),
+                $this->session->data,
+                $preparedOrderId,
+                $this->url->link(MtUniCreditConstants::CHECKOUT_SUCCESS_ROUTE, '', true)
+            );
+            $this->response->redirect((string) $payload['redirect']);
+            return;
+        }
+
         if (empty($result['success']) && isset($result['message']) && is_string($result['message'])) {
             $this->session->data['mt_uni_credit_checkout_flash'] = (string) $result['message'];
         }
@@ -588,7 +640,7 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
                     'bank_redirect' => false,
                 ),
                 $this->session->data,
-                (int) $context['order_id'],
+                $preparedOrderId,
                 $this->url->link(MtUniCreditConstants::CHECKOUT_SUCCESS_ROUTE, '', true)
             );
             $this->response->redirect((string) $payload['redirect']);
@@ -623,6 +675,41 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
                 'history_called' => false,
             ));
 
+            return;
+        }
+        $this->applyPreparedOrderStatus($orderId, $submit);
+    }
+
+    /**
+     * Definitive SmartUCF remote_reject after CP success — leave Missing Orders (status 0).
+     *
+     * Uses the same payment_mt_uni_credit_order_status_id as Product/Cart and OC4
+     * applyCheckoutUniCreditOrderStatus. Must NOT broaden isSuccessfulBankHandoff().
+     *
+     * @param int $orderId
+     * @param array<string, mixed> $submit
+     * @return void
+     */
+    private function maybeApplyCheckoutNativeOrderStatusOnDefinitiveFailure($orderId, array $submit)
+    {
+        $orderId = (int) $orderId;
+        if ($orderId <= 0) {
+            return;
+        }
+        if (empty($submit['apply_native_order_status'])) {
+            $this->recordNativeOrderStatusDiagnostic(array(
+                'order_id' => $orderId,
+                'handoff' => false,
+                'success' => false,
+                'bank_status' => isset($submit['bank_status']) ? (string) $submit['bank_status'] : '',
+                'applied' => false,
+                'skipped_reason' => 'apply_native_not_authorised',
+                'history_called' => false,
+            ));
+
+            return;
+        }
+        if (!MtUniCreditFinancingTerminalNavigationSupport::isDefinitiveRemoteRejectTerminal($submit)) {
             return;
         }
         $this->applyPreparedOrderStatus($orderId, $submit);
