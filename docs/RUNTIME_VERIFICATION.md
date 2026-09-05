@@ -1043,3 +1043,77 @@ home_controller_before / home_footer_after
 ### Explicit exclusions (Phase 11)
 
 - [ ] No Phase 12 package / matrix / audit freeze work
+
+---
+
+## Phase 11.5C.3 — Checkout broken CP: definitive vs ambiguous (local PASS)
+
+Automated gate: `php tests/phase11_5c3_broken_cp_check.php`.
+
+### Root cause of prior remote FAIL on `__broken_cp__`
+
+Remote order `2056` journaled `cp_create_outcome_unknown` + `checkout.cp_failure_branch_trace`.
+
+`control_panel_url = https://uni.avalonbg.com/__broken_cp__` is **AMBIGUOUS CP TEST**, not a definitive broken-CP test. Cloudflare/transport response shapes cannot prove whether CP processed the request. Module correctly stays on Checkout (no `bank_send_failed_cp`, no Thank You).
+
+Do **not** broaden `isDefinitiveCheckoutCpFailureTerminal()` to accept `cp_outcome_unknown` / `ambiguous_blocked=true`.
+
+### Manual matrix (two distinct cases)
+
+#### A. Definitive broken CP (Thank You) — Option A: invalid authentication
+
+Preferred remote mechanism. Uses the **real** CP host (not `__broken_cp__`).
+
+Auth flow: `ensureToken()` → `POST /auth/login` (unicid + shop name + secret) → token → `POST /orders`.
+
+With intentionally wrong Secret and no usable token, login returns HTTP **401** → `MtUniCreditCpAuthenticationException` → domain:
+
+```text
+error = cp_auth_failed
+attempt_state = cp_failed_retryable
+ambiguous_blocked = false
+http_status = 401
+POST /orders count = 0
+control_panel_order_id = 0
+SmartUCF = 0
+detector = true
+→ bank_send_failed_cp + Thank You
+```
+
+**Procedure (test store only):**
+
+1. With **valid** Secret: Module → Refresh bank data → confirm shop cache is fresh.
+2. Snapshot shop cache rows for this `store_id` (SQL export of `oc_mt_uni_credit_shop_cache` or equivalent).
+3. Module admin: set Secret to a known-wrong value (e.g. `intentionally-invalid-secret-phase115c3`) → Save.
+   - This invalidates CP tokens **and** clears shop cache via `CredentialChangeHandler`.
+4. **Restore** shop cache rows from step 2 (SQL import). Leave wrong Secret + empty tokens.
+5. Checkout P1 logged → confirm financing once.
+6. Expect: visible OC order, native status = `payment_mt_uni_credit_order_status_id`, `bank_send_failed_cp`, CP order absent, SmartUCF absent, Thank You exact CP terminal text.
+7. Optional journal: `checkout.cp_failure_branch_trace` with `controller_branch=cp_failure_thankyou`, `error=cp_auth_failed`.
+8. Restore real Secret → Save → Refresh bank data.
+
+First acceptance: **P1 logged only**. STOP on FAIL. Then P1 guest / P2 logged / P2 guest.
+
+Local automated equivalent: Option A login-401 fixture + Option B order-422 fixtures in `phase11_5c3_broken_cp_check.php`.
+
+#### B. Ambiguous CP outcome (stay Checkout) — `__broken_cp__`
+
+```php
+'control_panel_url' => 'https://uni.avalonbg.com/__broken_cp__',
+```
+
+Expected:
+
+```text
+cp_create_outcome_unknown / ambiguous_blocked=true
+bank status NOT bank_send_failed_cp
+no definitive Thank You
+no automatic resend
+stay Checkout + safe “do not resend” warning
+```
+
+Keep as a separate safety regression. Do not merge with case A.
+
+### Production lifecycle
+
+No production failure-semantics change required for this closure when Option A yields Thank You with existing detectors.

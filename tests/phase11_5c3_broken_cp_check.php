@@ -1,11 +1,20 @@
 <?php
 
 /**
- * Phase 11.5C.3 — Checkout broken CP → Thank You (Woo/PS cross-module parity).
+ * Phase 11.5C.3 — Checkout definitive CP failure → Thank You (Woo/PS cross-module parity).
  *
  * Authority: Woo / PS8 / PS9 Checkout broken CP.
  * Current OC4 stay-on-Checkout is known parity debt — NOT used as authority.
  * Product/Cart stay-page error modal must remain unchanged.
+ *
+ * Deterministic definitive mechanisms (local):
+ *   - Option A: POST /auth/login → HTTP 401 → cp_auth_failed (no order POST)
+ *   - Option B: login OK + POST /orders → HTTP 422 → cp_rejected
+ *
+ * Ambiguous CP outcome (separate safety case — NOT a definitive broken-CP test):
+ *   - transport timeout / outcome_unknown / ambiguous_blocked
+ *   - Remote manual `__broken_cp__` host is AMBIGUOUS CP TEST only
+ *     (remote order 2056: cp_create_outcome_unknown).
  *
  * Run: php tests/phase11_5c3_broken_cp_check.php
  */
@@ -394,7 +403,7 @@ function mtuc115c3cp_runCase($label, $customerId, $process2)
 }
 
 // ---------------------------------------------------------------------------
-// Four mandatory cases
+// Four mandatory cases — Option B (login OK + order 422 → cp_rejected)
 // ---------------------------------------------------------------------------
 mtuc115c3cp_runCase('P1 logged', 91, false);
 mtuc115c3cp_runCase('P1 guest', 0, false);
@@ -402,7 +411,56 @@ mtuc115c3cp_runCase('P2 logged', 92, true);
 mtuc115c3cp_runCase('P2 guest', 0, true);
 
 // ---------------------------------------------------------------------------
-// Ambiguous CP must NOT Thank You as definitive CP failure
+// Option A — invalid authentication (login 401, zero order POSTs)
+// Preferred remote definitive mechanism when CP returns stable 401 JSON.
+// ---------------------------------------------------------------------------
+$transportAuth = new Phase4FakeCpHttpTransport();
+$transportAuth->enqueueJson(401, array('success' => false, 'error' => 'invalid_credentials'));
+$stackAuth = Phase9TestHarness::stack($transportAuth);
+$authOrder = 206500;
+Phase9TestHarness::seedBankOrder($stackAuth['memoryDb'], $authOrder, $stackAuth['storeId']);
+$authSubmit = $stackAuth['submission']->submit(Phase9TestHarness::submitInput($authOrder, $stackAuth['storeId']));
+mtuc115c3cp_assert(empty($authSubmit['success']), 'Option A auth: overall failure');
+mtuc115c3cp_assert(
+    (string) $authSubmit['error'] === MtUniCreditControlPanelErrorClass::AUTH_FAILED,
+    'Option A auth: error=cp_auth_failed'
+);
+mtuc115c3cp_assert(
+    isset($authSubmit['attempt']['state'])
+        && (string) $authSubmit['attempt']['state'] === MtUniCreditFinancingAttemptState::CP_FAILED_RETRYABLE,
+    'Option A auth: attempt_state=cp_failed_retryable'
+);
+mtuc115c3cp_assert(empty($authSubmit['ambiguous_blocked']), 'Option A auth: not ambiguous');
+mtuc115c3cp_assert(
+    (int) (isset($authSubmit['control_panel_order_id']) ? $authSubmit['control_panel_order_id'] : 0) === 0,
+    'Option A auth: CP order id = 0'
+);
+mtuc115c3cp_assert(
+    Phase7TestHarness::countOrderPosts($transportAuth) === 0,
+    'Option A auth: CP POST /orders count = 0 (fail before create)'
+);
+mtuc115c3cp_assert(
+    (string) $authSubmit['bank_status'] === MtUniCreditBankStatus::SEND_FAILED_CP,
+    'Option A auth: bank_send_failed_cp'
+);
+mtuc115c3cp_assert(
+    MtUniCreditFinancingTerminalNavigationSupport::isDefinitiveCheckoutCpFailureTerminal($authSubmit),
+    'Option A auth: definitive Checkout CP terminal detector'
+);
+$sessionAuth = array('order_id' => $authOrder);
+$jsonAuth = mtuc115c3cp_confirmJson($authSubmit, $authOrder, $sessionAuth);
+mtuc115c3cp_assert(
+    !empty($jsonAuth['redirect']) && strpos((string) $jsonAuth['redirect'], 'checkout/success') !== false,
+    'Option A auth: redirect checkout/success'
+);
+mtuc115c3cp_assert(
+    (string) $jsonAuth['step'] === MtUniCreditFinancingTerminalNavigationSupport::STEP_CP_TERMINAL_FAILED,
+    'Option A auth: step cp_terminal_failed'
+);
+
+// ---------------------------------------------------------------------------
+// Ambiguous CP OUTCOME — must NOT Thank You as definitive CP failure
+// (Remote `__broken_cp__` / order 2056 class: cp_create_outcome_unknown)
 // ---------------------------------------------------------------------------
 $transportAmb = new Phase4FakeCpHttpTransport();
 $payloadsAmb = Phase7TestHarness::loginAndOrderSuccessPayloads();
@@ -415,12 +473,45 @@ $ambSubmit = $stackAmb['submission']->submit(Phase9TestHarness::submitInput($amb
 mtuc115c3cp_assert(empty($ambSubmit['success']), 'ambiguous: failure');
 mtuc115c3cp_assert(!empty($ambSubmit['ambiguous_blocked']), 'ambiguous: ambiguous_blocked');
 mtuc115c3cp_assert(
+    isset($ambSubmit['attempt']['state'])
+        && (string) $ambSubmit['attempt']['state'] === MtUniCreditFinancingAttemptState::CP_OUTCOME_UNKNOWN,
+    'ambiguous: attempt_state=cp_outcome_unknown'
+);
+mtuc115c3cp_assert(
+    (string) (isset($ambSubmit['bank_status']) ? $ambSubmit['bank_status'] : '')
+        !== MtUniCreditBankStatus::SEND_FAILED_CP,
+    'ambiguous: bank status NOT bank_send_failed_cp'
+);
+mtuc115c3cp_assert(
     !MtUniCreditFinancingTerminalNavigationSupport::isDefinitiveCheckoutCpFailureTerminal($ambSubmit),
     'ambiguous: NOT definitive Checkout CP Thank You'
 );
 $sessionAmb = array('order_id' => $ambOrder);
 $jsonAmb = mtuc115c3cp_confirmJson($ambSubmit, $ambOrder, $sessionAmb);
 mtuc115c3cp_assert(empty($jsonAmb['redirect']), 'ambiguous: stay Checkout (no Thank You redirect)');
+
+// Remote-shaped fixture (order 2056 class) — controller-time ambiguous result.
+$remoteAmbiguousShape = array(
+    'success' => false,
+    'order_id' => 2056,
+    'cp_succeeded' => false,
+    'control_panel_order_id' => 0,
+    'ambiguous_blocked' => true,
+    'error' => MtUniCreditControlPanelErrorClass::TRANSPORT_FAILED,
+    'bank_status' => '',
+    'apply_native_order_status' => false,
+    'attempt' => array(
+        'state' => MtUniCreditFinancingAttemptState::CP_OUTCOME_UNKNOWN,
+        'last_error_class' => MtUniCreditControlPanelErrorClass::TRANSPORT_FAILED,
+    ),
+);
+mtuc115c3cp_assert(
+    !MtUniCreditFinancingTerminalNavigationSupport::isDefinitiveCheckoutCpFailureTerminal($remoteAmbiguousShape),
+    'remote 2056 shape: detector false (ambiguous safety preserved)'
+);
+$sessionRemoteAmb = array('order_id' => 2056);
+$jsonRemoteAmb = mtuc115c3cp_confirmJson($remoteAmbiguousShape, 2056, $sessionRemoteAmb);
+mtuc115c3cp_assert(empty($jsonRemoteAmb['redirect']), 'remote 2056 shape: no Thank You redirect');
 
 // ---------------------------------------------------------------------------
 // Product / Cart isolation — stay error modal
