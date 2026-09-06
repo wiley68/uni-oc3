@@ -230,11 +230,98 @@ final class MtUniCreditControlPanelClient
         if ($shopOrderId === '' || $statusId === '') {
             throw new MtUniCreditCpInvalidPayloadException('Control Panel order status fields are incomplete.');
         }
-        $this->authenticatedRequest('PATCH', '/orders/status', array(
+        $response = $this->authenticatedRequest('PATCH', '/orders/status', array(
             'order_id' => $shopOrderId,
             'status' => $statusLabel,
             'status_id' => $statusId,
         ));
+        $this->assertStatusPatchConfirmed($response, $shopOrderId, $statusLabel, $statusId);
+    }
+
+    /**
+     * CP PATCH /orders/status success contract (ShopAuthController::updateOrderStatus):
+     * {
+     *   "success": true,
+     *   "message": "...",
+     *   "data": {
+     *     "id": <int>,
+     *     "order_id": <string>,
+     *     "shop_id": <int>,
+     *     "status": <string>,
+     *     "status_id": <string|null>,
+     *     "updated_at": "Y-m-d H:i:s"
+     *   }
+     * }
+     *
+     * This client always submits status_id; confirmation requires exact echo of
+     * order_id, status, and status_id. Do not reconstruct missing fields from the request.
+     *
+     * @param array<string, mixed> $response
+     * @param string $shopOrderId
+     * @param string $statusLabel
+     * @param string $statusId
+     * @return void
+     */
+    private function assertStatusPatchConfirmed(array $response, $shopOrderId, $statusLabel, $statusId)
+    {
+        if (!isset($response['data']) || !is_array($response['data'])) {
+            throw new MtUniCreditCpInvalidPayloadException(
+                'The Control Panel status response has no valid data object.'
+            );
+        }
+        if ($this->isListArray($response['data'])) {
+            throw new MtUniCreditCpInvalidPayloadException(
+                'The Control Panel status response data object is invalid.'
+            );
+        }
+
+        $data = $response['data'];
+        if (!isset($data['order_id']) || !is_string($data['order_id']) || $data['order_id'] === '') {
+            throw new MtUniCreditCpInvalidPayloadException(
+                'The Control Panel status response does not confirm order identity.'
+            );
+        }
+        if ($data['order_id'] !== $shopOrderId) {
+            throw new MtUniCreditCpInvalidPayloadException(
+                'The Control Panel status response order identity does not match the request.'
+            );
+        }
+
+        if (!isset($data['status']) || !is_string($data['status']) || $data['status'] === '') {
+            throw new MtUniCreditCpInvalidPayloadException(
+                'The Control Panel status response does not confirm status.'
+            );
+        }
+        if ($data['status'] !== $statusLabel) {
+            throw new MtUniCreditCpInvalidPayloadException(
+                'The Control Panel status response status does not match the request.'
+            );
+        }
+
+        // Request always includes status_id; CP success payload always includes status_id.
+        if (!array_key_exists('status_id', $data) || !is_string($data['status_id']) || $data['status_id'] === '') {
+            throw new MtUniCreditCpInvalidPayloadException(
+                'The Control Panel status response does not confirm status_id.'
+            );
+        }
+        if ($data['status_id'] !== $statusId) {
+            throw new MtUniCreditCpInvalidPayloadException(
+                'The Control Panel status response status_id does not match the request.'
+            );
+        }
+    }
+
+    /**
+     * @param array<mixed> $value
+     * @return bool
+     */
+    private function isListArray(array $value)
+    {
+        if ($value === array()) {
+            return false;
+        }
+
+        return array_keys($value) === range(0, count($value) - 1);
     }
 
     /**

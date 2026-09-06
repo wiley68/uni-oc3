@@ -81,6 +81,7 @@ final class Phase4FakeCpHttpTransport implements MtUniCreditCpHttpTransport
         }
 
         // Auto-respond to bank status sync when tests only queued login/create.
+        // Echo submitted identity/state so PATCH confirmation validation can pass.
         if (strtoupper((string) $method) === 'PATCH' && strpos((string) $url, '/orders/status') !== false) {
             if ($this->failStatusPatch) {
                 return new MtUniCreditCpHttpResponse(500, json_encode(array(
@@ -89,9 +90,21 @@ final class Phase4FakeCpHttpTransport implements MtUniCreditCpHttpTransport
                 ), JSON_THROW_ON_ERROR));
             }
 
+            $orderId = (is_array($payload) && isset($payload['order_id'])) ? (string) $payload['order_id'] : '';
+            $status = (is_array($payload) && isset($payload['status'])) ? (string) $payload['status'] : '';
+            $statusId = (is_array($payload) && isset($payload['status_id'])) ? (string) $payload['status_id'] : '';
+
             return new MtUniCreditCpHttpResponse(200, json_encode(array(
                 'success' => true,
-                'message' => 'Статусът е обновен',
+                'message' => 'Статусът на поръчката е обновен успешно',
+                'data' => array(
+                    'id' => 1,
+                    'order_id' => $orderId,
+                    'shop_id' => 1,
+                    'status' => $status,
+                    'status_id' => $statusId,
+                    'updated_at' => '2024-01-01 00:00:00',
+                ),
             ), JSON_THROW_ON_ERROR));
         }
 
