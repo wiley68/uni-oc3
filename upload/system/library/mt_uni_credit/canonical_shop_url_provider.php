@@ -1,22 +1,23 @@
 <?php
 
 /**
- * Deterministic canonical shop URL for CP login `name` field (AUD-008-F04).
+ * Validated CP-compatible shop base identity for login `name` (AUD-008-F04).
  *
- * CP authenticates shops by exact `name` string match and later uses that value
- * as the storefront base URL for module callbacks (ShopModuleEndpointUrl).
- * Therefore identity is a parsed origin, optionally with a subdirectory path.
+ * CP stores and compares Shop.name by exact string match (no CP-side URL rewrite).
+ * Registration requires a literal `https://` prefix. This provider therefore:
+ *   - validates the configured storefront base URL against CP-compatible rules
+ *   - preserves the exact spelling (after outer trim only)
+ *   - does not collapse equivalent-looking URL forms
  */
 final class MtUniCreditCanonicalShopUrlProvider
 {
     /**
-     * Canonicalize a shop identity URL or fail closed.
+     * Validate a shop identity URL or fail closed.
      *
-     * Empty input returns empty string (caller treats as "not configured").
+     * Empty / whitespace-only input returns empty string (not configured).
      * Non-empty invalid input throws InvalidArgumentException.
      *
-     * Outer whitespace is trimmed (same policy as CP destination validation).
-     * Interior whitespace is rejected.
+     * Outer whitespace is trimmed; the remaining string is returned unchanged when valid.
      *
      * @param string $url
      * @return string
@@ -36,6 +37,11 @@ final class MtUniCreditCanonicalShopUrlProvider
             throw new InvalidArgumentException('The shop URL is malformed.');
         }
 
+        // CP StoreShopRequest / UpdateShopRequest: starts_with:https:// (literal, case-sensitive).
+        if (strpos($url, 'https://') !== 0) {
+            throw new InvalidArgumentException('The shop URL must start with https://.');
+        }
+
         if (filter_var($url, FILTER_VALIDATE_URL) === false) {
             throw new InvalidArgumentException('The shop URL is malformed.');
         }
@@ -45,9 +51,8 @@ final class MtUniCreditCanonicalShopUrlProvider
             throw new InvalidArgumentException('The shop URL is malformed.');
         }
 
-        $scheme = strtolower((string) $parts['scheme']);
-        if ($scheme !== 'https' && $scheme !== 'http') {
-            throw new InvalidArgumentException('The shop URL must use HTTP or HTTPS.');
+        if (strtolower((string) $parts['scheme']) !== 'https') {
+            throw new InvalidArgumentException('The shop URL must use HTTPS.');
         }
 
         if (isset($parts['user']) || isset($parts['pass'])) {
@@ -60,48 +65,26 @@ final class MtUniCreditCanonicalShopUrlProvider
             throw new InvalidArgumentException('The shop URL must not contain a fragment.');
         }
 
-        $host = strtolower((string) $parts['host']);
-        if ($host === '') {
-            throw new InvalidArgumentException('The shop URL hostname is invalid.');
-        }
+        self::assertTrustedHost((string) $parts['host']);
 
-        $isIp = filter_var($host, FILTER_VALIDATE_IP) !== false;
-        if ($host !== '' && $host[0] === '[') {
-            $isIp = true;
-        }
-        if (!$isIp && !preg_match('/^[a-z0-9.-]+$/', $host)) {
-            // Reject IDN/unicode hosts — no punycode conversion in this module.
-            throw new InvalidArgumentException('The shop URL hostname is invalid.');
-        }
-
-        $port = isset($parts['port']) ? (int) $parts['port'] : null;
-        if ($port !== null) {
+        if (isset($parts['port'])) {
+            $port = (int) $parts['port'];
             if ($port < 1 || $port > 65535) {
                 throw new InvalidArgumentException('The shop URL port is invalid.');
             }
-            if (($scheme === 'https' && $port === 443) || ($scheme === 'http' && $port === 80)) {
-                $port = null;
-            }
         }
 
-        $path = self::canonicalPath(isset($parts['path']) ? (string) $parts['path'] : '');
+        self::assertSafePath(isset($parts['path']) ? (string) $parts['path'] : '');
 
-        $canonical = $scheme . '://' . $host;
-        if ($port !== null) {
-            $canonical .= ':' . $port;
-        }
-        if ($path !== '') {
-            $canonical .= $path;
-        }
-
-        return $canonical;
+        // Representation-preserving: return the validated configured spelling.
+        return $url;
     }
 
     /**
      * Prefer SSL catalog URL when available (Cloudflare / proxy aware via OpenCart config).
      *
-     * Does not invent a scheme: http candidates stay http; https stay https.
-     * Preferring config_ssl over config_url selects the configured identity source.
+     * Non-empty config_ssl is validated as-is (no fallback to config_url on malformation).
+     * Empty config_ssl may use config_url, which must still satisfy HTTPS identity rules.
      *
      * @param string|null $sslUrl
      * @param string|null $plainUrl
@@ -109,51 +92,75 @@ final class MtUniCreditCanonicalShopUrlProvider
      */
     public function resolve($sslUrl, $plainUrl)
     {
-        $candidate = trim((string) ($sslUrl !== null ? $sslUrl : ''));
-        if ($candidate === '') {
-            $candidate = trim((string) ($plainUrl !== null ? $plainUrl : ''));
+        $ssl = trim((string) ($sslUrl !== null ? $sslUrl : ''));
+        if ($ssl !== '') {
+            return self::normalize($ssl);
         }
 
-        return self::normalize($candidate);
+        $plain = trim((string) ($plainUrl !== null ? $plainUrl : ''));
+
+        return self::normalize($plain);
     }
 
     /**
-     * Path policy: root `/` or empty → omitted.
-     * Non-root paths allowed for subdirectory OpenCart installs (CP callback base).
-     * Rejects dot-segments, empty segments, and trailing slash.
+     * @param string $host
+     * @return void
+     */
+    private static function assertTrustedHost($host)
+    {
+        if ($host === '') {
+            throw new InvalidArgumentException('The shop URL hostname is invalid.');
+        }
+
+        // Bracketed or bare IPv6 — rejected (CP ShopModuleEndpointUrl hostname check fails).
+        if ($host[0] === '[' || filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false) {
+            throw new InvalidArgumentException('The shop URL hostname is invalid.');
+        }
+
+        if (filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
+            return;
+        }
+
+        // ASCII DNS only — no IDN/punycode conversion.
+        if (!preg_match('/^[A-Za-z0-9.-]+$/', $host)) {
+            throw new InvalidArgumentException('The shop URL hostname is invalid.');
+        }
+    }
+
+    /**
+     * Validate path without rewriting spelling.
      *
      * @param string $path
-     * @return string
+     * @return void
      */
-    private static function canonicalPath($path)
+    private static function assertSafePath($path)
     {
         if ($path === '' || $path === '/') {
-            return '';
+            return;
         }
 
         if ($path[0] !== '/') {
             throw new InvalidArgumentException('The shop URL path is invalid.');
         }
 
-        $trimmed = $path;
-        if (substr($trimmed, -1) === '/') {
-            $trimmed = substr($trimmed, 0, -1);
-        }
-        if ($trimmed === '' || $trimmed === '/') {
-            return '';
+        if (strpos($path, '\\') !== false || strpos($path, '%') !== false) {
+            throw new InvalidArgumentException('The shop URL path is invalid.');
         }
 
-        $segments = explode('/', $trimmed);
-        // First element is empty because path starts with '/'.
+        $segments = explode('/', $path);
+        // Leading empty from initial '/'.
         if ($segments === array() || $segments[0] !== '') {
             throw new InvalidArgumentException('The shop URL path is invalid.');
         }
         array_shift($segments);
-        if ($segments === array()) {
-            return '';
-        }
 
-        foreach ($segments as $segment) {
+        $count = count($segments);
+        foreach ($segments as $index => $segment) {
+            $isTrailingEmpty = ($segment === '' && $index === ($count - 1));
+            if ($isTrailingEmpty) {
+                // Trailing slash is a literal identity component — keep, do not rewrite.
+                continue;
+            }
             if ($segment === '' || $segment === '.' || $segment === '..') {
                 throw new InvalidArgumentException('The shop URL path is invalid.');
             }
@@ -161,7 +168,5 @@ final class MtUniCreditCanonicalShopUrlProvider
                 throw new InvalidArgumentException('The shop URL path is invalid.');
             }
         }
-
-        return '/' . implode('/', $segments);
     }
 }

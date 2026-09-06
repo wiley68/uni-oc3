@@ -49,7 +49,8 @@ final class MtUniCreditControlPanelClient
         $this->credentials = $credentials;
         $this->tokens = $tokens;
         $this->transport = $transport;
-        $this->shopName = rtrim(trim((string) $shopName), '/');
+        // Shop identity is an exact CP Shop.name value — do not rtrim('/') or rewrite spelling.
+        $this->shopName = trim((string) $shopName);
         $this->storeId = (int) $storeId;
 
         $policy = $destinationPolicy instanceof MtUniCreditCpDestinationPolicy
