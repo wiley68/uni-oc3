@@ -1,5 +1,9 @@
 # UniCredit OpenCart 3.x — frozen contracts (Phase 0)
 
+> **Operational authority (current release 2.0.2):** this document plus `docs/RUNTIME_VERIFICATION.md`.
+> Historical planning narrative lives in `docs/MASTER_IMPLEMENTATION_PLAN.md` and must not override
+> the current contracts below when they have been updated for AUD-032.
+
 This document is the canonical implementation reference for later phases.
 
 It records **verified** contracts extracted from:
@@ -118,16 +122,19 @@ Do **not** copy OC4 namespaces (`Opencart\Admin\Controller\Extension\MtUniCredit
 
 ### MODULE-003 — Package identity
 
-Expected distributable:
+Expected distributable (current packaging script):
 
 ```text
-module.ocmod.zip
+CC_OpenCartv.3.x_UNI_v.2.0.2.ocmod.zip
 ├── install.xml
 └── upload/
     ├── admin/
     ├── catalog/
     └── system/
 ```
+
+Historical planning prose sometimes uses the generic name `module.ocmod.zip` for the same layout.
+The **shipped filename** for release **2.0.2** is `CC_OpenCartv.3.x_UNI_v.2.0.2.ocmod.zip`.
 
 No Composer runtime install on the shop. Do not bundle a second mail stack when OC3 Mail can satisfy Process 2.
 
@@ -406,6 +413,41 @@ Floats: `price`, `vnoska`, `gpr`, `parva`. Integers: `vnoski`, `type_client`.
 
 **Phase 7 OC3 ambiguous policy (checkout):** after `cp_outcome_unknown`, the module **does not** automatically re-POST `/orders`. Fresh resend is blocked (`cp_ambiguous_blocked`) until operator/reconciliation. This is stricter than OC4 Phase 10B recovery re-POST of the frozen payload; documented as an intentional OC3 Phase 7 safety closure for the mandatory ambiguous STOP GATE.
 
+### CP-ORDER-004 — Definitive Checkout broken-CP semantics (current release)
+
+Distinguish **definitive** authenticated CP rejection from **ambiguous** / unknown CP outcome.
+
+**Definitive CP registration failure** (local order exists; CP order does **not**):
+
+```text
+local/native order EXISTS
+CP order DOES NOT exist
+bank status: bank_send_failed_cp
+Checkout: terminal Thank You path
+customer: must NOT resend the order
+```
+
+Customer-facing Thank You (Checkout definitive CP failure):
+
+- **Title:** `Поръчката е създадена`
+- **Body:**
+
+```text
+Поръчката е създадена в магазина, но потвърждението за
+регистрацията на финансирането не беше получено.
+
+Не изпращайте поръчката повторно.
+
+Търговецът ще провери статуса на заявката.
+```
+
+Do **not** describe definitive Checkout CP failure as an ordinary customer-retryable financing submission.
+Internal attempt taxonomy may still use `cp_failed_retryable` / `cp_rejected` as machine states; that does **not** mean the Checkout UI invites a fresh customer resend for the definitive terminal Thank You path.
+
+**Ambiguous CP outcome** (`cp_outcome_unknown`, `ambiguous_blocked=true`): stay on Checkout safety path; **no** automatic fresh `POST /orders`; customer must not resubmit while outcome is unknown (see Operator recovery below).
+
+**Accepted testability exception (AUD-032):** definitive Checkout broken-CP behaviour has **LOCAL** automated evidence. Remote deterministic reproduction of a real CP definitive reject is **BLOCKED BY TESTABILITY**. That is an accepted testability exception, **not** a demonstrated functional failure. Do not claim remote PASS for this case.
+
 PATCH `/api/v1/orders/status` uses the **shop** `order_id` from create (local OC id), not the CP internal PK.
 
 ---
@@ -554,12 +596,14 @@ timestamp + "\n" + nonce + "\n" + exact_raw_body
 - HMAC-SHA256 → **lowercase hex**
 - Compare with `hash_equals`
 - Timestamp: decimal digits, window **±300** seconds
-- Nonce: **exactly 64** hex (`^[0-9a-fA-F]{64}$`); persist only `sha256(nonce)`; unique `(store_id, unicid, nonce_hash)`; retain **900** seconds
+- Nonce: **exactly 64 lowercase hexadecimal characters** (`^[0-9a-f]{64}$`); persist only `sha256(nonce)`; unique `(store_id, unicid, nonce_hash)`; retain **900** seconds
 - Verify **raw body before JSON decode**. Re-encoding JSON must not match.
 - Invalid signature **must not** consume the nonce
 - Claim nonce atomically **after** signature validation
 - Bind body `unicid` to the exact store-scoped credential
 - Valid replay of a consumed nonce → 401
+
+Operational generation/validation of inbound nonces must use **lowercase** `[0-9a-f]` only. Do not document uppercase nonce generation as permitted for current release operations (even if older regex prose used a broader hex class).
 
 ### SEC-HMAC-002 — Known vector (test secret only)
 
@@ -638,15 +682,20 @@ Do not weaken privacy because OC3 is older.
 
 ### RETENTION-001 — Windows
 
-| Data                                    | Retention                                  |
-| --------------------------------------- | ------------------------------------------ |
-| Process 2 ciphertext                    | **180** days then redact                   |
-| Leasing presentation JSON               | **183** days                               |
-| Diagnostic journal                      | **3 months**                               |
-| Inbound nonces                          | **900** seconds                            |
-| Operational attempt / order identifiers | keep unless later policy requires deletion |
+| Data                                    | Retention                                   |
+| --------------------------------------- | ------------------------------------------- |
+| Process 2 ciphertext                    | **180** days then redact                    |
+| Leasing presentation JSON               | **183** days (documented **target** policy) |
+| Diagnostic journal                      | **3 months**                                |
+| Inbound nonces                          | **900** seconds                             |
+| Operational attempt / order identifiers | keep unless later policy requires deletion  |
 
-Cleanup in bounded batches. Opportunistic plus documented cron/admin trigger.
+Cleanup in bounded batches where implemented. Opportunistic Process 2 ciphertext redaction exists in the Process 2 lifecycle path.
+
+> **Current audit note (DOC-032-03 / AUD-030):** Retention **enforcement** is under AUD-030 reconciliation.
+> Documented target policy (including 183-day leasing presentation cleanup and a complete cron/admin retention trigger)
+> and currently verified implemented cleanup **must remain distinguished** until that audit closes.
+> Do not claim the full stated retention policy is fully implemented in production code.
 
 ### RETENTION-002 — Uninstall
 
@@ -671,9 +720,9 @@ Preserve financing/audit tables by default. Remove module settings and OCMOD reg
 | ------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | Definite pre-send failure | never reached remote / local validation     | retryable with same or new attempt per rules                                                                  |
 | Definite remote rejection | CP 4xx validation, SmartUCF business reject | terminal for that frozen attempt; not a new semantic CP order with a different payload on the same `order_id` |
-| Ambiguous post-send       | timeout after send, unknown outcome         | **never** an unsafe fresh resend; replay exact frozen payload / stored redirect only                          |
+| Ambiguous post-send       | timeout after send, unknown outcome         | **never** an unsafe fresh resend; preserve `outcome_unknown` / resend block until external outcome is known   |
 
-Ambiguous outcomes must tell the customer not to resubmit.
+Ambiguous outcomes must tell the customer not to resubmit. For Checkout **definitive** CP registration failure, use the terminal Thank You semantics in **CP-ORDER-004** (not a customer-retryable prepared page).
 
 ---
 
@@ -774,14 +823,91 @@ Cart in JET uses `Document::addStyle/addScript`; product uses inline tags. UniCr
 **Quantity / amount parity**
 
 - Product financing amount = display unit with tax × quantity (server-authoritative via `MtUniCreditOc3ProductLineResolver`; never trust DOM price).
-- Cart financing amount = live merchandise total (`$this->cart->getTotal()`) with Phase 3 `MtUniCreditCartSchemeResolver` intersection (`type|kop|months`, lowest filter id).
+- Cart financing amount (historical Phase 8 wording): live merchandise total via `$this->cart->getTotal()` with Phase 3 `MtUniCreditCartSchemeResolver` intersection (`type|kop|months`, lowest filter id).
+
+> **Current audit note (DOC-032-02 / AUD-016):** Cart amount authority is under AUD-016 reconciliation.
+> Do not treat the historical `cart->getTotal()` wording as final release authority until AUD-016 closes the
+> amount-authority comparison against the native checkout grand-total / total-extension basis.
+> **DOC-032-02 remains OPEN** (may require production reconciliation).
 
 **Buy vs Submit**
 
 - Secondary product actions `add_to_cart` / `buy` never materialize an OC order.
   - `add_to_cart` → native `#button-cart`.
-  - `buy` → stash `MtUniCreditProductBuyPreference` (TTL 1800s) + native cart add + redirect checkout.
+  - `buy` → stash `MtUniCreditProductBuyPreference` (navigation-scoped; see **Product Buy preference lifecycle** below) + native cart add + redirect checkout.
 - Primary Apply/Submit materializes **one** local OC order via `model_checkout_order->addOrder`, then shared Phase 7 `MtUniCreditControlPanelOrderLifecycleService` (entry_point `product`|`cart`). Cart submit preserves the live cart (`cart_unchanged`).
+
+**Product Buy preference lifecycle (current release)**
+
+Product Buy does **not** submit financing. It stashes a checkout handoff preference only.
+
+Session shape (conceptual):
+
+```text
+mt_uni_credit_product_buy_preference:
+  scheme_key / scheme fields
+  prefer_payment
+  navigation_id
+  state = pending | active
+  created_at (TTL still applies as a safety bound; not the sole validity rule)
+
+mt_uni_credit_buy_checkout_guard:
+  bound navigation_id while the Buy Checkout visit is active
+```
+
+Semantics:
+
+```text
+Product Buy
+→ creates navigation-scoped preference (pending)
+→ does NOT submit financing
+→ exact scheme can override normal Checkout default when still valid
+→ UniCredit payment method may be preselected
+
+first matching Checkout resolve
+→ pending → active (+ checkout guard = navigation_id)
+
+same navigation guard / AJAX refresh / same-Checkout reload
+→ preference remains active
+
+missing / mismatched navigation context
+→ preference cleared / ignored
+```
+
+Relevant invalidation (non-exhaustive; follows implementation):
+
+```text
+cart / home navigation (full clear)
+product page while preference already active (clear activated; keep pending handoff)
+checkout success / successful confirm submit
+payment method changed away from UniCredit
+TTL expiry
+legacy preference without navigation_id / state
+```
+
+Do **not** treat preference as a sticky TTL-only Checkout default for later unrelated Cart→Checkout visits.
+
+**Checkout default ranking (when no valid active Buy preference)**
+
+Normal Checkout initial scheme selection:
+
+```text
+1. eligible 0% promo scheme with highest months
+2. otherwise eligible non-zero promo scheme with highest months
+3. otherwise CP default (preferred_scheme_key / presenter default)
+```
+
+Deterministic tie-break within a priority bucket:
+
+```text
+months DESC
+filter_id ASC
+kop_code ASC
+scheme_type ASC
+key ASC
+```
+
+This is **Checkout default-selection** behaviour, not the generic calculator presentation-rank / display-order rule (CALC-006).
 
 **Storefront transport**
 
@@ -844,17 +970,54 @@ Follow completed modules wherever technically possible:
 | Material            | Relative path                                                               | Notes                                          |
 | ------------------- | --------------------------------------------------------------------------- | ---------------------------------------------- |
 | SmartUCF passphrase | `secrets/smartucf-key.php`                                                  | returns `['passphrase' => …]`; never from CP   |
-| Certificate PEM     | `keys/avalon_cert.pem`                                                      | CP-synchronizable                              |
-| Private key PEM     | `keys/avalon_private_key.pem`                                               | CP-synchronizable                              |
+| Certificate PEM     | `keys/avalon_cert.pem`                                                      | CP-synchronizable when enabled                 |
+| Private key PEM     | `keys/avalon_private_key.pem`                                               | CP-synchronizable when enabled                 |
 | CP host             | `system/library/mt_uni_credit/config/environment.php` → `control_panel_url` | packaging-time switch; not shop-root `config/` |
 
 Authoritative modes: cert `0640`, key `0600`, passphrase file `0600`. Health checks: presence, path, owner/group, permissions, PEM SHA-256 — **never** secret contents.
+
+### DEPLOY-001a — Package versus deployment material (current release)
+
+**Shipped in the release ZIP:**
+
+- `upload/system/library/mt_uni_credit/secrets/smartucf-key.php` — **EMPTY placeholder only** (not a real passphrase).
+- Directory protection stubs under `keys/` / `secrets/` (for example `.htaccess` / `index.php`) as packaged by the release script.
+
+**NOT included in the release ZIP (must never be committed or ticketed):**
+
+```text
+keys/avalon_cert.pem
+keys/avalon_private_key.pem
+```
+
+Real passphrase content, live PEM material, CP secrets, and private keys must:
+
+```text
+never be committed
+never be placed in tickets
+never be included in generic support bundles
+```
+
+**Package installation** places placeholders and code under `upload/`.  
+**Deployment of real protected material** is a separate operator step into a protected runtime root.
+
+Protected-root resolution (actual code behaviour): candidates include `DIR_STORAGE/mt_uni_credit` (preferred when present) and a module-adjacent fallback derived from `DIR_SYSTEM`. `MtUniCreditBootstrap::resolveProtectedRoot()` returns the first existing candidate directory, or `null` if none exists yet. Operators create/populate the chosen protected root with real files and permissions:
+
+```text
+certificate: 0640
+private key: 0600
+passphrase file: 0600
+```
+
+Certificate synchronization from CP (when `uni_sertificat` is enabled) may refresh the local pair under that protected layout; it does not ship live PEMs in the ZIP and does not invent a new secret format.
 
 ### DEPLOY-002 — Key sources (D3 closed for Phase 0)
 
 - CP login secret: admin setting, AES-256-GCM `enc:v1:`, never re-displayed.
 - Settings encryption key (contract from OC4): HKDF-SHA256(`DB_PASSWORD`, 32 bytes, info `mt_uni_credit/settings-encryption/v1`) → AES-256-GCM `enc:v1:`. Fail closed if key material cannot be resolved. **No plaintext fallback. No predictable metadata fallback.**
 - SmartUCF passphrase: `secrets/smartucf-key.php` only.
+
+**DB_PASSWORD recovery note:** module settings encryption derives from non-empty `DB_PASSWORD` through the HKDF/AES-GCM scheme above. **Changing `DB_PASSWORD` can make existing encrypted module settings undecryptable.** There is **no** implemented automatic key-migration/rotation helper in this module. Safe operator action: preserve the original encryption source, or reconfigure encrypted settings through an authorized recovery process after verifying the affected deployment. Never copy decrypted secrets into logs or tickets.
 
 **Phase 2 semantic verification (verified against `reference-uni-oc4`):**
 
@@ -887,6 +1050,86 @@ keys/avalon_private_key.pem
 Resolve the directory from a module root helper. If the shop document root would expose PEM/passphrase, use a protected location (`DIR_STORAGE/mt_uni_credit/…` or equivalent) — an OC3 filesystem constraint, **not** a new secret format.
 
 Final physical protected root, ownership and permissions are **runtime/deployment verification** items. They do **not** block Phase 1.
+
+---
+
+## Operator recovery — ambiguous / unknown outcomes (DOC-032-08)
+
+Core rule:
+
+```text
+DO NOT submit the financing operation again while external outcome is unknown.
+```
+
+Applies to:
+
+```text
+CP outcome unknown
+SmartUCF outcome unknown
+delayed / missing bank-status callback
+```
+
+Read-only first procedure:
+
+```text
+1. Identify local order / attempt / operation identity (store-scoped).
+2. Collect sanitized local diagnostics and bank/CP correlation identifiers
+   (including sucfOnlineSessionID when present — see diagnostics note below).
+3. Check CP/bank state using authorized operational systems.
+4. Wait for or reconcile authenticated callback/status information where applicable.
+5. Preserve local outcome_unknown / resend block until external outcome is known.
+6. Apply only an authorized terminal reconciliation supported by confirmed external state.
+```
+
+Prohibited while unresolved:
+
+```text
+fresh customer resend
+fresh CP create
+fresh SmartUCF start for the same unresolved attempt
+manual deletion of attempt/lock/evidence
+manual status guessing
+```
+
+There is **no** dedicated production UI button that “resolves unknown” automatically. Reconciliation currently requires authorized support intervention using authenticated systems.
+
+### Callback reconciliation
+
+Inbound bank-status reconciliation must remain:
+
+```text
+authenticated
+HMAC-protected
+store-scoped
+```
+
+Bank-status callbacks **do not** arbitrarily mutate native OpenCart `order_status_id`. Do not recommend unauthenticated manual callback replay.
+
+### Diagnostics correlation — `sucfOnlineSessionID`
+
+`sucfOnlineSessionID` is an allowed **bank correlation / session identifier** for support diagnostics and bank log lookup. It is **not** a bearer token, CP secret, private key, passphrase, or customer PII. Credential/PII redaction rules remain unchanged for passwords, secrets, tokens, EGN, phones, addresses, and key material.
+
+---
+
+## Current release operator brief (2.0.2)
+
+| Item                | Value                                                                                                                                                  |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Module / CP version | `2.0.2`                                                                                                                                                |
+| Package filename    | `dist/CC_OpenCartv.3.x_UNI_v.2.0.2.ocmod.zip`                                                                                                          |
+| Install sequence    | Extension Installer → install Module + Payment surfaces → deploy protected secrets/certs → refresh OCMOD → configure UNICID/secret → refresh bank data |
+| Protected material  | Empty `smartucf-key.php` placeholder in ZIP; real passphrase/PEMs deployed outside package into protected root (`DIR_STORAGE/mt_uni_credit` preferred) |
+| Do-not-resend       | While CP/SmartUCF outcome is unknown — never fresh resubmit (see Operator recovery)                                                                    |
+| Uninstall           | Preserve financing/audit tables by default; remove settings + OCMOD registration                                                                       |
+| Runtime evidence    | See `docs/RUNTIME_VERIFICATION.md` current evidence ledger                                                                                             |
+
+Open documentation dependencies (not closed by AUD-032 safe doc fix):
+
+```text
+DOC-032-02 OPEN — Cart amount authority → AUD-016
+DOC-032-03 OPEN — Retention policy vs implementation → AUD-030
+F-033-02 OPEN IMPROVEMENT — real DB concurrency evidence → AUD-005/AUD-006
+```
 
 ---
 

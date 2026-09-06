@@ -1,5 +1,9 @@
 # Master Implementation Plan — UniCredit financing for OpenCart 3.x
 
+> **Historical planning document.** Operational authority for the shipped **2.0.2** release is
+> `docs/CONTRACTS.md` and `docs/RUNTIME_VERIFICATION.md` (including AUD-032 documentation updates).
+> Do not treat this plan’s early prose as current release instructions when contracts have been updated.
+
 ## Document status and boundaries
 
 This is an analysis and implementation plan, not implementation. It is based on baseline commit `e7787b091e5258ac0f9d105b5131bf4e58dd9c11` and the local references available on 2026-09-01. No runtime facts are inferred from the test shop.

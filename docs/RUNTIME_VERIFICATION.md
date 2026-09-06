@@ -1,5 +1,17 @@
 # Runtime verification — UniCredit OpenCart 3.x (Phase 0)
 
+> **How to read this document**
+>
+> | Kind                                  | Meaning                                                                                                                    |
+> | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+> | **Historical phase verification**     | Phase checklists and LOCAL PASS headings from build phases — useful history, not the current release verdict by themselves |
+> | **Current accepted runtime evidence** | Consolidated in **Current release evidence ledger** below                                                                  |
+> | **SUPERSEDED**                        | Older operational wording replaced by current contracts                                                                    |
+> | **ACCEPTED EXCEPTION**                | Known testability/runtime exception — not a demonstrated product defect                                                    |
+> | **PENDING / NOT DIRECTLY VERIFIED**   | Still requires remote or later audit work                                                                                  |
+>
+> An old unchecked checkbox or a historical LOCAL PASS heading must **not** be read as the current release gate.
+
 This document separates facts established from the workspace/references from facts that **must** be collected on the test server.
 
 Never send real passwords, CP secrets, private keys, passphrases, bearer tokens, or EGN in chat or tickets. For certificates/secrets request only: presence, path, owner/group, permissions, and hashes/fingerprints.
@@ -403,7 +415,15 @@ Never paste full ciphertext or plaintext Secret in tickets.
 - Duplicate nonce insert for same `(store_id, unicid, nonce_hash)` must reject replay atomically.
 - Active operation lock must reject second acquire until TTL stale recovery.
 
-These are fully covered offline in `tests/phase2_check.php`; remote verification confirms MySQL/MariaDB behaviour matches.
+**Evidence level (DOC-032-05 / AUD-033):** current automation provides **single-process behavioural coverage** using `Phase2MemoryDb` / specialized DB doubles, plus structural schema evidence. It does **not** establish real MySQL/MariaDB two-connection races, real lock interleaving, real transaction isolation behaviour, or real concurrent unique-index arbitration.
+
+```text
+F-033-02:
+OPEN IMPROVEMENT
+deferred to AUD-005/AUD-006
+```
+
+This is an evidence gap, **not** a demonstrated product defect. Remote optional checks on a shared test DB may still be useful; they are not claimed as fully covered offline.
 
 ---
 
@@ -679,7 +699,10 @@ Automated gate: `php tests/phase7_check.php` (no live network). Includes GET sid
 
 ### Definitive rejection
 
-1. [ ] If test CP can return 422 for a controlled invalid payload → `cp_failed_retryable`, not ambiguous.
+1. [ ] If test CP can return 422 for a controlled invalid payload → machine taxonomy may record `cp_failed_retryable` / `cp_rejected` with `ambiguous_blocked=false`.
+2. [ ] Checkout definitive broken-CP customer path: terminal Thank You (`Поръчката е създадена` … must not resend) with `bank_send_failed_cp` when local order exists and CP order does not (see CONTRACTS **CP-ORDER-004**). Do **not** treat this as an ordinary customer-retryable financing submission.
+
+> Historical checklist wording that equated definitive CP reject solely with “retryable” customer UX is **SUPERSEDED** by CP-ORDER-004.
 
 ### Ambiguous outcome
 
@@ -734,7 +757,7 @@ Automated gate: `php tests/phase8_check.php` (no live network).
 ### Cart page
 
 1. [ ] Eligible cart shows `#mt-uni-credit-cart-root` with `data-hide-secondary=1`.
-2. [ ] Financed amount = live `$this->cart->getTotal()` with CartSchemeResolver intersection.
+2. [ ] Financed amount check uses current Cart resolver behaviour; historical wording `$this->cart->getTotal()` is **not** final release authority until AUD-016 / DOC-032-02 closes (OPEN).
 3. [ ] Submit preserves live cart (`cart_unchanged`); fingerprint mismatch fails soft.
 4. [ ] Double submit / refresh does not create a second local order for the same operation key.
 
@@ -1050,7 +1073,8 @@ home_controller_before / home_footer_after
 
 ## Phase 11.5C.3 — Checkout broken CP: definitive vs ambiguous (local PASS)
 
-Automated gate: `php tests/phase11_5c3_broken_cp_check.php`.
+> **Document class:** historical phase verification + **ACCEPTED EXCEPTION** for remote definitive CP.
+> Automated gate: `php tests/phase11_5c3_broken_cp_check.php` (**LOCAL** behavioural evidence).
 
 ### Failed remote mechanisms (do not reuse for definitive CP-create)
 
@@ -1076,7 +1100,7 @@ app/Http/Requests/StoreOrderRequest.php
 app/Support/IdempotentOrderCreator.php
 ```
 
-Form Request validation runs before persistence ⇒ 422 ⇒ CP order delta 0. OC3 maps 4xx (not 401/409) → `cp_rejected` / `cp_failed_retryable` / `ambiguous_blocked=false`.
+Form Request validation runs before persistence ⇒ 422 ⇒ CP order delta 0. OC3 maps definitive 4xx (not 401/409) into attempt taxonomy such as `cp_rejected` / `cp_failed_retryable` with `ambiguous_blocked=false`, then Checkout terminal Thank You when the definitive Checkout CP-failure predicate matches (**CP-ORDER-004**).
 
 ### Manual matrix
 
@@ -1092,7 +1116,18 @@ Payment unavailable; no submit. Document only.
 
 **INVALID** definitive CP test (see above). Temporary `checkout.pre_submit_trace` confirms `prepare_confirm` + `prepare_error=order_already_processed`.
 
-### Definitive remote CP failure — testability status
+### Definitive Checkout broken CP — evidence status
+
+```text
+Definitive Checkout broken CP:
+LOCAL behavioral evidence exists.
+
+Remote deterministic reproduction:
+BLOCKED BY TESTABILITY.
+
+This is an accepted testability exception,
+NOT a demonstrated functional failure.
+```
 
 ```text
 CHECKOUT DEFINITIVE BROKEN CP REMOTE ACCEPTANCE:
@@ -1107,9 +1142,37 @@ remote real CP definitive reject = not reproducible
 without modifying CP or shared test infrastructure
 ```
 
-This is **not** a functional module failure. Do **not** invent production workarounds
+Do **not** claim remote PASS. Do **not** invent production workarounds
 (`__broken_cp__`, wrong Secret, Admin order mutation) — those are classified above.
 
 A coordinated CP-side test hook may be revisited only when the real CP development
 repository is intentionally opened for that work. Local `uni.avalonbg.com` is a
 **read-only reference copy** and must not be modified from this workspace.
+
+---
+
+## Current release evidence ledger (AUD-032)
+
+Classifications: **VERIFIED** (local and/or accepted remote), **ACCEPTED EXCEPTION**, **PENDING / NOT DIRECTLY VERIFIED**, **SUPERSEDED** (see contracts).
+
+| ID  | Topic                                                     | Classification                                                                           |
+| --- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| R1  | Product P1/P2                                             | VERIFIED (local + accepted remote product flows where recorded)                          |
+| R2  | Cart P1/P2                                                | VERIFIED (local + accepted remote cart flows where recorded)                             |
+| R3  | Checkout normal P1/P2 + broken SmartUCF                   | VERIFIED (local; remote per phase notes)                                                 |
+| R4  | Checkout ambiguous CP safety                              | VERIFIED (local + remote `__broken_cp__` ambiguous class)                                |
+| R5  | Native order visibility/finalization                      | VERIFIED where phase notes record it                                                     |
+| R6  | Product Buy exact selection + UniCredit preselect         | VERIFIED (local; remote Product Buy where recorded)                                      |
+| R7  | Normal Checkout default ranking (0% → promo → CP default) | VERIFIED (local); remote may still exercise ranking after Buy preference consumption fix |
+| R8  | P1 mail financing summary                                 | VERIFIED (local; remote mail parity where recorded)                                      |
+| R9  | `sucfOnlineSessionID` visibility in SmartUCF debug log    | VERIFIED (local redactor parity; operational support identifier — not a credential)      |
+| R10 | Journal / default storefront behaviour                    | VERIFIED (local asset/OCMOD patterns); remote theme matrix PENDING where not recorded    |
+
+Coverage that is **not** claimed here:
+
+```text
+automated full browser E2E suite
+real SMTP delivery proof as a release gate
+real MySQL/MariaDB multi-connection concurrency (F-033-02 → AUD-005/AUD-006)
+remote definitive Checkout broken-CP reject (ACCEPTED EXCEPTION)
+```
