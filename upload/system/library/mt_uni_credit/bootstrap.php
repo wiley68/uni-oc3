@@ -27,6 +27,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'shop_configuration_snapshot_valida
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'shop_cache_repository.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'shop_snapshot_sanitizer.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'smartucf_credentials_repository.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'shop_cache_persistence_lock.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'shop_cache_persistence.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'shop_configuration_cache.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'inbound_api_exception.php';
@@ -225,7 +226,8 @@ final class MtUniCreditBootstrap
         return new MtUniCreditShopCachePersistence(
             new MtUniCreditShopCacheRepository($db),
             new MtUniCreditShopConfigurationSnapshotValidator(),
-            self::smartucfCredentialsRepositoryFromDb($db)
+            self::smartucfCredentialsRepositoryFromDb($db),
+            new MtUniCreditShopCachePersistenceLock($db)
         );
     }
 

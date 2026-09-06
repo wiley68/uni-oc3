@@ -20,4 +20,10 @@ final class MtUniCreditSecurityConstants
     const CLEANUP_DEFAULT_BATCH_SIZE = 100;
 
     const SHOP_CACHE_TTL_SECONDS = 86400;
+
+    /**
+     * Bounded wait for shop_cache credential+cache advisory lock (GET_LOCK timeout).
+     * Short persistence critical section; do not block a PHP worker indefinitely.
+     */
+    const SHOP_CACHE_PERSISTENCE_LOCK_TIMEOUT_SECONDS = 5;
 }

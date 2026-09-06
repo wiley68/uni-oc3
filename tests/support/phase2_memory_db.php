@@ -65,22 +65,76 @@ final class Phase2MemoryDb
     /** @var string */
     private $prefix = 'oc_';
 
+    /** @var string Unique connection id for advisory-lock ownership simulation. */
+    private $connectionId;
+
+    /**
+     * @var array<string, string> lock name => connectionId
+     */
+    private static $advisoryLocks = array();
+
+    public function __construct()
+    {
+        $this->connectionId = uniqid('phase2db_', true);
+    }
+
+    /**
+     * Second "DB connection" sharing table storage with this instance.
+     * Simulates two PHP/MySQL connections against the same schema.
+     *
+     * @return Phase2MemoryDb
+     */
+    public function newSharedConnection()
+    {
+        $peer = new Phase2MemoryDb();
+        $peer->bindSharedStorageFrom($this);
+
+        return $peer;
+    }
+
+    /**
+     * @param Phase2MemoryDb $primary
+     * @return void
+     */
+    private function bindSharedStorageFrom(Phase2MemoryDb $primary)
+    {
+        $this->settings = &$primary->settings;
+        $this->settingCodes = &$primary->settingCodes;
+        $this->apiNonces = &$primary->apiNonces;
+        $this->operationLocks = &$primary->operationLocks;
+        $this->operationOrderClaims = &$primary->operationOrderClaims;
+        $this->shopCache = &$primary->shopCache;
+        $this->zoneToGeoZone = &$primary->zoneToGeoZone;
+        $this->orders = &$primary->orders;
+        $this->orderBankStatus = &$primary->orderBankStatus;
+        $this->diagnosticLogs = &$primary->diagnosticLogs;
+        $this->financingAttempts = &$primary->financingAttempts;
+        $this->nextNonceId = &$primary->nextNonceId;
+        $this->nextLockId = &$primary->nextLockId;
+        $this->nextOperationOrderClaimId = &$primary->nextOperationOrderClaimId;
+        $this->nextShopCacheId = &$primary->nextShopCacheId;
+        $this->nextBankStatusId = &$primary->nextBankStatusId;
+        $this->nextDiagnosticLogId = &$primary->nextDiagnosticLogId;
+        $this->nextFinancingAttemptId = &$primary->nextFinancingAttemptId;
+    }
+
     /**
      * @return void
      */
     public function reset()
     {
-        $this->settings = array();
-        $this->settingCodes = array();
-        $this->apiNonces = array();
-        $this->operationLocks = array();
-        $this->operationOrderClaims = array();
-        $this->shopCache = array();
-        $this->zoneToGeoZone = array();
-        $this->orders = array();
-        $this->orderBankStatus = array();
-        $this->diagnosticLogs = array();
-        $this->financingAttempts = array();
+        // Clear in place so newSharedConnection peers keep the same array identity.
+        $this->clearAssociativeStore($this->settings);
+        $this->clearAssociativeStore($this->settingCodes);
+        $this->clearAssociativeStore($this->apiNonces);
+        $this->clearAssociativeStore($this->operationLocks);
+        $this->clearAssociativeStore($this->operationOrderClaims);
+        $this->clearAssociativeStore($this->shopCache);
+        $this->clearAssociativeStore($this->zoneToGeoZone);
+        $this->clearAssociativeStore($this->orders);
+        $this->clearAssociativeStore($this->orderBankStatus);
+        $this->clearAssociativeStore($this->diagnosticLogs);
+        $this->clearAssociativeStore($this->financingAttempts);
         $this->affected = 0;
         $this->nextNonceId = 1;
         $this->nextLockId = 1;
@@ -89,6 +143,40 @@ final class Phase2MemoryDb
         $this->nextBankStatusId = 1;
         $this->nextDiagnosticLogId = 1;
         $this->nextFinancingAttemptId = 1;
+        $this->releaseAllAdvisoryLocksForConnection();
+    }
+
+    /**
+     * @param array<mixed> $store
+     * @return void
+     */
+    private function clearAssociativeStore(array &$store)
+    {
+        foreach (array_keys($store) as $key) {
+            unset($store[$key]);
+        }
+    }
+
+    /**
+     * @return void
+     */
+    private function releaseAllAdvisoryLocksForConnection()
+    {
+        foreach (self::$advisoryLocks as $name => $owner) {
+            if ($owner === $this->connectionId) {
+                unset(self::$advisoryLocks[$name]);
+            }
+        }
+    }
+
+    /**
+     * Test helper: drop all simulated advisory locks (all connections).
+     *
+     * @return void
+     */
+    public static function resetAdvisoryLocks()
+    {
+        self::$advisoryLocks = array();
     }
 
     /**
@@ -203,6 +291,10 @@ final class Phase2MemoryDb
 
         if (stripos($sql, 'DELETE FROM') === 0 && strpos($sql, 'setting') !== false) {
             return $this->deleteSetting($sql);
+        }
+
+        if (stripos($sql, 'SELECT') === 0 && (strpos($sql, 'GET_LOCK(') !== false || strpos($sql, 'RELEASE_LOCK(') !== false)) {
+            return $this->selectAdvisoryLock($sql);
         }
 
         if (stripos($sql, 'SELECT') === 0 && strpos($sql, 'shop_cache') !== false) {
@@ -1391,6 +1483,44 @@ final class Phase2MemoryDb
     /**
      * @return object
      */
+    /**
+     * Simulate MySQL GET_LOCK / RELEASE_LOCK (connection-owned, no wait sleep).
+     *
+     * @param string $sql
+     * @return object
+     */
+    private function selectAdvisoryLock($sql)
+    {
+        if (preg_match("/GET_LOCK\\('((?:\\\\'|[^'])*)'\\s*,\\s*(\\d+)\\)/i", $sql, $match)) {
+            $name = stripcslashes($match[1]);
+            // Timeout is accepted for API parity; memory DB does not sleep.
+            unset($match[2]);
+
+            if (isset(self::$advisoryLocks[$name]) && self::$advisoryLocks[$name] !== $this->connectionId) {
+                return $this->singleRow(array('mtuc_lock' => 0));
+            }
+
+            self::$advisoryLocks[$name] = $this->connectionId;
+
+            return $this->singleRow(array('mtuc_lock' => 1));
+        }
+
+        if (preg_match("/RELEASE_LOCK\\('((?:\\\\'|[^'])*)'\\)/i", $sql, $match)) {
+            $name = stripcslashes($match[1]);
+            if (!isset(self::$advisoryLocks[$name])) {
+                return $this->singleRow(array('mtuc_lock' => null));
+            }
+            if (self::$advisoryLocks[$name] !== $this->connectionId) {
+                return $this->singleRow(array('mtuc_lock' => 0));
+            }
+            unset(self::$advisoryLocks[$name]);
+
+            return $this->singleRow(array('mtuc_lock' => 1));
+        }
+
+        return $this->singleRow(array('mtuc_lock' => null));
+    }
+
     private function emptyResult()
     {
         return (object) array('num_rows' => 0, 'row' => array(), 'rows' => array());
