@@ -16,12 +16,16 @@ final class MtUniCreditCertificateLocalStore
     /** @var MtUniCreditFileModeEnforcer */
     private $modes;
 
+    /** @var callable|null function(string $path): bool */
+    private $unlinkFn;
+
     /**
      * @param MtUniCreditCertificateLocalPaths|null $paths
      * @param MtUniCreditCertificatePairValidator|null $validator
      * @param MtUniCreditFileModeEnforcer|null $modes
+     * @param callable|null $unlinkFn Optional unlink seam for custody cleanup tests
      */
-    public function __construct($paths = null, $validator = null, $modes = null)
+    public function __construct($paths = null, $validator = null, $modes = null, $unlinkFn = null)
     {
         $this->paths = $paths instanceof MtUniCreditCertificateLocalPaths
             ? $paths
@@ -32,6 +36,7 @@ final class MtUniCreditCertificateLocalStore
         $this->modes = $modes instanceof MtUniCreditFileModeEnforcer
             ? $modes
             : new MtUniCreditFileModeEnforcer();
+        $this->unlinkFn = is_callable($unlinkFn) ? $unlinkFn : null;
     }
 
     public function keysDirectory()
@@ -162,6 +167,7 @@ final class MtUniCreditCertificateLocalStore
         $hadCert = is_file($certPath);
         $hadKey = is_file($keyPath);
         $published = false;
+        $failure = null;
 
         try {
             if ($hadCert && !@copy($certPath, $backupCert)) {
@@ -224,24 +230,42 @@ final class MtUniCreditCertificateLocalStore
             $this->restore($backupCert, $certPath, $hadCert, MtUniCreditFileModeEnforcer::MODE_CERTIFICATE);
             $this->restore($backupKey, $keyPath, $hadKey, MtUniCreditFileModeEnforcer::MODE_PRIVATE_KEY);
             if ($exception instanceof MtUniCreditCertificateSyncException) {
-                throw $exception;
+                $failure = $exception;
+            } else {
+                $failure = new MtUniCreditCertificateSyncException(
+                    'Certificate pair replacement failed.',
+                    MtUniCreditCertificateSyncException::REASON_LOCAL_FS,
+                    $exception
+                );
             }
-            throw new MtUniCreditCertificateSyncException(
-                'Certificate pair replacement failed.',
-                MtUniCreditCertificateSyncException::REASON_LOCAL_FS,
-                $exception
-            );
         } finally {
-            $this->cleanupStagingArtifacts(
-                array(
-                    $stageKey => MtUniCreditFileModeEnforcer::MODE_PRIVATE_KEY,
-                    $backupKey => MtUniCreditFileModeEnforcer::MODE_PRIVATE_KEY,
-                    $stageCert => MtUniCreditFileModeEnforcer::MODE_CERTIFICATE,
-                    $backupCert => MtUniCreditFileModeEnforcer::MODE_CERTIFICATE,
-                ),
-                $incoming,
-                $published
-            );
+            try {
+                $this->cleanupStagingArtifacts(
+                    array(
+                        $stageKey => MtUniCreditFileModeEnforcer::MODE_PRIVATE_KEY,
+                        $backupKey => MtUniCreditFileModeEnforcer::MODE_PRIVATE_KEY,
+                        $stageCert => MtUniCreditFileModeEnforcer::MODE_CERTIFICATE,
+                        $backupCert => MtUniCreditFileModeEnforcer::MODE_CERTIFICATE,
+                    ),
+                    $incoming,
+                    $published
+                );
+            } catch (Throwable $cleanupException) {
+                // Insecure residue is a custody failure even after successful publication.
+                if ($cleanupException instanceof MtUniCreditCertificateSyncException) {
+                    $failure = $cleanupException;
+                } else {
+                    $failure = new MtUniCreditCertificateSyncException(
+                        'Sensitive certificate staging residue could not be secured.',
+                        MtUniCreditCertificateSyncException::REASON_LOCAL_FS,
+                        $cleanupException
+                    );
+                }
+            }
+        }
+
+        if ($failure !== null) {
+            throw $failure;
         }
     }
 
@@ -381,6 +405,9 @@ final class MtUniCreditCertificateLocalStore
     /**
      * Protect then remove staging residue. Does not corrupt an already-published active pair.
      *
+     * Invariant: if a sensitive artifact cannot be deleted, it must remain within the allowed
+     * mode mask, otherwise cleanup surfaces REASON_LOCAL_FS (never silent broad residue).
+     *
      * @param array<string, int> $pathsToModes
      * @param string $incomingDir
      * @param bool $published
@@ -388,21 +415,30 @@ final class MtUniCreditCertificateLocalStore
      */
     private function cleanupStagingArtifacts(array $pathsToModes, $incomingDir, $published)
     {
+        $unsecuredResidue = false;
+
         foreach ($pathsToModes as $path => $mode) {
             if (!is_file($path)) {
                 continue;
             }
+
+            $allowedMode = (int) $mode;
             try {
-                $this->modes->applyAndVerify($path, (int) $mode);
+                $this->modes->applyAndVerify($path, $allowedMode);
             } catch (Throwable $ignored) {
-                // Still attempt unlink; residue may remain but we tried to tighten first.
+                // Deletion may still remove the artifact; secure-mode retry happens if unlink fails.
             }
-            @unlink($path);
-            if (is_file($path)) {
-                // Residue remains — must stay mode-protected for private-key paths.
-                try {
-                    $this->modes->applyAndVerify($path, (int) $mode);
-                } catch (Throwable $ignored) {
+
+            if ($this->unlinkPath($path) || !is_file($path)) {
+                continue;
+            }
+
+            // Residue remains — must be verified within allowed mode (e.g. private key <=0600).
+            try {
+                $this->modes->applyAndVerify($path, $allowedMode);
+            } catch (Throwable $ignored) {
+                if (!$this->isWithinAllowedMode($path, $allowedMode)) {
+                    $unsecuredResidue = true;
                 }
             }
         }
@@ -411,11 +447,54 @@ final class MtUniCreditCertificateLocalStore
             try {
                 $this->modes->applyAndVerify($incomingDir, MtUniCreditFileModeEnforcer::MODE_STAGING_DIR);
             } catch (Throwable $ignored) {
+                // Protected retention of staging dir is preferred over weakening residue modes.
             }
             @rmdir($incomingDir);
         }
 
-        // Publication success is independent of cleanup; do not throw here and undo auth state.
+        // $published is retained for call-site clarity; active pair is never rolled back here.
         unset($published);
+
+        if ($unsecuredResidue) {
+            throw new MtUniCreditCertificateSyncException(
+                'Sensitive certificate staging residue could not be secured.',
+                MtUniCreditCertificateSyncException::REASON_LOCAL_FS
+            );
+        }
+    }
+
+    /**
+     * @param string $path
+     * @param int $allowedMode
+     * @return bool
+     */
+    private function isWithinAllowedMode($path, $allowedMode)
+    {
+        try {
+            $effective = $this->modes->readModeBits((string) $path);
+        } catch (Throwable $ignored) {
+            return false;
+        }
+
+        return (($effective & ~(((int) $allowedMode) & 0777)) === 0);
+    }
+
+    /**
+     * @param string $path
+     * @return bool true when the path is gone after the attempt
+     */
+    private function unlinkPath($path)
+    {
+        if ($this->unlinkFn !== null) {
+            return (bool) call_user_func($this->unlinkFn, (string) $path);
+        }
+
+        if (!is_file($path)) {
+            return true;
+        }
+
+        @unlink($path);
+
+        return !is_file($path);
     }
 }

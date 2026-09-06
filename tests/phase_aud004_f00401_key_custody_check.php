@@ -125,23 +125,44 @@ final class Aud004ModeMap
 /**
  * @param string $protectedRoot
  * @param Aud004ModeMap $map
+ * @param callable|null $chmodFn
+ * @param callable|null $unlinkFn
  * @return MtUniCreditCertificateLocalStore
  */
-function mtucF00401_store($protectedRoot, Aud004ModeMap $map)
+function mtucF00401_store($protectedRoot, Aud004ModeMap $map, $chmodFn = null, $unlinkFn = null)
 {
     $paths = new MtUniCreditCertificateLocalPaths(function () use ($protectedRoot) {
         return $protectedRoot;
     });
     $enforcer = new MtUniCreditFileModeEnforcer(
-        function ($path, $mode) use ($map) {
-            return $map->chmod($path, $mode);
-        },
+        is_callable($chmodFn)
+            ? $chmodFn
+            : function ($path, $mode) use ($map) {
+                return $map->chmod($path, $mode);
+            },
         function ($path) use ($map) {
             return $map->fileperms($path);
         }
     );
 
-    return new MtUniCreditCertificateLocalStore($paths, null, $enforcer);
+    return new MtUniCreditCertificateLocalStore($paths, null, $enforcer, $unlinkFn);
+}
+
+/**
+ * @param string $path
+ * @param bool $allowDelete
+ * @return bool
+ */
+function mtucF00401_unlinkSeam($path, $allowDelete)
+{
+    if (!$allowDelete) {
+        return false;
+    }
+    if (is_file($path)) {
+        @unlink($path);
+    }
+
+    return !is_file($path);
 }
 
 /**
@@ -282,6 +303,7 @@ $mapA->seed($storeA->certificatePath(), 0640);
 $mapA->seed($storeA->privateKeyPath(), 0600);
 $mapA->failChmod['private-key-backup-'] = true;
 $beforeKeyA = hash('sha256', (string) file_get_contents($storeA->privateKeyPath()));
+$beforeCertA = hash('sha256', (string) file_get_contents($storeA->certificatePath()));
 $threwA = false;
 try {
     $storeA->replacePair($certPem, $keyPem, array(), $passphrase);
@@ -294,9 +316,11 @@ mtucF00401_assert(
     'A: old active private key preserved'
 );
 mtucF00401_assert(
-    hash('sha256', (string) file_get_contents($storeA->certificatePath())) === hash('sha256', $certPem),
+    hash('sha256', (string) file_get_contents($storeA->certificatePath())) === $beforeCertA,
     'A: old active certificate preserved'
 );
+mtucF00401_assert(($mapA->fileperms($storeA->privateKeyPath()) & 0777) === 0600, 'A: final private-key mode 0600');
+mtucF00401_assert(($mapA->fileperms($storeA->certificatePath()) & 0777) === 0640, 'A: final certificate mode 0640');
 
 // ---------------------------------------------------------------------------
 // B. Staged private-key chmod failure
@@ -338,6 +362,7 @@ $storeB = new MtUniCreditCertificateLocalStore(
     $enforcerB
 );
 $beforeKeyB = hash('sha256', (string) file_get_contents($storeB->privateKeyPath()));
+$beforeCertB = hash('sha256', (string) file_get_contents($storeB->certificatePath()));
 $threwB = false;
 try {
     $storeB->replacePair($certPem, $keyPem, array(), $passphrase);
@@ -347,8 +372,14 @@ try {
 mtucF00401_assert($threwB, 'B: staged private-key chmod failure aborts');
 mtucF00401_assert(
     hash('sha256', (string) file_get_contents($storeB->privateKeyPath())) === $beforeKeyB,
-    'B: old active pair preserved'
+    'B: old active private key preserved'
 );
+mtucF00401_assert(
+    hash('sha256', (string) file_get_contents($storeB->certificatePath())) === $beforeCertB,
+    'B: old active certificate preserved'
+);
+mtucF00401_assert(($mapB2->fileperms($storeB->privateKeyPath()) & 0777) === 0600, 'B: final private-key mode 0600');
+mtucF00401_assert(($mapB2->fileperms($storeB->certificatePath()) & 0777) === 0640, 'B: final certificate mode 0640');
 
 // ---------------------------------------------------------------------------
 // C. Certificate chmod failure (staged cert)
@@ -417,6 +448,8 @@ $storeD = new MtUniCreditCertificateLocalStore($pathsD, null, $enforcerD);
 mtucF00401_seedActivePair($storeD, $certPem, $keyPem, $passphrase);
 $mapD->seed($storeD->certificatePath(), 0640);
 $mapD->seed($storeD->privateKeyPath(), 0600);
+$beforeKeyD = hash('sha256', (string) file_get_contents($storeD->privateKeyPath()));
+$beforeCertD = hash('sha256', (string) file_get_contents($storeD->certificatePath()));
 $threwD = false;
 try {
     $storeD->replacePair($certPem, $keyPem, array(), $passphrase);
@@ -428,6 +461,16 @@ mtucF00401_assert($threwD, 'D: active private-key final mode failure aborts/roll
 $hasCertD = is_file($storeD->certificatePath());
 $hasKeyD = is_file($storeD->privateKeyPath());
 mtucF00401_assert($hasCertD === $hasKeyD, 'D: no mixed active pair after failure');
+mtucF00401_assert(
+    $hasKeyD && hash('sha256', (string) file_get_contents($storeD->privateKeyPath())) === $beforeKeyD,
+    'D: old active private key hash restored'
+);
+mtucF00401_assert(
+    $hasCertD && hash('sha256', (string) file_get_contents($storeD->certificatePath())) === $beforeCertD,
+    'D: old active certificate hash restored'
+);
+mtucF00401_assert(($mapD->fileperms($storeD->privateKeyPath()) & 0777) === 0600, 'D: final private-key mode 0600');
+mtucF00401_assert(($mapD->fileperms($storeD->certificatePath()) & 0777) === 0640, 'D: final certificate mode 0640');
 
 // ---------------------------------------------------------------------------
 // E. Existing .incoming too broad → tighten or fail
@@ -483,57 +526,238 @@ try {
 mtucF00401_assert($threwE2, 'E: fail closed when broad .incoming cannot be tightened');
 
 // ---------------------------------------------------------------------------
-// F. Cleanup failure — residue remains protected 0600
+// F. Production cleanup failure injection (unlink seam)
 // ---------------------------------------------------------------------------
-$rootF = mtucF00401_root('mtuc-f00401-f');
-$mapF = new Aud004ModeMap();
-$residueModes = array();
-$enforcerF = new MtUniCreditFileModeEnforcer(
-    function ($path, $mode) use ($mapF, &$residueModes) {
-        $ok = $mapF->chmod($path, $mode);
-        $norm = str_replace('\\', '/', $path);
-        if (strpos($norm, 'private-key') !== false) {
-            $residueModes[$norm] = $mapF->modes[$norm];
+
+// F-A: unlink fails, tightening succeeds → protected residue <=0600
+$rootFA = mtucF00401_root('mtuc-f00401-fa');
+$mapFA = new Aud004ModeMap();
+$storeFA = mtucF00401_store(
+    $rootFA,
+    $mapFA,
+    null,
+    function ($path) {
+        $norm = str_replace('\\', '/', (string) $path);
+        if (strpos($norm, 'private-key-backup-') !== false) {
+            return mtucF00401_unlinkSeam($path, false);
         }
 
-        return $ok;
-    },
-    function ($path) use ($mapF) {
-        return $mapF->fileperms($path);
+        return mtucF00401_unlinkSeam($path, true);
     }
 );
-$storeF = new MtUniCreditCertificateLocalStore(
-    new MtUniCreditCertificateLocalPaths(function () use ($rootF) {
-        return $rootF;
-    }),
-    null,
-    $enforcerF
+mtucF00401_seedActivePair($storeFA, $certPem, $keyPem, $passphrase);
+$mapFA->seed($storeFA->certificatePath(), 0640);
+$mapFA->seed($storeFA->privateKeyPath(), 0600);
+$activeCertBeforeFA = hash('sha256', $certPem);
+$activeKeyBeforeFA = hash('sha256', $keyPem);
+$threwFA = false;
+try {
+    $storeFA->replacePair($certPem, $keyPem, array('ssl_revision' => 'fa'), $passphrase);
+} catch (MtUniCreditCertificateSyncException $e) {
+    $threwFA = true;
+}
+mtucF00401_assert(!$threwFA, 'F-A: unlink fail + tighten success does not throw');
+$incomingFA = $storeFA->keysDirectory() . DIRECTORY_SEPARATOR . '.incoming';
+$backupResidueFA = glob($incomingFA . DIRECTORY_SEPARATOR . 'private-key-backup-*.pem');
+mtucF00401_assert(is_array($backupResidueFA) && count($backupResidueFA) === 1, 'F-A: private-key backup residue remains');
+$residueFA = $backupResidueFA[0];
+mtucF00401_assert(($mapFA->fileperms($residueFA) & 0777) === 0600, 'F-A: residue mode 0600');
+mtucF00401_assert(is_dir($incomingFA), 'F-A: staging dir retained with residue');
+mtucF00401_assert(($mapFA->fileperms($incomingFA) & 0777) === 0700, 'F-A: staging dir mode 0700');
+mtucF00401_assert(
+    hash('sha256', (string) file_get_contents($storeFA->certificatePath())) === $activeCertBeforeFA,
+    'F-A: active certificate hash intact'
 );
-mtucF00401_seedActivePair($storeF, $certPem, $keyPem, $passphrase);
-$mapF->seed($storeF->certificatePath(), 0640);
-$mapF->seed($storeF->privateKeyPath(), 0600);
+mtucF00401_assert(
+    hash('sha256', (string) file_get_contents($storeFA->privateKeyPath())) === $activeKeyBeforeFA,
+    'F-A: active private-key hash intact'
+);
+mtucF00401_assert(($mapFA->fileperms($storeFA->privateKeyPath()) & 0777) === 0600, 'F-A: active key mode 0600');
+mtucF00401_assert(($mapFA->fileperms($storeFA->certificatePath()) & 0777) === 0640, 'F-A: active cert mode 0640');
 
-// Monkey-patch: after successful publish, leave a backup file undeleted by making unlink fail via holding open?
-// Instead intercept by running replacePair then manually creating residual with tracked mode.
-$storeF->replacePair($certPem, $keyPem, array(), $passphrase);
-$incomingF = $storeF->keysDirectory() . DIRECTORY_SEPARATOR . '.incoming';
-@mkdir($incomingF, 0700, true);
-$residual = $incomingF . DIRECTORY_SEPARATOR . 'private-key-backup-residual.pem';
-file_put_contents($residual, "RESIDUAL-KEY\n");
-$mapF->seed($residual, 0644);
-$enfResidual = new MtUniCreditFileModeEnforcer(
-    function ($p, $m) use ($mapF) {
-        return $mapF->chmod($p, $m);
-    },
-    function ($p) use ($mapF) {
-        return $mapF->fileperms($p);
+// F-B: tightening fails, unlink succeeds → no residue
+$rootFB = mtucF00401_root('mtuc-f00401-fb');
+$mapFB = new Aud004ModeMap();
+$backupChmodFB = 0;
+$storeFB = mtucF00401_store(
+    $rootFB,
+    $mapFB,
+    function ($path, $mode) use ($mapFB, &$backupChmodFB) {
+        $norm = str_replace('\\', '/', (string) $path);
+        if (strpos($norm, 'private-key-backup-') !== false && (((int) $mode) & 0777) === 0600) {
+            $backupChmodFB++;
+            if ($backupChmodFB > 1) {
+                return false;
+            }
+        }
+
+        return $mapFB->chmod($path, $mode);
     }
 );
-$enfResidual->applyAndVerify($residual, 0600);
-mtucF00401_assert(is_file($residual), 'F: residual private-key artifact may remain');
-mtucF00401_assert(($mapF->fileperms($residual) & 0777) === 0600, 'F: residual private-key protected 0600');
-$mapF->seed($incomingF, 0700);
-mtucF00401_assert(($mapF->fileperms($incomingF) & 0777) === 0700, 'F: residual staging dir protected 0700');
+mtucF00401_seedActivePair($storeFB, $certPem, $keyPem, $passphrase);
+$mapFB->seed($storeFB->certificatePath(), 0640);
+$mapFB->seed($storeFB->privateKeyPath(), 0600);
+$threwFB = false;
+try {
+    $storeFB->replacePair($certPem, $keyPem, array('ssl_revision' => 'fb'), $passphrase);
+} catch (MtUniCreditCertificateSyncException $e) {
+    $threwFB = true;
+}
+mtucF00401_assert(!$threwFB, 'F-B: tighten fail + unlink success does not throw');
+$incomingFB = $storeFB->keysDirectory() . DIRECTORY_SEPARATOR . '.incoming';
+mtucF00401_assert(
+    !is_dir($incomingFB) || count(glob($incomingFB . DIRECTORY_SEPARATOR . 'private-key-backup-*.pem')) === 0,
+    'F-B: no private-key backup residue'
+);
+mtucF00401_assert(
+    hash('sha256', (string) file_get_contents($storeFB->privateKeyPath())) === hash('sha256', $keyPem),
+    'F-B: active private-key hash intact'
+);
+mtucF00401_assert(
+    hash('sha256', (string) file_get_contents($storeFB->certificatePath())) === hash('sha256', $certPem),
+    'F-B: active certificate hash intact'
+);
+
+// F-C: tightening fails AND unlink fails → controlled LOCAL_FS (central regression)
+$rootFC = mtucF00401_root('mtuc-f00401-fc');
+$mapFC = new Aud004ModeMap();
+$backupChmodFC = 0;
+$storeFC = mtucF00401_store(
+    $rootFC,
+    $mapFC,
+    function ($path, $mode) use ($mapFC, &$backupChmodFC) {
+        $norm = str_replace('\\', '/', (string) $path);
+        if (strpos($norm, 'private-key-backup-') !== false && (((int) $mode) & 0777) === 0600) {
+            $backupChmodFC++;
+            if ($backupChmodFC > 1) {
+                // Simulate cleanup being unable to keep/restore secure bits (residue goes broad).
+                $mapFC->seed($path, 0644);
+
+                return false;
+            }
+        }
+
+        return $mapFC->chmod($path, $mode);
+    },
+    function ($path) {
+        $norm = str_replace('\\', '/', (string) $path);
+        if (strpos($norm, 'private-key-backup-') !== false) {
+            return mtucF00401_unlinkSeam($path, false);
+        }
+
+        return mtucF00401_unlinkSeam($path, true);
+    }
+);
+mtucF00401_seedActivePair($storeFC, $certPem, $keyPem, $passphrase);
+$mapFC->seed($storeFC->certificatePath(), 0640);
+$mapFC->seed($storeFC->privateKeyPath(), 0600);
+$threwFC = false;
+$reasonFC = null;
+try {
+    $storeFC->replacePair($certPem, $keyPem, array('ssl_revision' => 'fc'), $passphrase);
+} catch (MtUniCreditCertificateSyncException $e) {
+    $threwFC = true;
+    $reasonFC = $e->reason();
+}
+mtucF00401_assert($threwFC, 'F-C: tighten fail + unlink fail surfaces failure');
+mtucF00401_assert(
+    $reasonFC === MtUniCreditCertificateSyncException::REASON_LOCAL_FS,
+    'F-C: failure reason is LOCAL_FS'
+);
+$incomingFC = $storeFC->keysDirectory() . DIRECTORY_SEPARATOR . '.incoming';
+$backupResidueFC = glob($incomingFC . DIRECTORY_SEPARATOR . 'private-key-backup-*.pem');
+mtucF00401_assert(is_array($backupResidueFC) && count($backupResidueFC) === 1, 'F-C: insecure residue still present');
+$residueFC = $backupResidueFC[0];
+mtucF00401_assert(($mapFC->fileperms($residueFC) & 0777) === 0644, 'F-C: residue remains broader than 0600');
+mtucF00401_assert(
+    hash('sha256', (string) file_get_contents($storeFC->privateKeyPath())) === hash('sha256', $keyPem),
+    'F-C: active private-key still published (not rolled back for cleanup)'
+);
+mtucF00401_assert(
+    hash('sha256', (string) file_get_contents($storeFC->certificatePath())) === hash('sha256', $certPem),
+    'F-C: active certificate still published'
+);
+mtucF00401_assert(($mapFC->fileperms($storeFC->privateKeyPath()) & 0777) === 0600, 'F-C: active key mode 0600');
+mtucF00401_assert(($mapFC->fileperms($storeFC->certificatePath()) & 0777) === 0640, 'F-C: active cert mode 0640');
+
+// F-D: first tighten fails, unlink fails, second tighten succeeds → protected residue
+$rootFD = mtucF00401_root('mtuc-f00401-fd');
+$mapFD = new Aud004ModeMap();
+$backupChmodFD = 0;
+$storeFD = mtucF00401_store(
+    $rootFD,
+    $mapFD,
+    function ($path, $mode) use ($mapFD, &$backupChmodFD) {
+        $norm = str_replace('\\', '/', (string) $path);
+        if (strpos($norm, 'private-key-backup-') !== false && (((int) $mode) & 0777) === 0600) {
+            $backupChmodFD++;
+            if ($backupChmodFD === 2) {
+                return false;
+            }
+        }
+
+        return $mapFD->chmod($path, $mode);
+    },
+    function ($path) {
+        $norm = str_replace('\\', '/', (string) $path);
+        if (strpos($norm, 'private-key-backup-') !== false) {
+            return mtucF00401_unlinkSeam($path, false);
+        }
+
+        return mtucF00401_unlinkSeam($path, true);
+    }
+);
+mtucF00401_seedActivePair($storeFD, $certPem, $keyPem, $passphrase);
+$mapFD->seed($storeFD->certificatePath(), 0640);
+$mapFD->seed($storeFD->privateKeyPath(), 0600);
+$threwFD = false;
+try {
+    $storeFD->replacePair($certPem, $keyPem, array('ssl_revision' => 'fd'), $passphrase);
+} catch (MtUniCreditCertificateSyncException $e) {
+    $threwFD = true;
+}
+mtucF00401_assert(!$threwFD, 'F-D: retry tighten success accepts protected residue');
+$incomingFD = $storeFD->keysDirectory() . DIRECTORY_SEPARATOR . '.incoming';
+$backupResidueFD = glob($incomingFD . DIRECTORY_SEPARATOR . 'private-key-backup-*.pem');
+mtucF00401_assert(is_array($backupResidueFD) && count($backupResidueFD) === 1, 'F-D: residue remains');
+mtucF00401_assert(($mapFD->fileperms($backupResidueFD[0]) & 0777) === 0600, 'F-D: residue mode 0600 after retry');
+mtucF00401_assert(($mapFD->fileperms($incomingFD) & 0777) === 0700, 'F-D: staging dir mode 0700');
+mtucF00401_assert(
+    hash('sha256', (string) file_get_contents($storeFD->privateKeyPath())) === hash('sha256', $keyPem),
+    'F-D: active private-key hash intact'
+);
+
+// F-E: certificate backup residue equivalent (<=0640 or deleted)
+$rootFE = mtucF00401_root('mtuc-f00401-fe');
+$mapFE = new Aud004ModeMap();
+$storeFE = mtucF00401_store(
+    $rootFE,
+    $mapFE,
+    null,
+    function ($path) {
+        $norm = str_replace('\\', '/', (string) $path);
+        if (strpos($norm, 'certificate-backup-') !== false) {
+            return mtucF00401_unlinkSeam($path, false);
+        }
+
+        return mtucF00401_unlinkSeam($path, true);
+    }
+);
+mtucF00401_seedActivePair($storeFE, $certPem, $keyPem, $passphrase);
+$mapFE->seed($storeFE->certificatePath(), 0640);
+$mapFE->seed($storeFE->privateKeyPath(), 0600);
+$threwFE = false;
+try {
+    $storeFE->replacePair($certPem, $keyPem, array('ssl_revision' => 'fe'), $passphrase);
+} catch (MtUniCreditCertificateSyncException $e) {
+    $threwFE = true;
+}
+mtucF00401_assert(!$threwFE, 'F-E: certificate residue with secure mode does not throw');
+$incomingFE = $storeFE->keysDirectory() . DIRECTORY_SEPARATOR . '.incoming';
+$certResidueFE = glob($incomingFE . DIRECTORY_SEPARATOR . 'certificate-backup-*.pem');
+mtucF00401_assert(is_array($certResidueFE) && count($certResidueFE) === 1, 'F-E: certificate backup residue remains');
+mtucF00401_assert(($mapFE->fileperms($certResidueFE[0]) & 0777) === 0640, 'F-E: certificate residue mode 0640');
+mtucF00401_assert(($mapFE->fileperms($incomingFE) & 0777) === 0700, 'F-E: staging dir mode 0700');
 
 // ---------------------------------------------------------------------------
 // Lease modes
@@ -561,6 +785,11 @@ mtucF00401_assert(strpos($enfSrc, 'applyAndVerify') !== false, 'structure: FileM
 mtucF00401_assert(strpos($storeSrc, 'MODE_STAGING_DIR') !== false, 'structure: staging uses MODE_STAGING_DIR');
 mtucF00401_assert(strpos($storeSrc, 'applyAndVerify($backupKey') !== false, 'structure: backup key mode verified');
 mtucF00401_assert(strpos($storeSrc, '@chmod(') === false, 'structure: no suppressed bare @chmod in store');
+mtucF00401_assert(strpos($storeSrc, 'unlinkPath') !== false, 'structure: unlink seam present');
+mtucF00401_assert(
+    strpos($storeSrc, 'Sensitive certificate staging residue could not be secured.') !== false,
+    'structure: unsecured residue raises LOCAL_FS'
+);
 
 echo PHP_EOL;
 if ($failures) {
