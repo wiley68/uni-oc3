@@ -170,6 +170,32 @@ class ModelExtensionModuleMtUniCredit extends Model
             }
         }
 
+        $replacementSecret = '';
+        $secretChanged = false;
+        if (array_key_exists(MtUniCreditConstants::MODULE_SETTING_SECRET, $post)) {
+            $replacementSecret = trim((string) $post[MtUniCreditConstants::MODULE_SETTING_SECRET]);
+            $secretChanged = ($replacementSecret !== '');
+        }
+
+        $newUnicid = trim((string) (isset($payload[MtUniCreditConstants::MODULE_SETTING_UNICID])
+            ? $payload[MtUniCreditConstants::MODULE_SETTING_UNICID]
+            : $previousUnicid));
+        $credentialsChanged = ($newUnicid !== $previousUnicid || $secretChanged);
+
+        if ($credentialsChanged) {
+            // editSetting() re-inserts preserved payload keys after DELETE — never resurrect
+            // an old access token once authentication identity is changing.
+            unset(
+                $payload[MtUniCreditCpTokenRepository::ACCESS_TOKEN],
+                $payload[MtUniCreditCpTokenRepository::TOKEN_TYPE],
+                $payload[MtUniCreditCpTokenRepository::EXPIRES_AT]
+            );
+
+            // Fail-closed ordering (AUD-003 F-003-01): old token unavailable BEFORE new
+            // credential identity becomes durable. OC3 DB has no transaction API.
+            $services['credentialChange']->invalidateAuthTokens();
+        }
+
         $this->model_setting_setting->editSetting(
             MtUniCreditConstants::MODULE_SETTINGS_CODE,
             $payload,
@@ -180,23 +206,16 @@ class ModelExtensionModuleMtUniCredit extends Model
         MtUniCreditInstaller::ensureCatalogEvents($this->db);
 
         // Write/replace Secret AFTER editSetting so DELETE+reinsert cannot drop a fresh envelope.
-        $secretChanged = false;
-        if (array_key_exists(MtUniCreditConstants::MODULE_SETTING_SECRET, $post)) {
-            $secret = trim((string) $post[MtUniCreditConstants::MODULE_SETTING_SECRET]);
-            if ($secret !== '') {
-                try {
-                    $services['credentials']->saveSecret($storeId, $secret);
-                    $secretChanged = true;
-                } catch (RuntimeException $exception) {
-                    throw new MtUniCreditSecretPersistException('error_secret_encrypt_failed');
-                }
+        if ($secretChanged) {
+            try {
+                $services['credentials']->saveSecret($storeId, $replacementSecret);
+            } catch (RuntimeException $exception) {
+                throw new MtUniCreditSecretPersistException('error_secret_encrypt_failed');
             }
         }
 
-        $newUnicid = trim((string) (isset($payload[MtUniCreditConstants::MODULE_SETTING_UNICID])
-            ? $payload[MtUniCreditConstants::MODULE_SETTING_UNICID]
-            : $previousUnicid));
-        if ($newUnicid !== $previousUnicid || $secretChanged) {
+        if ($credentialsChanged) {
+            // Idempotent token clear + store-scoped cache invalidation for old/new UNICID.
             $services['credentialChange']->onCredentialsChanged($previousUnicid, $newUnicid);
         }
     }

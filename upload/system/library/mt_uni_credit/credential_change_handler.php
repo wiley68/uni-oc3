@@ -25,6 +25,19 @@ final class MtUniCreditCredentialChangeHandler
     }
 
     /**
+     * Invalidate stored CP access token + metadata only (no cache side effects).
+     *
+     * Used before credential identity persistence so a failed subsequent write cannot
+     * leave new credentials paired with a previous identity's unexpired token.
+     *
+     * @return void
+     */
+    public function invalidateAuthTokens()
+    {
+        $this->tokens->invalidate();
+    }
+
+    /**
      * @param string $previousUnicid
      * @param string $newUnicid
      * @return void
