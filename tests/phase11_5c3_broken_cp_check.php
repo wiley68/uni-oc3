@@ -29,14 +29,7 @@ if (!defined('DIR_SYSTEM')) {
     define('DIR_SYSTEM', $root . DIRECTORY_SEPARATOR . 'upload' . DIRECTORY_SEPARATOR . 'system' . DIRECTORY_SEPARATOR);
 }
 if (!defined('DIR_STORAGE')) {
-    $storage = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'mtuc-phase115c3cp-storage';
-    if (!is_dir($storage)) {
-        @mkdir($storage, 0770, true);
-    }
-    if (!is_dir($storage . DIRECTORY_SEPARATOR . 'mt_uni_credit')) {
-        @mkdir($storage . DIRECTORY_SEPARATOR . 'mt_uni_credit', 0770, true);
-    }
-    define('DIR_STORAGE', rtrim($storage, '/\\') . DIRECTORY_SEPARATOR);
+    mtuc_test_define_dir_storage('mtuc-phase115c3cp');
 }
 if (!defined('DB_PASSWORD')) {
     define('DB_PASSWORD', 'phase4-test-installation-db-password-secret');

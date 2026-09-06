@@ -14,5 +14,6 @@ define('MTUC_PHASE0_DOCS', MTUC_PHASE0_ROOT . DIRECTORY_SEPARATOR . 'docs');
 
 require_once __DIR__ . '/support/fixture_loader.php';
 require_once __DIR__ . '/support/no_network.php';
+require_once __DIR__ . '/support/test_temp_root.php';
 
 mtuc_phase0_install_network_guard();
