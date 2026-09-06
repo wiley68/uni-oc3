@@ -38,6 +38,7 @@ function mtuc4_assert(bool $condition, string $message): void
 $requiredFiles = array(
     'extension_root.php',
     'cp_http_constants.php',
+    'cp_bounded_response_buffer.php',
     'cp_exception.php',
     'cp_http_response.php',
     'cp_http_transport.php',

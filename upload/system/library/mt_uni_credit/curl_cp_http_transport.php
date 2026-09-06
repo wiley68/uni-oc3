@@ -45,15 +45,19 @@ final class MtUniCreditCurlCpHttpTransport implements MtUniCreditCpHttpTransport
             $headerLines[] = $name . ': ' . $value;
         }
 
+        $buffer = new MtUniCreditCpBoundedResponseBuffer();
         $options = array(
             CURLOPT_CUSTOMREQUEST => strtoupper($method),
-            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_RETURNTRANSFER => false,
             CURLOPT_FOLLOWLOCATION => false,
             CURLOPT_CONNECTTIMEOUT => $this->connectTimeout,
             CURLOPT_TIMEOUT => $this->timeout,
             CURLOPT_SSL_VERIFYPEER => true,
             CURLOPT_SSL_VERIFYHOST => 2,
             CURLOPT_HTTPHEADER => $headerLines,
+            CURLOPT_WRITEFUNCTION => function ($ch, $chunk) use ($buffer) {
+                return $buffer->write($chunk);
+            },
         );
 
         if ($payload !== null) {
@@ -70,9 +74,15 @@ final class MtUniCreditCurlCpHttpTransport implements MtUniCreditCpHttpTransport
         }
 
         curl_setopt_array($handle, $options);
-        $body = curl_exec($handle);
+        $executed = curl_exec($handle);
 
-        if ($body === false) {
+        // Intentional size abort must win over CURLE_WRITE_ERROR / false exec result.
+        if ($buffer->isAbortedForSize()) {
+            curl_close($handle);
+            throw new MtUniCreditCpInvalidPayloadException('The Control Panel response exceeded the allowed size.');
+        }
+
+        if ($executed === false) {
             $errorNumber = curl_errno($handle);
             $error = curl_error($handle);
             curl_close($handle);
@@ -84,14 +94,9 @@ final class MtUniCreditCurlCpHttpTransport implements MtUniCreditCpHttpTransport
             throw new MtUniCreditCpConnectionException('The Control Panel connection failed: ' . $error);
         }
 
-        if (strlen((string) $body) > MtUniCreditCpHttpConstants::MAX_RESPONSE_BYTES) {
-            curl_close($handle);
-            throw new MtUniCreditCpInvalidPayloadException('The Control Panel response exceeded the allowed size.');
-        }
-
         $statusCode = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
         curl_close($handle);
 
-        return new MtUniCreditCpHttpResponse($statusCode, (string) $body);
+        return new MtUniCreditCpHttpResponse($statusCode, $buffer->getBody());
     }
 }

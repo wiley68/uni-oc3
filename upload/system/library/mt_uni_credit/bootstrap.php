@@ -75,6 +75,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'storefront_financing_submission_se
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'storefront_runtime.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'extension_root.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'cp_http_constants.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'cp_bounded_response_buffer.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'cp_exception.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'cp_http_response.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'cp_http_transport.php';
