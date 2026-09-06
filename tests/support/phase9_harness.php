@@ -161,7 +161,19 @@ final class Phase9TestHarness
             0
         );
         $session = array();
-        $applicationToken = MtUniCreditStorefrontApplicationToken::issue($session);
+        $selectionHash = MtUniCreditStorefrontOperationIdentity::productHash(
+            $storeId,
+            $line->productId,
+            is_array($line->options) ? $line->options : array(),
+            $line->quantity,
+            'BGN'
+        );
+        $applicationToken = MtUniCreditStorefrontApplicationToken::issue(
+            $session,
+            $storeId,
+            MtUniCreditOperationEntryPoint::PRODUCT,
+            $selectionHash
+        );
 
         return array(
             'entry_point' => MtUniCreditOperationEntryPoint::PRODUCT,
@@ -204,6 +216,40 @@ final class Phase9TestHarness
     }
 
     /**
+     * Re-issue / rebind application token after a Product line override in tests.
+     *
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public static function rebindProductApplicationToken(array $input)
+    {
+        if (!isset($input['product_line']) || !$input['product_line'] instanceof MtUniCreditProductLine) {
+            throw new InvalidArgumentException('product_line required for application token rebind');
+        }
+        /** @var MtUniCreditProductLine $line */
+        $line = $input['product_line'];
+        $session = isset($input['session']) && is_array($input['session']) ? $input['session'] : array();
+        $storeId = (int) (isset($input['store_id']) ? $input['store_id'] : 0);
+        $currency = isset($input['currency_code']) ? (string) $input['currency_code'] : 'BGN';
+        $selectionHash = MtUniCreditStorefrontOperationIdentity::productHash(
+            $storeId,
+            $line->productId,
+            is_array($line->options) ? $line->options : array(),
+            $line->quantity,
+            $currency
+        );
+        $input['application_token'] = MtUniCreditStorefrontApplicationToken::issue(
+            $session,
+            $storeId,
+            MtUniCreditOperationEntryPoint::PRODUCT,
+            $selectionHash
+        );
+        $input['session'] = $session;
+
+        return $input;
+    }
+
+    /**
      * Cart Step 2 equivalent input for MtUniCreditStorefrontFinancingSubmissionService.
      *
      * @param array<string, mixed> $stack
@@ -230,7 +276,13 @@ final class Phase9TestHarness
         }
         $fingerprint = MtUniCreditStorefrontOperationIdentity::cartFingerprintFromContext($cart, 'BGN');
         $session = array();
-        $applicationToken = MtUniCreditStorefrontApplicationToken::issue($session);
+        $selectionHash = MtUniCreditStorefrontOperationIdentity::cartHash($storeId, 'BGN', $fingerprint);
+        $applicationToken = MtUniCreditStorefrontApplicationToken::issue(
+            $session,
+            $storeId,
+            MtUniCreditOperationEntryPoint::CART,
+            $selectionHash
+        );
 
         return array(
             'entry_point' => MtUniCreditOperationEntryPoint::CART,

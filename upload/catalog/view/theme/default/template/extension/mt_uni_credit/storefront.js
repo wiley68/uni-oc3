@@ -868,6 +868,7 @@
         routes,
         {
           csrf: $root.attr("data-csrf"),
+          application_token: $root.attr("data-application-token") || "",
           product_id: $root.attr("data-product-id"),
           quantity: form.quantity,
           option: form.option,
@@ -900,6 +901,12 @@
             return;
           }
           applyCalculator(response.calculator);
+          if (response.application_token) {
+            $root.attr("data-application-token", String(response.application_token));
+          }
+          if (response.cart_fingerprint) {
+            $root.attr("data-cart-fingerprint", String(response.cart_fingerprint));
+          }
           if (!$modal.attr("hidden")) {
             fillSchemes();
             scheduleRecalculate(true);

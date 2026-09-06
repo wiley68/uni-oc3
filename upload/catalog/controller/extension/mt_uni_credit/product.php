@@ -57,10 +57,27 @@ class ControllerExtensionMtUniCreditProduct extends Controller
                 return;
             }
 
+            $storeId = (int) $this->config->get('config_store_id');
+            $selectionHash = MtUniCreditStorefrontOperationIdentity::productHash(
+                $storeId,
+                $line->productId,
+                is_array($line->options) ? $line->options : array(),
+                $line->quantity,
+                $currency
+            );
+            $applicationToken = MtUniCreditStorefrontApplicationToken::issueForSelection(
+                $this->session->data,
+                $storeId,
+                MtUniCreditOperationEntryPoint::PRODUCT,
+                $selectionHash,
+                (string) $this->posted('application_token', '')
+            );
+
             MtUniCreditStorefrontRuntime::respondJson($this, array(
                 'success' => true,
                 'sequence' => $sequence,
                 'calculator' => $calculator,
+                'application_token' => $applicationToken,
             ));
         } catch (Exception $exception) {
             MtUniCreditStorefrontRuntime::respondJson($this, $json);
@@ -428,7 +445,20 @@ class ControllerExtensionMtUniCreditProduct extends Controller
         $this->load->language('extension/mt_uni_credit/product');
         $assets = MtUniCreditStorefrontRuntime::assetUrls($this);
         $csrf = MtUniCreditStorefrontCsrf::issue($this->session->data);
-        $applicationToken = MtUniCreditStorefrontApplicationToken::issue($this->session->data);
+        $storeId = (int) $this->config->get('config_store_id');
+        $selectionHash = MtUniCreditStorefrontOperationIdentity::productHash(
+            $storeId,
+            $line->productId,
+            is_array($line->options) ? $line->options : array(),
+            $line->quantity,
+            $currency
+        );
+        $applicationToken = MtUniCreditStorefrontApplicationToken::issue(
+            $this->session->data,
+            $storeId,
+            MtUniCreditOperationEntryPoint::PRODUCT,
+            $selectionHash
+        );
         $buttonAction = (string) $this->config->get(MtUniCreditConstants::MODULE_SETTING_PRODUCT_BUTTON_ACTION);
         if (
             $buttonAction !== MtUniCreditConstants::BUTTON_ACTION_BUY

@@ -338,6 +338,7 @@ $inputProduct['product_line'] = new MtUniCreditProductLine(
     $optsA,
     0
 );
+$inputProduct = Phase9TestHarness::rebindProductApplicationToken($inputProduct);
 $inputProduct['add_order'] = function ($orderData) use (&$addProduct, $stackProduct, $orderProduct) {
     $addProduct++;
     $stackProduct['memoryDb']->seedOrder($orderProduct, $stackProduct['storeId'], MtUniCreditConstants::EXTENSION_CODE);
@@ -457,6 +458,7 @@ $inputDistinct['product_line'] = new MtUniCreditProductLine(
     $optsSingle,
     0
 );
+$inputDistinct = Phase9TestHarness::rebindProductApplicationToken($inputDistinct);
 $inputDistinct['add_order'] = function ($orderData) use (&$addDistinct, $stackDistinct, $orderDistinct) {
     $addDistinct++;
     $stackDistinct['memoryDb']->seedOrder($orderDistinct, $stackDistinct['storeId'], MtUniCreditConstants::EXTENSION_CODE);
@@ -480,6 +482,7 @@ $inputDistinct2['product_line'] = new MtUniCreditProductLine(
     0
 );
 $inputDistinct2['session'] = isset($distinctFirst['session']) ? $distinctFirst['session'] : array();
+$inputDistinct2 = Phase9TestHarness::rebindProductApplicationToken($inputDistinct2);
 // Token already authenticated after first CP create — enqueue order-create only.
 Phase9TestHarness::enqueueCpOrderCreateSuccess($transportDistinct);
 $orderDistinct2 = 70404;

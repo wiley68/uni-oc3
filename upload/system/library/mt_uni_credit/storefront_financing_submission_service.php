@@ -195,11 +195,17 @@ final class MtUniCreditStorefrontFinancingSubmissionService
 
         $sessionData = isset($input['session']) && is_array($input['session']) ? $input['session'] : array();
         $applicationToken = isset($input['application_token']) ? (string) $input['application_token'] : '';
-        if (!MtUniCreditStorefrontApplicationToken::accepts($sessionData, $applicationToken)) {
-            return $this->fail('validation', true);
-        }
         // Product/cart selection identity stays stable; application token scopes ONE submit lifecycle.
         $selectionIdentityHash = $operationKeyHash;
+        if (!MtUniCreditStorefrontApplicationToken::accepts(
+            $sessionData,
+            $applicationToken,
+            $storeId,
+            $entryPoint,
+            $selectionIdentityHash
+        )) {
+            return $this->fail('validation', true);
+        }
         $operationKeyHash = MtUniCreditStorefrontApplicationToken::bindKey($selectionIdentityHash, $applicationToken);
         $correlationId = substr(hash('sha256', $operationKeyHash . '|' . $lockOwnerToken), 0, 12);
 

@@ -34,6 +34,7 @@ class ControllerExtensionMtUniCreditCart extends Controller
                 : (string) $this->config->get('config_currency');
 
             $calculator = null;
+            $fingerprint = '';
             if ($shop !== null && $cart !== null) {
                 $resolver = new MtUniCreditCartSchemeResolver(new MtUniCreditCalculator());
                 $resolution = $resolver->resolve($shop, $cart);
@@ -47,7 +48,7 @@ class ControllerExtensionMtUniCreditCart extends Controller
                 );
             }
 
-            if ($calculator === null) {
+            if ($calculator === null || $fingerprint === '') {
                 MtUniCreditStorefrontRuntime::respondJson($this, array(
                     'success' => false,
                     'unavailable' => true,
@@ -56,10 +57,22 @@ class ControllerExtensionMtUniCreditCart extends Controller
                 return;
             }
 
+            $storeId = (int) $this->config->get('config_store_id');
+            $selectionHash = MtUniCreditStorefrontOperationIdentity::cartHash($storeId, $currency, $fingerprint);
+            $applicationToken = MtUniCreditStorefrontApplicationToken::issueForSelection(
+                $this->session->data,
+                $storeId,
+                MtUniCreditOperationEntryPoint::CART,
+                $selectionHash,
+                (string) $this->posted('application_token', '')
+            );
+
             MtUniCreditStorefrontRuntime::respondJson($this, array(
                 'success' => true,
                 'sequence' => $sequence,
                 'calculator' => $calculator,
+                'application_token' => $applicationToken,
+                'cart_fingerprint' => $fingerprint,
             ));
         } catch (Exception $exception) {
             MtUniCreditStorefrontRuntime::respondJson($this, $json);
@@ -443,7 +456,14 @@ class ControllerExtensionMtUniCreditCart extends Controller
         $this->load->language('extension/mt_uni_credit/cart');
         $assets = MtUniCreditStorefrontRuntime::assetUrls($this);
         $csrf = MtUniCreditStorefrontCsrf::issue($this->session->data);
-        $applicationToken = MtUniCreditStorefrontApplicationToken::issue($this->session->data);
+        $storeId = (int) $this->config->get('config_store_id');
+        $selectionHash = MtUniCreditStorefrontOperationIdentity::cartHash($storeId, $currency, $fingerprint);
+        $applicationToken = MtUniCreditStorefrontApplicationToken::issue(
+            $this->session->data,
+            $storeId,
+            MtUniCreditOperationEntryPoint::CART,
+            $selectionHash
+        );
 
         $prefill = $this->prefillCustomer();
         $modalMeta = MtUniCreditStorefrontModalPresenter::present($shop, $currency, $prefill);
