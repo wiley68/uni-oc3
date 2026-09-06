@@ -53,8 +53,13 @@ final class MtUniCreditOc3CartContextFactory
             sort($categories);
 
             $optionValueIds = array();
+            $rawOptions = array();
             if (isset($product['option']) && is_array($product['option'])) {
                 foreach ($product['option'] as $option) {
+                    if (!is_array($option)) {
+                        continue;
+                    }
+                    $rawOptions[] = $option;
                     $optionValueId = (int) (isset($option['product_option_value_id']) ? $option['product_option_value_id'] : 0);
                     if ($optionValueId > 0) {
                         $optionValueIds[] = $optionValueId;
@@ -70,7 +75,8 @@ final class MtUniCreditOc3CartContextFactory
                 $attributeId,
                 $quantity,
                 $lineTotal,
-                $optionValueIds
+                $optionValueIds,
+                $rawOptions
             );
         }
 

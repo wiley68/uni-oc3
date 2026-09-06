@@ -133,18 +133,10 @@ final class MtUniCreditStorefrontFinancingSubmissionService
             } catch (Exception $exception) {
                 return $this->fail('unavailable', false);
             }
-            $optionsNormalized = array();
-            foreach ($line->options as $option) {
-                $poId = (int) (isset($option['product_option_id']) ? $option['product_option_id'] : 0);
-                $povId = isset($option['product_option_value_id']) ? $option['product_option_value_id'] : '';
-                if ($poId > 0) {
-                    $optionsNormalized[$poId] = $povId;
-                }
-            }
             $operationKeyHash = MtUniCreditStorefrontOperationIdentity::productHash(
                 $storeId,
                 $line->productId,
-                $optionsNormalized,
+                is_array($line->options) ? $line->options : array(),
                 $line->quantity,
                 $currency
             );
