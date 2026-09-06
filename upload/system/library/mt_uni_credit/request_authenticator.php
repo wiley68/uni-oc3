@@ -4,6 +4,7 @@
  * Authenticates CP → module inbound requests (HMAC + nonce claim).
  *
  * Invalid signature must not consume the nonce.
+ * HMAC is verified over exact raw body bytes before JSON is decoded.
  */
 final class MtUniCreditRequestAuthenticator
 {
@@ -46,12 +47,15 @@ final class MtUniCreditRequestAuthenticator
     }
 
     /**
-     * @param array<string, mixed> $payload
+     * Verify HMAC over untouched raw body. Does not decode JSON and does not claim nonce.
+     *
+     * Store/secret scope comes from constructor store context, not from JSON fields.
+     *
      * @param string $rawBody
      * @param array<string, string> $headers
-     * @return string
+     * @return string Stored UNICID for this store
      */
-    public function authenticate(array $payload, $rawBody, array $headers)
+    public function authenticate($rawBody, array $headers)
     {
         if (!$this->moduleEnabled) {
             throw new MtUniCreditInboundApiException('Модулът е изключен.', 403, 'module_disabled');
@@ -63,27 +67,40 @@ final class MtUniCreditRequestAuthenticator
             throw new MtUniCreditInboundApiException('Модулът не е конфигуриран.', 401, 'unknown_store');
         }
 
-        $unicid = isset($payload['unicid']) ? $payload['unicid'] : null;
-        if (!is_string($unicid) || trim($unicid) === '') {
-            throw $this->authFailure();
-        }
-
-        if (!hash_equals($storedUnicid, trim($unicid))) {
-            throw $this->authFailure();
-        }
-
         try {
             $this->verifier->verify($storedSecret, $rawBody, $headers);
         } catch (MtUniCreditPersistenceValidationException $exception) {
             throw $this->authFailure();
         }
 
-        $nonce = strtolower($this->verifier->extractNonce($headers));
-        if (!$this->nonces->claim($this->storeId, $storedUnicid, $nonce)) {
+        return $storedUnicid;
+    }
+
+    /**
+     * After successful authentication and JSON decode: bind payload UNICID and claim nonce.
+     *
+     * @param array<string, mixed> $payload
+     * @param string $authenticatedUnicid
+     * @param array<string, string> $headers
+     * @return string
+     */
+    public function finalizeAuthenticatedRequest(array $payload, $authenticatedUnicid, array $headers)
+    {
+        $unicid = isset($payload['unicid']) ? $payload['unicid'] : null;
+        if (!is_string($unicid) || trim($unicid) === '') {
             throw $this->authFailure();
         }
 
-        return $storedUnicid;
+        if (!hash_equals((string) $authenticatedUnicid, trim($unicid))) {
+            throw $this->authFailure();
+        }
+
+        $nonce = strtolower($this->verifier->extractNonce($headers));
+        if (!$this->nonces->claim($this->storeId, (string) $authenticatedUnicid, $nonce)) {
+            throw $this->authFailure();
+        }
+
+        return (string) $authenticatedUnicid;
     }
 
     /**

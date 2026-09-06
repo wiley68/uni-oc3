@@ -26,10 +26,11 @@ final class MtUniCreditRequestSignatureVerifier
     {
         $timestamp = $this->requireHeader($headers, MtUniCreditRequestSignatureProtocol::HEADER_TIMESTAMP);
         $nonce = $this->requireHeader($headers, MtUniCreditRequestSignatureProtocol::HEADER_NONCE);
-        $signature = strtolower($this->requireHeader($headers, MtUniCreditRequestSignatureProtocol::HEADER_SIGNATURE));
+        $signature = $this->requireHeader($headers, MtUniCreditRequestSignatureProtocol::HEADER_SIGNATURE);
 
         $this->assertFreshTimestamp($timestamp);
         $this->assertNonceFormat($nonce);
+        $this->assertSignatureFormat($signature);
 
         $expected = MtUniCreditRequestSignatureProtocol::computeSignature($secret, $timestamp, $nonce, $rawBody);
         if (!hash_equals($expected, $signature)) {
@@ -112,6 +113,22 @@ final class MtUniCreditRequestSignatureVerifier
             '/^[0-9a-fA-F]{' . MtUniCreditRequestSignatureProtocol::NONCE_HEX_LENGTH . '}$/',
             $nonce
         )) {
+            throw new MtUniCreditPersistenceValidationException(
+                MtUniCreditRequestSignatureProtocol::AUTH_FAILURE_MESSAGE
+            );
+        }
+    }
+
+    /**
+     * Frozen protocol: signature must be exactly 64 lowercase hex characters.
+     * No case normalization.
+     *
+     * @param string $signature
+     * @return void
+     */
+    private function assertSignatureFormat($signature)
+    {
+        if (!preg_match('/^[0-9a-f]{64}$/D', (string) $signature)) {
             throw new MtUniCreditPersistenceValidationException(
                 MtUniCreditRequestSignatureProtocol::AUTH_FAILURE_MESSAGE
             );

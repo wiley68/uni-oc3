@@ -34,13 +34,16 @@ final class MtUniCreditInboundApiDispatcher
             throw new MtUniCreditInboundApiException('JSON тялото на заявката е твърде голямо.', 400, 'payload_too_large');
         }
 
+        // Authenticate exact raw body bytes before any JSON decode / payload validation.
+        $headers = self::extractHeaders($server);
+        $authenticatedUnicid = $authenticator->authenticate($rawBody, $headers);
+
         $payload = json_decode($rawBody, true);
         if (!is_array($payload)) {
             throw new MtUniCreditInboundApiException('JSON тялото на заявката е невалидно.', 400, 'malformed_json');
         }
 
-        $headers = self::extractHeaders($server);
-        $unicid = $authenticator->authenticate($payload, $rawBody, $headers);
+        $unicid = $authenticator->finalizeAuthenticatedRequest($payload, $authenticatedUnicid, $headers);
 
         return call_user_func($handler, $payload, $unicid);
     }
