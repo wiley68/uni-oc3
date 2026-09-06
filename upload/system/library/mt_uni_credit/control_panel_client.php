@@ -34,6 +34,7 @@ final class MtUniCreditControlPanelClient
      * @param int $storeId
      * @param string|null $baseUrl
      * @param callable|null $clock
+     * @param MtUniCreditCpDestinationPolicy|null $destinationPolicy
      */
     public function __construct(
         MtUniCreditCredentialsRepository $credentials,
@@ -42,7 +43,8 @@ final class MtUniCreditControlPanelClient
         $shopName,
         $storeId,
         $baseUrl = null,
-        $clock = null
+        $clock = null,
+        $destinationPolicy = null
     ) {
         $this->credentials = $credentials;
         $this->tokens = $tokens;
@@ -50,14 +52,18 @@ final class MtUniCreditControlPanelClient
         $this->shopName = rtrim(trim((string) $shopName), '/');
         $this->storeId = (int) $storeId;
 
+        $policy = $destinationPolicy instanceof MtUniCreditCpDestinationPolicy
+            ? $destinationPolicy
+            : new MtUniCreditCpDestinationPolicy();
+
         if ($baseUrl !== null && trim($baseUrl) !== '') {
             $resolved = trim($baseUrl);
         } else {
-            $resolved = (new MtUniCreditDeploymentEnvironment())->controlPanelApiBaseUrl();
+            $resolved = (new MtUniCreditDeploymentEnvironment(null, $policy))->controlPanelApiBaseUrl();
         }
 
         // Defense-in-depth: never accept an unsafe override that bypasses DeploymentEnvironment.
-        $this->baseUrl = (new MtUniCreditCpDestinationPolicy())->assertTrustedApiBase($resolved);
+        $this->baseUrl = $policy->assertTrustedApiBase($resolved);
         $this->clock = is_callable($clock) ? $clock : function () {
             return time();
         };

@@ -75,6 +75,18 @@ final class Phase4TestHarness
     }
 
     /**
+     * Explicit offline-only CP destination trust (never the production default).
+     *
+     * @return MtUniCreditCpDestinationPolicy
+     */
+    public static function offlineDestinationPolicy()
+    {
+        return new MtUniCreditCpDestinationPolicy(array(
+            MtUniCreditCpDestinationPolicy::HOST_OFFLINE_TEST,
+        ));
+    }
+
+    /**
      * @param Phase4FakeCpHttpTransport $transport
      * @param Phase2MemoryDb|null $memoryDb
      * @param int $storeId
@@ -105,7 +117,8 @@ final class Phase4TestHarness
             $transport,
             $wallClock,
             Phase4TestHarness::testSecretInput(),
-            self::environmentConfigPath()
+            self::environmentConfigPath(),
+            self::offlineDestinationPolicy()
         );
     }
 

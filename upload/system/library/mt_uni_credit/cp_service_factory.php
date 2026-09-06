@@ -15,6 +15,7 @@ final class MtUniCreditCpServiceFactory
      * @param callable|null $wallClock
      * @param string|null $encryptionSecretInputOverride
      * @param string|null $environmentConfigPath
+     * @param MtUniCreditCpDestinationPolicy|null $destinationPolicy Explicit trust authority (tests inject offline hosts).
      * @return array<string, mixed>
      */
     public static function create(
@@ -26,7 +27,8 @@ final class MtUniCreditCpServiceFactory
         $transport = null,
         $wallClock = null,
         $encryptionSecretInputOverride = null,
-        $environmentConfigPath = null
+        $environmentConfigPath = null,
+        $destinationPolicy = null
     ) {
         $provider = new MtUniCreditEncryptionKeyProvider();
         $cipher = new MtUniCreditSettingCipher($provider->resolveDerivedKey($encryptionSecretInputOverride));
@@ -34,9 +36,13 @@ final class MtUniCreditCpServiceFactory
         $tokens = new MtUniCreditCpTokenRepository($settings, $cipher, $storeId);
         $shopName = (new MtUniCreditCanonicalShopUrlProvider())->resolve($catalogSslUrl, $catalogPlainUrl);
 
+        $policy = $destinationPolicy instanceof MtUniCreditCpDestinationPolicy
+            ? $destinationPolicy
+            : null;
+
         $baseUrl = null;
         if ($environmentConfigPath !== null && $environmentConfigPath !== '') {
-            $baseUrl = (new MtUniCreditDeploymentEnvironment($environmentConfigPath))->controlPanelApiBaseUrl();
+            $baseUrl = (new MtUniCreditDeploymentEnvironment($environmentConfigPath, $policy))->controlPanelApiBaseUrl();
         }
 
         $client = new MtUniCreditControlPanelClient(
@@ -46,7 +52,8 @@ final class MtUniCreditCpServiceFactory
             $shopName,
             $storeId,
             $baseUrl,
-            $wallClock
+            $wallClock,
+            $policy
         );
 
         $cache = new MtUniCreditShopCacheRepository($db);

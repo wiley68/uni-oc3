@@ -1,7 +1,7 @@
 <?php
 
 /**
- * AUD-008 F02 — Strict CP HTTPS destination policy.
+ * AUD-008 F02 — Strict CP HTTPS destination policy (+ production/test trust separation).
  * Run: php tests/phase_aud008_f02_cp_destination_policy_check.php
  *
  * PHP 7.3 compatible. Offline.
@@ -78,6 +78,36 @@ mtucAud008F02_assert(mtuc_phase0_network_isolation_active(), 'isolation: offline
 mtucAud008F02_assert(is_file($lib . DIRECTORY_SEPARATOR . 'cp_destination_policy.php'), 'policy helper file present');
 
 $policy = new MtUniCreditCpDestinationPolicy();
+$testPolicy = Phase4TestHarness::offlineDestinationPolicy();
+
+// ---------------------------------------------------------------------------
+// Production / test trust separation
+// ---------------------------------------------------------------------------
+mtucAud008F02_assert(
+    $policy->assertTrustedApiBase('https://uni.avalonbg.com/api/v1') === 'https://uni.avalonbg.com/api/v1',
+    'default production policy accepts uni.avalonbg.com'
+);
+
+$defaultRejectsTest = mtucAud008F02_catch(function () use ($policy) {
+    $policy->assertTrustedApiBase('https://cp-test.example.com/api/v1');
+});
+mtucAud008F02_assert(
+    $defaultRejectsTest instanceof InvalidArgumentException,
+    'default production policy rejects cp-test.example.com'
+);
+
+mtucAud008F02_assert(
+    $testPolicy->assertTrustedApiBase('https://cp-test.example.com/api/v1') === 'https://cp-test.example.com/api/v1',
+    'explicit test policy accepts cp-test.example.com'
+);
+
+$testRejectsProduction = mtucAud008F02_catch(function () use ($testPolicy) {
+    $testPolicy->assertTrustedApiBase('https://uni.avalonbg.com/api/v1');
+});
+mtucAud008F02_assert(
+    $testRejectsProduction instanceof InvalidArgumentException,
+    'explicit test-only policy does not silently include production host'
+);
 
 // ---------------------------------------------------------------------------
 // Policy unit: accept / canonicalize
@@ -107,8 +137,12 @@ mtucAud008F02_assert(
     'explicit default HTTPS port accepted and canonicalized'
 );
 mtucAud008F02_assert(
-    $policy->assertTrustedApiBase('https://cp-test.example.com/api/v1') === 'https://cp-test.example.com/api/v1',
-    'offline fixture host accepted'
+    $policy->assertTrustedApiBase('https://UNI.AVALONBG.COM:443/api/v1/') === 'https://uni.avalonbg.com/api/v1',
+    'mixed-case host + port 443 + trailing slash canonicalized'
+);
+mtucAud008F02_assert(
+    $policy->assertTrustedApiBase('  https://uni.avalonbg.com/api/v1  ') === 'https://uni.avalonbg.com/api/v1',
+    'leading/trailing whitespace intentionally trimmed'
 );
 
 // ---------------------------------------------------------------------------
@@ -158,10 +192,21 @@ mtucAud008F02_assert(
     'packaged deployment API base preserved'
 );
 
-$fixtureEnv = new MtUniCreditDeploymentEnvironment(Phase4TestHarness::environmentConfigPath());
+$fixtureWithoutTestPolicy = mtucAud008F02_catch(function () {
+    (new MtUniCreditDeploymentEnvironment(Phase4TestHarness::environmentConfigPath()))->controlPanelApiBaseUrl();
+});
+mtucAud008F02_assert(
+    $fixtureWithoutTestPolicy instanceof RuntimeException,
+    'fixture env alone cannot expand production trust to cp-test host'
+);
+
+$fixtureEnv = new MtUniCreditDeploymentEnvironment(
+    Phase4TestHarness::environmentConfigPath(),
+    Phase4TestHarness::offlineDestinationPolicy()
+);
 mtucAud008F02_assert(
     $fixtureEnv->controlPanelApiBaseUrl() === 'https://cp-test.example.com/api/v1',
-    'offline fixture deployment API base accepted'
+    'offline fixture deployment API base accepted with explicit test policy'
 );
 
 $httpEnvPath = mtucAud008F02_tempEnv('http://uni.avalonbg.com');
@@ -227,7 +272,44 @@ if ($userinfoException instanceof Exception) {
     );
 }
 
-// Valid client routes (regression)
+$testHostDefaultClient = mtucAud008F02_catch(function () use ($credentials, $tokens, $transport) {
+    new MtUniCreditControlPanelClient(
+        $credentials,
+        $tokens,
+        $transport,
+        Phase4TestHarness::TEST_SHOP_URL,
+        Phase4TestHarness::TEST_STORE_ID,
+        'https://cp-test.example.com/api/v1'
+    );
+});
+mtucAud008F02_assert(
+    $testHostDefaultClient instanceof InvalidArgumentException,
+    'direct ControlPanelClient default rejects test host'
+);
+mtucAud008F02_assert(
+    count($transport->requests) === 0,
+    'invalid production test-host attempt makes zero transport calls'
+);
+
+$acceptedClient = null;
+$acceptException = mtucAud008F02_catch(function () use ($credentials, $tokens, $transport, &$acceptedClient) {
+    $acceptedClient = new MtUniCreditControlPanelClient(
+        $credentials,
+        $tokens,
+        $transport,
+        Phase4TestHarness::TEST_SHOP_URL,
+        Phase4TestHarness::TEST_STORE_ID,
+        'https://cp-test.example.com/api/v1',
+        null,
+        Phase4TestHarness::offlineDestinationPolicy()
+    );
+});
+mtucAud008F02_assert(
+    $acceptException === null && $acceptedClient instanceof MtUniCreditControlPanelClient,
+    'direct ControlPanelClient injected test policy accepts test host'
+);
+
+// Valid client routes (regression) — harness injects explicit test policy
 $routeDb = Phase4TestHarness::memoryDb();
 $transport = new Phase4FakeCpHttpTransport();
 $transport->enqueueJson(200, Phase4TestHarness::loginSuccessPayload());

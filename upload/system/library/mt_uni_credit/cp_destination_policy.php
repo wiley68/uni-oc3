@@ -5,24 +5,61 @@
  *
  * Validates parsed URL components. Not a full SSRF framework — destination is
  * trusted deployment configuration, never request/admin controlled.
+ *
+ * Default production trust is only HOST_PRODUCTION. Offline fixture hosts must be
+ * injected explicitly (never trusted by the production default).
  */
 final class MtUniCreditCpDestinationPolicy
 {
     const HOST_PRODUCTION = 'uni.avalonbg.com';
 
-    /** Offline/package-test fixture host only (tests/fixtures/cp_test_environment.php). */
+    /** Offline fixture host constant — not trusted unless explicitly injected. */
     const HOST_OFFLINE_TEST = 'cp-test.example.com';
 
     const API_PATH = '/api/v1';
 
     /** @var array<int, string> */
-    private static $trustedHosts = array(
-        self::HOST_PRODUCTION,
-        self::HOST_OFFLINE_TEST,
-    );
+    private $allowedHosts;
+
+    /**
+     * @param array<int, string>|null $allowedHosts Explicit allowlist; null = production default only.
+     *                                              Custom lists replace (do not append) production defaults.
+     */
+    public function __construct($allowedHosts = null)
+    {
+        if ($allowedHosts === null) {
+            $this->allowedHosts = array(self::HOST_PRODUCTION);
+
+            return;
+        }
+        if (!is_array($allowedHosts)) {
+            throw new InvalidArgumentException('Control Panel allowed hosts must be an array.');
+        }
+
+        $normalized = array();
+        foreach ($allowedHosts as $host) {
+            if (!is_string($host)) {
+                throw new InvalidArgumentException('Control Panel allowed hosts must be strings.');
+            }
+            $host = strtolower(trim($host));
+            if ($host === '' || $this->isIpLiteral($host) || !preg_match('/^[a-z0-9.-]+$/', $host)) {
+                throw new InvalidArgumentException('Control Panel allowed host is invalid.');
+            }
+            if (!in_array($host, $normalized, true)) {
+                $normalized[] = $host;
+            }
+        }
+        if ($normalized === array()) {
+            throw new InvalidArgumentException('Control Panel allowed hosts must not be empty.');
+        }
+
+        $this->allowedHosts = $normalized;
+    }
 
     /**
      * Validate and canonicalize a CP origin from deployment config (no /api/v1).
+     *
+     * Leading/trailing whitespace is intentionally trimmed before validation.
      *
      * Accepted forms:
      *   https://uni.avalonbg.com
@@ -45,6 +82,8 @@ final class MtUniCreditCpDestinationPolicy
 
     /**
      * Validate and canonicalize a CP API base URL (origin + /api/v1).
+     *
+     * Leading/trailing whitespace is intentionally trimmed before validation.
      *
      * @param string $url
      * @return string https://host/api/v1
@@ -90,12 +129,13 @@ final class MtUniCreditCpDestinationPolicy
         if (!is_string($url)) {
             throw new InvalidArgumentException('The ' . $label . ' URL is malformed.');
         }
+        // Intentional: trim outer whitespace, then reject any remaining whitespace.
         $url = trim($url);
         if ($url === '') {
             throw new InvalidArgumentException('The ' . $label . ' URL is empty.');
         }
 
-        // Reject before parse_url so whitespace/control characters cannot be normalized away.
+        // Reject before parse_url so interior whitespace/control characters cannot be normalized away.
         if (preg_match('/\s/', $url)) {
             throw new InvalidArgumentException('The ' . $label . ' URL is malformed.');
         }
@@ -137,7 +177,7 @@ final class MtUniCreditCpDestinationPolicy
     private function assertTrustedHostAndPort(array $parts, $label)
     {
         $host = strtolower((string) $parts['host']);
-        if (!in_array($host, self::$trustedHosts, true)) {
+        if (!in_array($host, $this->allowedHosts, true)) {
             throw new InvalidArgumentException('The ' . $label . ' hostname is not trusted.');
         }
         if (isset($parts['port']) && (int) $parts['port'] !== 443) {
