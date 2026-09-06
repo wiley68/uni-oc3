@@ -318,7 +318,7 @@ $lifecycleRepo = new MtUniCreditProcessTwoLifecycleRepository(
     new MtUniCreditDbAdapter($stack['memoryDb'], 'oc_')
 );
 $lifecycleRepo->persistLeasingPresentationJson((int) $attemptRow['attempt_id'], json_encode($snap->toArray()));
-$cipher = new MtUniCreditProcessTwoSensitiveCipher(MtUniCreditEncryptionKeyProvider::testSecretInput());
+$cipher = new MtUniCreditProcessTwoSensitiveCipher(Phase4TestHarness::testSecretInput());
 $enc = $cipher->encrypt(new MtUniCreditProcessTwoSensitiveData('1990010112', '+35988111111'));
 $lifecycleRepo->persistSensitiveEncrypted((int) $attemptRow['attempt_id'], $enc);
 (new MtUniCreditOrderBankStatusRepository(new MtUniCreditDbAdapter($stack['memoryDb'], 'oc_')))

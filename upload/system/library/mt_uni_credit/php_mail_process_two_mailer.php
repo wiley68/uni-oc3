@@ -8,19 +8,14 @@ final class MtUniCreditPhpMailProcessTwoMailer implements MtUniCreditProcessTwoM
     /** @var MtUniCreditProcessTwoLeasingMailPresenter */
     private $presenter;
 
-    /** @var MtUniCreditRecordingProcessTwoMailer|null */
-    private $recorder;
-
     /**
      * @param MtUniCreditProcessTwoLeasingMailPresenter|null $presenter
-     * @param MtUniCreditRecordingProcessTwoMailer|null $recorder
      */
-    public function __construct($presenter = null, $recorder = null)
+    public function __construct($presenter = null)
     {
         $this->presenter = $presenter instanceof MtUniCreditProcessTwoLeasingMailPresenter
             ? $presenter
             : new MtUniCreditProcessTwoLeasingMailPresenter();
-        $this->recorder = $recorder instanceof MtUniCreditRecordingProcessTwoMailer ? $recorder : null;
     }
 
     /**
@@ -31,10 +26,6 @@ final class MtUniCreditPhpMailProcessTwoMailer implements MtUniCreditProcessTwoM
      */
     public function sendProcess2Notifications(array $shop, array $orderContext, $sensitive)
     {
-        if ($this->recorder instanceof MtUniCreditRecordingProcessTwoMailer) {
-            return $this->recorder->sendProcess2Notifications($shop, $orderContext, $sensitive);
-        }
-
         $orderRef = (string) (isset($orderContext['order_id']) ? $orderContext['order_id'] : '');
         $subject = 'УниКредит лизинг — ' . $orderRef;
         $from = trim((string) (isset($orderContext['store_email']) ? $orderContext['store_email'] : ''));

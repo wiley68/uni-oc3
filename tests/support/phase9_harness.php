@@ -4,6 +4,7 @@ require_once __DIR__ . '/phase2_memory_db.php';
 require_once __DIR__ . '/phase4_harness.php';
 require_once __DIR__ . '/phase5_harness.php';
 require_once __DIR__ . '/phase7_harness.php';
+require_once __DIR__ . '/recording_process_two_mailer.php';
 require_once dirname(__DIR__) . '/fixtures/cp_shop_snapshot.php';
 
 /**
@@ -79,7 +80,7 @@ final class Phase9TestHarness
             $services['client'],
             $mailer,
             $clock,
-            MtUniCreditEncryptionKeyProvider::testSecretInput()
+            Phase4TestHarness::testSecretInput()
         );
         $smartUcfLifecycle = new MtUniCreditSmartUcfLifecycleRepository($db, $clock);
         $lifecycle = new MtUniCreditControlPanelOrderLifecycleService(

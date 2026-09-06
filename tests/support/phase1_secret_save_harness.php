@@ -4,6 +4,8 @@
  * Admin module saveSettings harness — real editSetting wipe semantics on Phase2MemoryDb.
  */
 
+require_once __DIR__ . '/encryption_test_secret.php';
+
 if (!class_exists('Registry', false)) {
     class Registry {}
 }
@@ -36,7 +38,7 @@ final class Phase1SecretSaveHarness
     public function __construct($storeId = 0)
     {
         if (!defined('DB_PASSWORD')) {
-            define('DB_PASSWORD', MtUniCreditEncryptionKeyProvider::testSecretInput());
+            define('DB_PASSWORD', MtUniCreditEncryptionTestSecret::testSecretInput());
         }
         if (!defined('DIR_SYSTEM')) {
             define('DIR_SYSTEM', MTUC_PHASE0_ROOT . DIRECTORY_SEPARATOR . 'upload' . DIRECTORY_SEPARATOR . 'system' . DIRECTORY_SEPARATOR);
@@ -47,7 +49,7 @@ final class Phase1SecretSaveHarness
         $dbAdapter = new MtUniCreditDbAdapter($this->memoryDb, 'oc_');
         $settings = new MtUniCreditSettingStore($dbAdapter, MtUniCreditConstants::MODULE_SETTINGS_CODE);
         $cipher = new MtUniCreditSettingCipher(
-            (new MtUniCreditEncryptionKeyProvider())->resolveDerivedKey(MtUniCreditEncryptionKeyProvider::testSecretInput())
+            (new MtUniCreditEncryptionKeyProvider())->resolveDerivedKey(MtUniCreditEncryptionTestSecret::testSecretInput())
         );
         $this->credentials = new MtUniCreditCredentialsRepository($settings, $cipher);
 
@@ -212,7 +214,7 @@ final class Phase1ModuleModelFake extends ModelExtensionModuleMtUniCredit
         $storeId = (int) $this->config->get('config_store_id');
         $settings = new MtUniCreditSettingStore($this->dbAdapter, MtUniCreditConstants::MODULE_SETTINGS_CODE);
         $cipher = new MtUniCreditSettingCipher(
-            (new MtUniCreditEncryptionKeyProvider())->resolveDerivedKey(MtUniCreditEncryptionKeyProvider::testSecretInput())
+            (new MtUniCreditEncryptionKeyProvider())->resolveDerivedKey(MtUniCreditEncryptionTestSecret::testSecretInput())
         );
 
         return array(

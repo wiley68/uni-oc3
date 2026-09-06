@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/fake_cp_http_transport.php';
+require_once __DIR__ . '/encryption_test_secret.php';
 require_once dirname(__DIR__) . '/fixtures/cp_shop_snapshot.php';
 
 /**
@@ -29,9 +30,17 @@ final class Phase4TestHarness
     /**
      * @return string
      */
+    public static function testSecretInput()
+    {
+        return MtUniCreditEncryptionTestSecret::testSecretInput();
+    }
+
+    /**
+     * @return string
+     */
     public static function derivedTestKey()
     {
-        return (new MtUniCreditEncryptionKeyProvider())->resolveDerivedKey(MtUniCreditEncryptionKeyProvider::testSecretInput());
+        return (new MtUniCreditEncryptionKeyProvider())->resolveDerivedKey(self::testSecretInput());
     }
 
     /**
@@ -95,7 +104,7 @@ final class Phase4TestHarness
             self::TEST_SHOP_URL,
             $transport,
             $wallClock,
-            MtUniCreditEncryptionKeyProvider::testSecretInput(),
+            Phase4TestHarness::testSecretInput(),
             self::environmentConfigPath()
         );
     }

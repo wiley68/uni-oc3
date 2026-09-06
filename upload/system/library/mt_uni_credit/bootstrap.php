@@ -129,7 +129,6 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'homepage_advertising_context_resol
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'process_two_sensitive_cipher.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'process_two_leasing_mail_presenter.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'process_two_mail_port.php';
-require_once __DIR__ . DIRECTORY_SEPARATOR . 'recording_process_two_mailer.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'php_mail_process_two_mailer.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'process_two_lifecycle_repository.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'process_two_submission_support.php';

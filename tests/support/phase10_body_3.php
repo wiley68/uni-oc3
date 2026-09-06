@@ -66,7 +66,7 @@ $customerMailOut = '<html><body>Native customer order mail</body></html>';
 $adminMailOut = "Native admin order alert\nOrder ID: 10130";
 $mailData = array('order_id' => 10130);
 // Persist sensitive for ADMIN_EMAIL audience parity with OC4
-$cipher = new MtUniCreditProcessTwoSensitiveCipher(MtUniCreditEncryptionKeyProvider::testSecretInput());
+$cipher = new MtUniCreditProcessTwoSensitiveCipher(Phase4TestHarness::testSecretInput());
 $enc = $cipher->encrypt(new MtUniCreditProcessTwoSensitiveData('1990010112', '+35988111111'));
 (new MtUniCreditProcessTwoLifecycleRepository(new MtUniCreditDbAdapter($stackValid['memoryDb'], 'oc_')))
     ->persistSensitiveEncrypted((int) $attemptRow['attempt_id'], $enc);
@@ -219,5 +219,3 @@ mtuc10_assert(
     ),
     'wiring: checkout_success event controller present'
 );
-
-

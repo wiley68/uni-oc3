@@ -12,7 +12,6 @@ $required = array(
     'process_two_service_factory.php',
     'process_two_mail_port.php',
     'php_mail_process_two_mailer.php',
-    'recording_process_two_mailer.php',
     'process_two_leasing_mail_presenter.php',
     'financing_leasing_presenter.php',
     'financing_presentation_snapshot.php',
@@ -25,6 +24,14 @@ $required = array(
 foreach ($required as $file) {
     mtuc10_assert(is_file($lib . DIRECTORY_SEPARATOR . $file), 'required file: ' . $file);
 }
+mtuc10_assert(
+    !is_file($lib . DIRECTORY_SEPARATOR . 'recording_process_two_mailer.php'),
+    'AUD-031: recorder not packaged under upload library'
+);
+mtuc10_assert(
+    is_file(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'recording_process_two_mailer.php'),
+    'AUD-031: recorder available under tests/support'
+);
 
 $phase10Sql = MtUniCreditPersistenceSchema::createPhase10AlterStatements('oc_');
 mtuc10_assert(count($phase10Sql) >= 4, 'phase 10 schema alter statements present');
@@ -267,5 +274,3 @@ $okFields = $validator->validate(Phase9TestHarness::process2Fields());
 mtuc10_assert(!empty($okFields['ok']), 'validator: valid EGN/phone2 accepted');
 $badDate = $validator->validate(array('egn' => '1990139912', 'phone2' => '+35988'));
 mtuc10_assert(empty($badDate['ok']), 'validator: invalid EGN date rejected');
-
-

@@ -104,7 +104,8 @@ $forbiddenEntries = @(
     'upload/catalog/view/image/mt_uni_credit/uni_logo.svg',
     'upload/catalog/view/image/mt_uni_credit/uni_logo_red.svg',
     'upload/system/library/mt_uni_credit/keys/avalon_cert.pem',
-    'upload/system/library/mt_uni_credit/keys/avalon_private_key.pem'
+    'upload/system/library/mt_uni_credit/keys/avalon_private_key.pem',
+    'upload/system/library/mt_uni_credit/recording_process_two_mailer.php'
 )
 $zipRead = [System.IO.Compression.ZipFile]::OpenRead($OutputPath)
 try {

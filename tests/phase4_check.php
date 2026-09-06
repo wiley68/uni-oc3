@@ -396,6 +396,7 @@ if (is_file($packagePath)) {
         mtuc4_assert($zip->locateName('upload/system/library/mt_uni_credit/keys/avalon_cert.pem') === false, 'package excludes live certificate pem');
         mtuc4_assert($zip->locateName('upload/system/library/mt_uni_credit/keys/avalon_private_key.pem') === false, 'package excludes live private key pem');
         mtuc4_assert($zip->locateName('upload/system/library/mt_uni_credit/secrets/smartucf-key.php') !== false, 'package contains smartucf-key.php placeholder');
+        mtuc4_assert($zip->locateName('upload/system/library/mt_uni_credit/recording_process_two_mailer.php') === false, 'package excludes Process 2 test recorder');
         $zip->close();
     }
 }

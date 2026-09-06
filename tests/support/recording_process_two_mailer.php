@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Test double / recorder for Process 2 leasing mail.
+ * Test double / recorder for Process 2 leasing mail (tests only — not shipped in upload/).
  */
 final class MtUniCreditRecordingProcessTwoMailer implements MtUniCreditProcessTwoMailPort
 {

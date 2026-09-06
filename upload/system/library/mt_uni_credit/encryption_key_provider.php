@@ -26,7 +26,7 @@ final class MtUniCreditEncryptionKeyProvider
     }
 
     /**
-     * @param string|null $secretInputOverride Test-only override of installation secret.
+     * @param string|null $secretInputOverride Optional override of installation secret (tests/harness).
      * @return string 32-byte binary key
      */
     public function resolveDerivedKey($secretInputOverride = null)
@@ -38,15 +38,5 @@ final class MtUniCreditEncryptionKeyProvider
         }
 
         return $derived;
-    }
-
-    /**
-     * Deterministic test input shared with OC4 Phase 4 tests.
-     *
-     * @return string
-     */
-    public static function testSecretInput()
-    {
-        return 'phase4-test-installation-db-password-secret';
     }
 }
