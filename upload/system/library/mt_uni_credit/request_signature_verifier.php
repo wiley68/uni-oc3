@@ -42,11 +42,11 @@ final class MtUniCreditRequestSignatureVerifier
 
     /**
      * @param array<string, string> $headers
-     * @return string
+     * @return string Exact received nonce text (already required to be lowercase 64-hex)
      */
     public function extractNonce(array $headers)
     {
-        return strtolower($this->requireHeader($headers, MtUniCreditRequestSignatureProtocol::HEADER_NONCE));
+        return $this->requireHeader($headers, MtUniCreditRequestSignatureProtocol::HEADER_NONCE);
     }
 
     /**
@@ -104,14 +104,17 @@ final class MtUniCreditRequestSignatureVerifier
     }
 
     /**
+     * Frozen protocol: nonce must be exactly 64 lowercase hex characters.
+     * No case normalization; /D rejects a trailing newline before end-of-string.
+     *
      * @param string $nonce
      * @return void
      */
     private function assertNonceFormat($nonce)
     {
         if (!preg_match(
-            '/^[0-9a-fA-F]{' . MtUniCreditRequestSignatureProtocol::NONCE_HEX_LENGTH . '}$/',
-            $nonce
+            '/^[0-9a-f]{' . MtUniCreditRequestSignatureProtocol::NONCE_HEX_LENGTH . '}$/D',
+            (string) $nonce
         )) {
             throw new MtUniCreditPersistenceValidationException(
                 MtUniCreditRequestSignatureProtocol::AUTH_FAILURE_MESSAGE

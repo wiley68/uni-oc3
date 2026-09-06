@@ -95,7 +95,7 @@ final class MtUniCreditRequestAuthenticator
             throw $this->authFailure();
         }
 
-        $nonce = strtolower($this->verifier->extractNonce($headers));
+        $nonce = $this->verifier->extractNonce($headers);
         if (!$this->nonces->claim($this->storeId, (string) $authenticatedUnicid, $nonce)) {
             throw $this->authFailure();
         }
