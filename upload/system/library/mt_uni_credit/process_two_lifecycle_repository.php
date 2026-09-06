@@ -65,6 +65,7 @@ final class MtUniCreditProcessTwoLifecycleRepository
              SET `leasing_presentation_json` = '" . $this->db->escape($json) . "',
                  `updated_at` = '" . $this->db->escape($now) . "'
              WHERE `attempt_id` = " . $attemptId
+                . " AND (`leasing_presentation_json` IS NULL OR `leasing_presentation_json` = '')"
         );
     }
 
@@ -134,7 +135,7 @@ final class MtUniCreditProcessTwoLifecycleRepository
             if (
                 $row !== null
                 && (string) (isset($row['process2_state']) ? $row['process2_state'] : '')
-                    === MtUniCreditProcessTwoLifecycleStates::PREPARED
+                === MtUniCreditProcessTwoLifecycleStates::PREPARED
             ) {
                 return;
             }

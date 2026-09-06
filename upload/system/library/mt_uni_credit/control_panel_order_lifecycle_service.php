@@ -231,7 +231,21 @@ final class MtUniCreditControlPanelOrderLifecycleService
             );
         }
 
-        $this->attempts->persistCpPayload($attemptId, $payload, $fingerprint);
+        try {
+            $this->attempts->persistCpPayload($attemptId, $payload, $fingerprint);
+        } catch (MtUniCreditPersistenceValidationException $exception) {
+            $this->attempts->persistFailure(
+                $attemptId,
+                MtUniCreditControlPanelErrorClass::CONFLICT,
+                MtUniCreditFinancingAttemptState::CP_FAILED_RETRYABLE
+            );
+
+            return MtUniCreditControlPanelOrderSubmissionResult::fail(
+                MtUniCreditControlPanelErrorClass::CONFLICT,
+                false,
+                409
+            );
+        }
 
         if (!$this->enterSubmitting($attemptId, (string) $row['state'])) {
             $fresh = $this->attempts->findById($attemptId);
@@ -585,6 +599,13 @@ final class MtUniCreditControlPanelOrderLifecycleService
             $this->resolveDiagnosticJournal()
         );
 
+        $frozenSnapshot = MtUniCreditApplicationSnapshot::decode(
+            isset($row['application_snapshot_json']) ? $row['application_snapshot_json'] : null
+        );
+        if ($frozenSnapshot !== null) {
+            $calculation = MtUniCreditApplicationSnapshot::toCalculationResult($frozenSnapshot);
+        }
+
         try {
             $process1 = $coordinator->run(
                 $attemptId,
@@ -911,6 +932,13 @@ final class MtUniCreditControlPanelOrderLifecycleService
             if (is_array($decoded) && isset($decoded['order_id'])) {
                 return $decoded;
             }
+        }
+
+        $snapshot = MtUniCreditApplicationSnapshot::decode(
+            isset($row['application_snapshot_json']) ? $row['application_snapshot_json'] : null
+        );
+        if ($snapshot !== null) {
+            $calculation = MtUniCreditApplicationSnapshot::toCalculationResult($snapshot);
         }
 
         return $this->payloadBuilder->build((int) $row['order_id'], $order, $orderProducts, $calculation, $shop);

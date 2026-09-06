@@ -121,6 +121,28 @@ final class MtUniCreditCheckoutFinancingSubmissionService
             );
         }
 
+        $liveSnapshot = MtUniCreditApplicationSnapshot::fromLive(
+            $calculation,
+            $order,
+            $orderProducts,
+            $shop,
+            MtUniCreditOperationEntryPoint::CHECKOUT,
+            $operationKeyHash,
+            $selectionHash,
+            $fingerprint
+        );
+        $bound = MtUniCreditApplicationSnapshot::bindToAttempt($this->attempts, $attempt, $liveSnapshot);
+        if (empty($bound['ok'])) {
+            return array(
+                'success' => false,
+                'error' => isset($bound['error']) ? (string) $bound['error'] : 'application_drift',
+                'message' => MtUniCreditControlPanelOrderLifecycleService::CUSTOMER_FAILURE_MESSAGE,
+                'attempt' => $attempt,
+            );
+        }
+        $attempt = $bound['attempt'];
+        $calculation = $bound['calculation'];
+
         $isProcess2 = MtUniCreditShopConfigurationFlags::isSecondaryProcess($shop);
         if ($isProcess2) {
             $posted = isset($input['process2']) && is_array($input['process2']) ? $input['process2'] : array();
@@ -160,12 +182,11 @@ final class MtUniCreditCheckoutFinancingSubmissionService
             $isProcess2
         );
 
+        // Frozen application identity: reject drift before CP payload exists.
         if (
             $attempt['request_fingerprint'] !== ''
-            && $attempt['cp_payload']
             && !hash_equals((string) $attempt['request_fingerprint'], $fingerprint)
-            && (int) $attempt['control_panel_order_id'] <= 0
-            && $attempt['state'] !== MtUniCreditFinancingAttemptState::CP_CREATED
+            && MtUniCreditApplicationSnapshot::mustMatchLiveIntent($attempt)
         ) {
             return array(
                 'success' => false,

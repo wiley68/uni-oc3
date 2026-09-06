@@ -118,6 +118,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'process_two_lifecycle_states.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'process_two_sensitive_data.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'financing_presentation_audience.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'financing_presentation_snapshot.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'application_snapshot.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'financing_leasing_presenter.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'financing_presentation_repository.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'financing_presentation_service.php';

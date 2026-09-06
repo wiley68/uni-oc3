@@ -492,6 +492,35 @@ final class MtUniCreditStorefrontFinancingSubmissionService
                 return $this->fail('conflict', true);
             }
 
+            $liveSnapshot = MtUniCreditApplicationSnapshot::fromLive(
+                $calculation,
+                $order,
+                $orderProducts,
+                $shop,
+                $entryPoint,
+                $operationKeyHash,
+                $selectionHash,
+                $fingerprint
+            );
+            $bound = MtUniCreditApplicationSnapshot::bindToAttempt($this->attempts, $attempt, $liveSnapshot);
+            if (empty($bound['ok'])) {
+                $driftError = isset($bound['error']) ? (string) $bound['error'] : 'application_drift';
+                $this->logDecision(
+                    $correlationId,
+                    $entryPoint,
+                    $operationKeyHash,
+                    $orderId,
+                    (int) $attempt['attempt_id'],
+                    (string) $attempt['state'],
+                    'reject_drift',
+                    $driftError
+                );
+
+                return $this->fail($driftError, true);
+            }
+            $attempt = $bound['attempt'];
+            $calculation = $bound['calculation'];
+
             $this->logDecision(
                 $correlationId,
                 $entryPoint,

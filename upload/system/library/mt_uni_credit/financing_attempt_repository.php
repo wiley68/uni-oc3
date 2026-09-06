@@ -221,6 +221,64 @@ final class MtUniCreditFinancingAttemptRepository
     }
 
     /**
+     * Persist immutable application snapshot once. Identical re-write is idempotent.
+     * Conflicting content fails closed.
+     *
+     * @param int $attemptId
+     * @param array<string, mixed> $snapshot
+     * @return array<string, mixed> refreshed attempt row
+     */
+    public function persistApplicationSnapshot($attemptId, array $snapshot)
+    {
+        $attemptId = (int) $attemptId;
+        if ($attemptId <= 0) {
+            throw new MtUniCreditPersistenceValidationException('Application snapshot requires attempt id.');
+        }
+
+        $encoded = MtUniCreditApplicationSnapshot::encode($snapshot);
+        $hash = MtUniCreditApplicationSnapshot::hash($snapshot);
+        $existing = $this->findById($attemptId);
+        if ($existing === null) {
+            throw new MtUniCreditPersistenceException('Application snapshot target attempt missing.');
+        }
+
+        $existingJson = isset($existing['application_snapshot_json']) ? $existing['application_snapshot_json'] : null;
+        $existingHash = isset($existing['application_snapshot_hash']) ? (string) $existing['application_snapshot_hash'] : '';
+        if (is_string($existingJson) && $existingJson !== '') {
+            if ($existingHash !== '' && hash_equals($existingHash, $hash)) {
+                return $existing;
+            }
+            throw new MtUniCreditPersistenceValidationException(
+                'Application snapshot conflict for existing financing attempt.'
+            );
+        }
+
+        $updatedAt = $this->clock->formatUtc($this->clock->now());
+        $table = $this->tableName();
+        $this->db->query(
+            "UPDATE `{$table}` SET"
+                . " `application_snapshot_json` = '" . $this->db->escape($encoded) . "',"
+                . " `application_snapshot_hash` = '" . $this->db->escape($hash) . "',"
+                . " `updated_at` = '" . $this->db->escape($updatedAt) . "'"
+                . " WHERE `attempt_id` = " . (int) $attemptId
+                . " AND (`application_snapshot_json` IS NULL OR `application_snapshot_json` = '')"
+        );
+
+        $refreshed = $this->findById($attemptId);
+        if ($refreshed === null) {
+            throw new MtUniCreditPersistenceException('Application snapshot persist lost attempt row.');
+        }
+        $storedHash = isset($refreshed['application_snapshot_hash']) ? (string) $refreshed['application_snapshot_hash'] : '';
+        if ($storedHash === '' || !hash_equals($storedHash, $hash)) {
+            throw new MtUniCreditPersistenceValidationException(
+                'Application snapshot conflict after concurrent write.'
+            );
+        }
+
+        return $refreshed;
+    }
+
+    /**
      * @param int $attemptId
      * @param array<string, mixed> $payload
      * @param string $requestFingerprint
@@ -237,12 +295,24 @@ final class MtUniCreditFinancingAttemptRepository
             throw new MtUniCreditPersistenceValidationException('CP payload cannot be encoded.');
         }
 
+        $existing = $this->findById($attemptId);
+        if ($existing === null) {
+            return false;
+        }
+        $existingFingerprint = isset($existing['request_fingerprint']) ? (string) $existing['request_fingerprint'] : '';
+        if ($existingFingerprint !== '' && !hash_equals($existingFingerprint, (string) $requestFingerprint)) {
+            throw new MtUniCreditPersistenceValidationException(
+                'Request fingerprint conflict while freezing CP payload.'
+            );
+        }
+
+        $fingerprintToStore = $existingFingerprint !== '' ? $existingFingerprint : (string) $requestFingerprint;
         $updatedAt = $this->clock->formatUtc($this->clock->now());
         $table = $this->tableName();
         $this->db->query(
             "UPDATE `{$table}` SET"
                 . " `cp_payload` = '" . $this->db->escape($encoded) . "',"
-                . " `request_fingerprint` = '" . $this->db->escape($requestFingerprint) . "',"
+                . " `request_fingerprint` = '" . $this->db->escape($fingerprintToStore) . "',"
                 . " `updated_at` = '" . $this->db->escape($updatedAt) . "'"
                 . " WHERE `attempt_id` = " . (int) $attemptId
                 . " AND (`cp_payload` IS NULL OR `cp_payload` = '')"
@@ -347,6 +417,12 @@ final class MtUniCreditFinancingAttemptRepository
                 ? (int) $row['control_panel_order_id']
                 : 0,
             'cp_payload' => isset($row['cp_payload']) ? $row['cp_payload'] : null,
+            'application_snapshot_json' => isset($row['application_snapshot_json'])
+                ? $row['application_snapshot_json']
+                : null,
+            'application_snapshot_hash' => isset($row['application_snapshot_hash'])
+                ? (string) $row['application_snapshot_hash']
+                : '',
             'last_error_class' => isset($row['last_error_class']) ? $row['last_error_class'] : null,
             'smartucf_state' => isset($row['smartucf_state'])
                 ? (string) $row['smartucf_state']

@@ -1,4 +1,12 @@
 ﻿<?php
+
+/**
+ * Included from mtuc10_run() — inherits that function scope.
+ *
+ * @var string $root
+ * @var string $lib
+ */
+
 // ---------------------------------------------------------------------------
 // I. Stale bound order → unbind + fresh addOrder
 // ---------------------------------------------------------------------------
@@ -101,21 +109,46 @@ $inputA = Phase9TestHarness::productStorefrontInput($stackA, $orderA);
 $selectionA = MtUniCreditStorefrontOperationIdentity::productHash(
     (int) $stackA['storeId'],
     42,
-    array(),
+    array(7),
     1,
     'BGN'
 );
 $opHashA = MtUniCreditStorefrontApplicationToken::bindKey($selectionA, (string) $inputA['application_token']);
-// Incomplete A: order + attempt exist in ORDER_CREATED, no CP activity yet.
+// Incomplete A: order + attempt exist in ORDER_CREATED, no CP / no snapshot yet.
+// Financial identity must match what a live replay will compute (AUD-007-F02).
 $stackA['memoryDb']->seedOrder($orderA, $stackA['storeId'], MtUniCreditConstants::EXTENSION_CODE);
 $unicidA = MtUniCreditBootstrap::credentialsRepositoryFromDb($stackA['db'])->getUnicid($stackA['storeId']);
+$shopA = mtuc4_valid_shop_snapshot(array('uni_proces' => 1));
+$calcA = Phase9TestHarness::calculation($shopA);
+$orderARow = Phase7TestHarness::orderRow($orderA, $stackA['storeId']);
+$orderAProducts = array(
+    array(
+        'product_id' => 42,
+        'name' => 'Example',
+        'model' => 'EX',
+        'quantity' => 1,
+        'price' => 500.0,
+        'total' => 500.0,
+        'tax' => 0.0,
+        'reward' => 0,
+    ),
+);
+$payloadA = (new MtUniCreditControlPanelOrderPayloadBuilder())->build(
+    $orderA,
+    $orderARow,
+    $orderAProducts,
+    $calcA,
+    $shopA
+);
+$fpA = MtUniCreditControlPanelOrderPayloadBuilder::fingerprint($payloadA);
+$selHashA = hash('sha256', $calcA->scheme->kopCode . '|' . $calcA->scheme->months . '|' . $fpA);
 $attemptA = $stackA['attempts']->findOrCreateAttempt(
     $stackA['storeId'],
     $orderA,
     $unicidA,
     $opHashA,
-    hash('sha256', 'sel-a'),
-    hash('sha256', 'fp-a'),
+    $selHashA,
+    $fpA,
     MtUniCreditOperationEntryPoint::PRODUCT
 );
 $inputA['session'][MtUniCreditStorefrontFinancingSubmissionService::SESSION_ORDER_BIND_KEY] = array(
@@ -302,6 +335,3 @@ $productCtrlWiring = mtuc10_read(
 mtuc10_assert(strpos($productWidget, 'data-application-token') !== false, 'wiring: product widget application token');
 mtuc10_assert(strpos($jsSrc, 'application_token') !== false, 'wiring: JS posts application_token');
 mtuc10_assert(strpos($productCtrlWiring, 'application_token') !== false, 'wiring: product controller application_token');
-
-
-

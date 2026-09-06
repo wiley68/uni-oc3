@@ -48,6 +48,7 @@ final class MtUniCreditPersistenceSchema
         }
         $this->ensurePhase9Columns();
         $this->ensurePhase10Columns();
+        $this->ensureAud007F02Columns();
     }
 
     /**
@@ -68,6 +69,16 @@ final class MtUniCreditPersistenceSchema
     public function ensurePhase10Columns()
     {
         $this->ensureAlterColumns(self::createPhase10AlterStatements($this->db->getPrefix()));
+    }
+
+    /**
+     * Add immutable application snapshot columns when missing (AUD-007-F02).
+     *
+     * @return void
+     */
+    public function ensureAud007F02Columns()
+    {
+        $this->ensureAlterColumns(self::createAud007F02AlterStatements($this->db->getPrefix()));
     }
 
     /**
@@ -175,6 +186,22 @@ final class MtUniCreditPersistenceSchema
             "ALTER TABLE `{$financingAttempt}` ADD COLUMN `process2_sensitive_enc` MEDIUMTEXT NULL",
             "ALTER TABLE `{$financingAttempt}` ADD COLUMN `process2_mail_sent` TINYINT(1) NOT NULL DEFAULT 0",
             "ALTER TABLE `{$financingAttempt}` ADD COLUMN `leasing_presentation_json` MEDIUMTEXT NULL",
+        );
+    }
+
+    /**
+     * Idempotent AUD-007-F02 column upgrades for financing_attempt.
+     *
+     * @param string $prefix
+     * @return array<int, string>
+     */
+    public static function createAud007F02AlterStatements($prefix)
+    {
+        $financingAttempt = $prefix . MtUniCreditPersistenceTableNames::FINANCING_ATTEMPT;
+
+        return array(
+            "ALTER TABLE `{$financingAttempt}` ADD COLUMN `application_snapshot_json` LONGTEXT NULL",
+            "ALTER TABLE `{$financingAttempt}` ADD COLUMN `application_snapshot_hash` CHAR(64) NULL",
         );
     }
 
@@ -301,6 +328,8 @@ final class MtUniCreditPersistenceSchema
                 `unicid` VARCHAR(64) NOT NULL DEFAULT '',
                 `control_panel_order_id` BIGINT UNSIGNED NULL,
                 `cp_payload` LONGTEXT NULL,
+                `application_snapshot_json` LONGTEXT NULL,
+                `application_snapshot_hash` CHAR(64) NULL,
                 `last_error_class` VARCHAR(64) NULL,
                 `smartucf_state` VARCHAR(32) NOT NULL DEFAULT 'not_started',
                 `smartucf_session_id` VARCHAR(128) NULL,

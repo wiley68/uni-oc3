@@ -1204,6 +1204,8 @@ final class Phase2MemoryDb
             'process2_sensitive_enc' => null,
             'process2_mail_sent' => 0,
             'leasing_presentation_json' => null,
+            'application_snapshot_json' => null,
+            'application_snapshot_hash' => null,
             'created_at' => (string) $fields['created_at'],
             'updated_at' => (string) $fields['updated_at'],
         );
@@ -1283,6 +1285,26 @@ final class Phase2MemoryDb
             }
         }
 
+        if (strpos($sql, 'AND (`application_snapshot_json` IS NULL OR `application_snapshot_json` = \'\')') !== false) {
+            if (
+                isset($row['application_snapshot_json'])
+                && $row['application_snapshot_json'] !== null
+                && $row['application_snapshot_json'] !== ''
+            ) {
+                return $this->emptyResult();
+            }
+        }
+
+        if (strpos($sql, 'AND (`leasing_presentation_json` IS NULL OR `leasing_presentation_json` = \'\')') !== false) {
+            if (
+                isset($row['leasing_presentation_json'])
+                && $row['leasing_presentation_json'] !== null
+                && $row['leasing_presentation_json'] !== ''
+            ) {
+                return $this->emptyResult();
+            }
+        }
+
         if (strpos($sql, 'AND (`control_panel_order_id` IS NULL OR `control_panel_order_id` = 0)') !== false) {
             if (!empty($row['control_panel_order_id'])) {
                 return $this->emptyResult();
@@ -1304,6 +1326,8 @@ final class Phase2MemoryDb
             'process2_state',
             'process2_sensitive_enc',
             'leasing_presentation_json',
+            'application_snapshot_json',
+            'application_snapshot_hash',
         );
         foreach ($stringColumns as $column) {
             if (stripos($sql, '`' . $column . '` = NULL') !== false) {
