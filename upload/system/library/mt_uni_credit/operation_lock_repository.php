@@ -76,7 +76,8 @@ final class MtUniCreditOperationLockRepository
             && isset($held->row['owner_token'])
             && hash_equals((string) $held->row['owner_token'], $ownerToken)
         ) {
-            return true;
+            // Re-entrant hold: extend lease so nested product/cart + lifecycle work stays owned.
+            return $this->renew($storeId, $entryPoint, $operationKeyHash, $ownerToken);
         }
 
         $this->db->query(
@@ -96,6 +97,41 @@ final class MtUniCreditOperationLockRepository
         }
 
         return $acquired;
+    }
+
+    /**
+     * Extend an active lease for the current owner only.
+     *
+     * Renewal requires expires_at > now. A stale or foreign owner cannot renew.
+     *
+     * @param int $storeId
+     * @param string $entryPoint
+     * @param string $operationKeyHash
+     * @param string $ownerToken
+     * @return bool true when exactly one row was renewed
+     */
+    public function renew($storeId, $entryPoint, $operationKeyHash, $ownerToken)
+    {
+        $this->requireIdentity($storeId, $entryPoint, $operationKeyHash, $ownerToken);
+
+        $now = $this->clock->now();
+        $nowSql = $this->db->escape($this->clock->formatUtc($now));
+        $expiresAt = $this->clock->formatUtc($now + MtUniCreditSecurityConstants::OPERATION_LOCK_TTL_SECONDS);
+        $updatedAt = $this->clock->formatUtc($now);
+        $table = $this->tableName();
+
+        $this->db->query(
+            "UPDATE `{$table}` SET"
+                . " `expires_at` = '" . $this->db->escape($expiresAt) . "',"
+                . " `updated_at` = '" . $this->db->escape($updatedAt) . "'"
+                . " WHERE `store_id` = " . (int) $storeId
+                . " AND `entry_point` = '" . $this->db->escape($entryPoint) . "'"
+                . " AND `operation_key_hash` = '" . $this->db->escape($operationKeyHash) . "'"
+                . " AND `owner_token` = '" . $this->db->escape($ownerToken) . "'"
+                . " AND `expires_at` > '" . $nowSql . "'"
+        );
+
+        return $this->db->countAffected() === 1;
     }
 
     /**

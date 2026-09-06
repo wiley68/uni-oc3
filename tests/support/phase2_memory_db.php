@@ -14,8 +14,11 @@ final class Phase2MemoryDb
     /** @var array<int, array<string, mixed>> */
     private $apiNonces = array();
 
-    /** @var array<int, array<string, mixed>> */
+    /** @var array<string, array<string, mixed>> */
     private $operationLocks = array();
+
+    /** @var array<string, array<string, mixed>> */
+    private $operationOrderClaims = array();
 
     /** @var int */
     private $affected = 0;
@@ -25,6 +28,9 @@ final class Phase2MemoryDb
 
     /** @var int */
     private $nextLockId = 1;
+
+    /** @var int */
+    private $nextOperationOrderClaimId = 1;
 
     /** @var array<string, array<string, mixed>> */
     private $shopCache = array();
@@ -68,6 +74,7 @@ final class Phase2MemoryDb
         $this->settingCodes = array();
         $this->apiNonces = array();
         $this->operationLocks = array();
+        $this->operationOrderClaims = array();
         $this->shopCache = array();
         $this->zoneToGeoZone = array();
         $this->orders = array();
@@ -77,6 +84,7 @@ final class Phase2MemoryDb
         $this->affected = 0;
         $this->nextNonceId = 1;
         $this->nextLockId = 1;
+        $this->nextOperationOrderClaimId = 1;
         $this->nextShopCacheId = 1;
         $this->nextBankStatusId = 1;
         $this->nextDiagnosticLogId = 1;
@@ -137,6 +145,10 @@ final class Phase2MemoryDb
             return $this->insertIgnoreOperationLock($sql);
         }
 
+        if (stripos($sql, 'INSERT IGNORE INTO') === 0 && strpos($sql, 'operation_order_claim') !== false) {
+            return $this->insertIgnoreOperationOrderClaim($sql);
+        }
+
         if (stripos($sql, 'INSERT INTO') === 0 && strpos($sql, 'shop_cache') !== false) {
             return $this->upsertShopCache($sql);
         }
@@ -159,6 +171,10 @@ final class Phase2MemoryDb
 
         if (stripos($sql, 'UPDATE') === 0 && strpos($sql, 'operation_lock') !== false) {
             return $this->updateOperationLock($sql);
+        }
+
+        if (stripos($sql, 'UPDATE') === 0 && strpos($sql, 'operation_order_claim') !== false) {
+            return $this->updateOperationOrderClaim($sql);
         }
 
         if (stripos($sql, 'UPDATE') === 0 && strpos($sql, 'financing_attempt') !== false) {
@@ -215,6 +231,10 @@ final class Phase2MemoryDb
 
         if (stripos($sql, 'SELECT') === 0 && strpos($sql, 'zone_to_geo_zone') !== false) {
             return $this->selectZoneToGeoZone($sql);
+        }
+
+        if (stripos($sql, 'SELECT') === 0 && strpos($sql, 'operation_order_claim') !== false) {
+            return $this->selectOperationOrderClaim($sql);
         }
 
         if (stripos($sql, 'SELECT') === 0 && strpos($sql, 'operation_lock') !== false) {
@@ -341,23 +361,50 @@ final class Phase2MemoryDb
      */
     private function updateOperationLock($sql)
     {
-        $now = $this->extractQuoted($sql, 'expires_at` <= \'', '\'');
-        if ($now === '') {
-            $now = $this->extractQuoted($sql, 'expires_at <= \'', '\'');
-        }
-        $ownerToken = $this->extractSetValue($sql, 'owner_token');
-        $expiresAt = $this->extractSetValue($sql, 'expires_at');
-        $updatedAt = $this->extractSetValue($sql, 'updated_at');
         $storeId = (int) $this->extractWhereInt($sql, 'store_id');
         $entryPoint = $this->extractWhereQuoted($sql, 'entry_point');
         $operationKeyHash = $this->extractWhereQuoted($sql, 'operation_key_hash');
-
         $key = $storeId . '|' . $entryPoint . '|' . $operationKeyHash;
         if (!isset($this->operationLocks[$key])) {
             return $this->emptyResult();
         }
 
         $row = $this->operationLocks[$key];
+        $expiresAt = $this->extractSetValue($sql, 'expires_at');
+        $updatedAt = $this->extractSetValue($sql, 'updated_at');
+
+        // Owner-conditioned renew: WHERE owner_token = ? AND expires_at > now
+        if (
+            preg_match('/owner_token`\s*=\s*\'([^\']+)\'/', $sql, $ownerMatch)
+            || preg_match('/owner_token\s*=\s*\'([^\']+)\'/', $sql, $ownerMatch)
+        ) {
+            $whereOwner = (string) $ownerMatch[1];
+            $gtNow = $this->extractQuoted($sql, 'expires_at` > \'', '\'');
+            if ($gtNow === '') {
+                $gtNow = $this->extractQuoted($sql, 'expires_at > \'', '\'');
+            }
+            if ($gtNow !== '') {
+                if ((string) $row['owner_token'] !== $whereOwner) {
+                    return $this->emptyResult();
+                }
+                if (!((string) $row['expires_at'] > $gtNow)) {
+                    return $this->emptyResult();
+                }
+                $row['expires_at'] = $expiresAt;
+                $row['updated_at'] = $updatedAt;
+                $this->operationLocks[$key] = $row;
+                $this->affected = 1;
+
+                return $this->emptyResult();
+            }
+        }
+
+        // Stale takeover: WHERE expires_at <= now
+        $now = $this->extractQuoted($sql, 'expires_at` <= \'', '\'');
+        if ($now === '') {
+            $now = $this->extractQuoted($sql, 'expires_at <= \'', '\'');
+        }
+        $ownerToken = $this->extractSetValue($sql, 'owner_token');
         if ($row['expires_at'] > $now) {
             return $this->emptyResult();
         }
@@ -369,6 +416,88 @@ final class Phase2MemoryDb
         $this->affected = 1;
 
         return $this->emptyResult();
+    }
+
+    /**
+     * @param string $sql
+     * @return object
+     */
+    private function insertIgnoreOperationOrderClaim($sql)
+    {
+        $fields = $this->parseInsertValues($sql);
+        $key = ((int) $fields['store_id']) . '|' . (string) $fields['entry_point'] . '|' . (string) $fields['operation_key_hash'];
+        if (isset($this->operationOrderClaims[$key])) {
+            $this->affected = 0;
+
+            return $this->emptyResult();
+        }
+
+        $this->operationOrderClaims[$key] = array(
+            'operation_order_claim_id' => $this->nextOperationOrderClaimId++,
+            'store_id' => (int) $fields['store_id'],
+            'entry_point' => (string) $fields['entry_point'],
+            'operation_key_hash' => (string) $fields['operation_key_hash'],
+            'state' => (string) $fields['state'],
+            'order_id' => null,
+            'claim_owner_token' => (string) $fields['claim_owner_token'],
+            'created_at' => (string) $fields['created_at'],
+            'updated_at' => (string) $fields['updated_at'],
+        );
+        $this->affected = 1;
+
+        return $this->emptyResult();
+    }
+
+    /**
+     * @param string $sql
+     * @return object
+     */
+    private function updateOperationOrderClaim($sql)
+    {
+        $storeId = (int) $this->extractWhereInt($sql, 'store_id');
+        $entryPoint = $this->extractWhereQuoted($sql, 'entry_point');
+        $operationKeyHash = $this->extractWhereQuoted($sql, 'operation_key_hash');
+        $key = $storeId . '|' . $entryPoint . '|' . $operationKeyHash;
+        if (!isset($this->operationOrderClaims[$key])) {
+            return $this->emptyResult();
+        }
+
+        $row = $this->operationOrderClaims[$key];
+        $orderId = (int) $this->extractWhereInt($sql, 'order_id');
+        $state = $this->extractSetValue($sql, 'state');
+        $updatedAt = $this->extractSetValue($sql, 'updated_at');
+
+        $existingOrderId = isset($row['order_id']) && $row['order_id'] !== null && $row['order_id'] !== ''
+            ? (int) $row['order_id']
+            : 0;
+        if ($existingOrderId > 0 && $existingOrderId !== $orderId) {
+            return $this->emptyResult();
+        }
+
+        $row['order_id'] = $orderId;
+        $row['state'] = $state;
+        $row['updated_at'] = $updatedAt;
+        $this->operationOrderClaims[$key] = $row;
+        $this->affected = 1;
+
+        return $this->emptyResult();
+    }
+
+    /**
+     * @param string $sql
+     * @return object
+     */
+    private function selectOperationOrderClaim($sql)
+    {
+        $storeId = (int) $this->extractWhereInt($sql, 'store_id');
+        $entryPoint = $this->extractWhereQuoted($sql, 'entry_point');
+        $operationKeyHash = $this->extractWhereQuoted($sql, 'operation_key_hash');
+        $key = $storeId . '|' . $entryPoint . '|' . $operationKeyHash;
+        if (!isset($this->operationOrderClaims[$key])) {
+            return $this->emptyResult();
+        }
+
+        return $this->singleRow($this->operationOrderClaims[$key]);
     }
 
     /**

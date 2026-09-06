@@ -13,6 +13,9 @@ final class MtUniCreditStorefrontFinancingSubmissionService
     /** @var MtUniCreditOperationLockRepository */
     private $locks;
 
+    /** @var MtUniCreditOperationOrderClaimRepository */
+    private $orderClaims;
+
     /** @var MtUniCreditControlPanelOrderLifecycleService */
     private $lifecycle;
 
@@ -42,6 +45,7 @@ final class MtUniCreditStorefrontFinancingSubmissionService
      * @param MtUniCreditShopConfigurationCache $shopCache
      * @param MtUniCreditCalculator|null $calculator
      * @param MtUniCreditCartSchemeResolver|null $cartSchemes
+     * @param MtUniCreditOperationOrderClaimRepository|null $orderClaims
      */
     public function __construct(
         MtUniCreditFinancingAttemptRepository $attempts,
@@ -50,7 +54,8 @@ final class MtUniCreditStorefrontFinancingSubmissionService
         MtUniCreditCredentialsRepository $credentials,
         MtUniCreditShopConfigurationCache $shopCache,
         $calculator = null,
-        $cartSchemes = null
+        $cartSchemes = null,
+        $orderClaims = null
     ) {
         $this->attempts = $attempts;
         $this->locks = $locks;
@@ -65,6 +70,9 @@ final class MtUniCreditStorefrontFinancingSubmissionService
             : new MtUniCreditCartSchemeResolver($this->calculator);
         $this->payloadBuilder = new MtUniCreditControlPanelOrderPayloadBuilder();
         $this->draftBuilder = new MtUniCreditStorefrontOrderDraftBuilder();
+        $this->orderClaims = $orderClaims instanceof MtUniCreditOperationOrderClaimRepository
+            ? $orderClaims
+            : new MtUniCreditOperationOrderClaimRepository($attempts->database());
     }
 
     /**
@@ -223,6 +231,32 @@ final class MtUniCreditStorefrontFinancingSubmissionService
                 ? $input['load_order']
                 : null;
 
+            // Durable pre-order claim outlives the 45s mutex lease.
+            $claim = $this->orderClaims->ensureClaim(
+                $storeId,
+                $entryPoint,
+                $operationKeyHash,
+                $lockOwnerToken
+            );
+            if (!$this->locks->renew($storeId, $entryPoint, $operationKeyHash, $lockOwnerToken)) {
+                $this->logDecision($correlationId, $entryPoint, $operationKeyHash, 0, 0, '', 'reject_locked', 'lock_lost_before_order');
+
+                return array(
+                    'success' => false,
+                    'error' => 'duplicate_request',
+                    'message' => MtUniCreditControlPanelOrderLifecycleService::CUSTOMER_FAILURE_MESSAGE,
+                    'cart_unchanged' => true,
+                );
+            }
+
+            $claimOrderId = isset($claim['order_id']) && $claim['order_id'] !== null && $claim['order_id'] !== ''
+                ? (int) $claim['order_id']
+                : 0;
+            if ($claimOrderId > 0) {
+                $orderId = $claimOrderId;
+                $this->bindOrderId($sessionData, $operationKeyHash, $orderId);
+            }
+
             $decision = 'fresh';
             $reuseReason = '';
             $order = null;
@@ -264,7 +298,7 @@ final class MtUniCreditStorefrontFinancingSubmissionService
                             $reuseReason = 'attempt_operation_mismatch';
                         } else {
                             $decision = 'replay';
-                            $reuseReason = 'session_bind_match';
+                            $reuseReason = $claimOrderId > 0 ? 'durable_claim_order' : 'session_bind_match';
                         }
                     }
                 }
@@ -274,8 +308,44 @@ final class MtUniCreditStorefrontFinancingSubmissionService
             $this->pruneLegacyBareBinds($sessionData, $selectionIdentityHash, $operationKeyHash);
 
             if ($orderId <= 0) {
+                // Ambiguous in-progress materialization: only the durable claim owner may call
+                // addOrder while order_id is still null. Lease takeover alone is not enough.
+                $mayCreateOrder = hash_equals(
+                    (string) (isset($claim['claim_owner_token']) ? $claim['claim_owner_token'] : ''),
+                    $lockOwnerToken
+                ) && (string) $claim['state'] === MtUniCreditOperationOrderClaimRepository::STATE_CLAIMED_BEFORE_ORDER;
+                if (!$mayCreateOrder) {
+                    $this->logDecision(
+                        $correlationId,
+                        $entryPoint,
+                        $operationKeyHash,
+                        0,
+                        0,
+                        (string) $claim['state'],
+                        'reject_locked',
+                        'order_materialization_ambiguous'
+                    );
+
+                    return array(
+                        'success' => false,
+                        'error' => 'duplicate_request',
+                        'message' => MtUniCreditControlPanelOrderLifecycleService::CUSTOMER_FAILURE_MESSAGE,
+                        'cart_unchanged' => true,
+                    );
+                }
+
                 if ($addOrder === null) {
                     return $this->fail('order_missing', true);
+                }
+                if (!$this->locks->renew($storeId, $entryPoint, $operationKeyHash, $lockOwnerToken)) {
+                    $this->logDecision($correlationId, $entryPoint, $operationKeyHash, 0, 0, '', 'reject_locked', 'lock_lost_before_add_order');
+
+                    return array(
+                        'success' => false,
+                        'error' => 'duplicate_request',
+                        'message' => MtUniCreditControlPanelOrderLifecycleService::CUSTOMER_FAILURE_MESSAGE,
+                        'cart_unchanged' => true,
+                    );
                 }
                 $draftInput['store_id'] = $storeId;
                 $draftInput['currency_code'] = $currency;
@@ -309,6 +379,35 @@ final class MtUniCreditStorefrontFinancingSubmissionService
                 if ($orderId <= 0) {
                     return $this->fail('order_missing', true);
                 }
+                try {
+                    $this->orderClaims->bindOrderId($storeId, $entryPoint, $operationKeyHash, $orderId);
+                } catch (MtUniCreditPersistenceValidationException $exception) {
+                    $this->logDecision(
+                        $correlationId,
+                        $entryPoint,
+                        $operationKeyHash,
+                        $orderId,
+                        0,
+                        '',
+                        'reject_stale',
+                        'claim_bind_conflict'
+                    );
+
+                    return $this->fail('conflict', true);
+                }
+                if (!$this->locks->renew($storeId, $entryPoint, $operationKeyHash, $lockOwnerToken)) {
+                    // Order already materialized + claim bound; continue recovery without new addOrder.
+                    $this->logDecision(
+                        $correlationId,
+                        $entryPoint,
+                        $operationKeyHash,
+                        $orderId,
+                        0,
+                        MtUniCreditOperationOrderClaimRepository::STATE_ORDER_CREATED,
+                        'continue_after_lock_loss',
+                        'order_bound_lock_lost'
+                    );
+                }
                 $this->bindOrderId($sessionData, $operationKeyHash, $orderId);
                 $decision = 'fresh';
                 $reuseReason = $reuseReason !== '' ? $reuseReason : 'no_bind';
@@ -325,6 +424,28 @@ final class MtUniCreditStorefrontFinancingSubmissionService
             }
             $order['order_id'] = $orderId;
             $order['store_id'] = $storeId;
+
+            if (!$this->locks->renew($storeId, $entryPoint, $operationKeyHash, $lockOwnerToken)) {
+                $this->logDecision(
+                    $correlationId,
+                    $entryPoint,
+                    $operationKeyHash,
+                    $orderId,
+                    0,
+                    '',
+                    'reject_locked',
+                    'lock_lost_before_lifecycle'
+                );
+
+                return array(
+                    'success' => false,
+                    'error' => 'duplicate_request',
+                    'message' => MtUniCreditControlPanelOrderLifecycleService::CUSTOMER_FAILURE_MESSAGE,
+                    'cart_unchanged' => true,
+                    'order_id' => $orderId,
+                    'session' => $sessionData,
+                );
+            }
 
             $payloadPreview = $this->payloadBuilder->build($orderId, $order, $orderProducts, $calculation, $shop);
             $fingerprint = MtUniCreditControlPanelOrderPayloadBuilder::fingerprint($payloadPreview);

@@ -18,6 +18,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'api_nonce_repository.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'operation_entry_point.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'lock_owner_token.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'operation_lock_repository.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'operation_order_claim_repository.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'request_signature_protocol.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'request_signature_verifier.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'deployment_paths.php';

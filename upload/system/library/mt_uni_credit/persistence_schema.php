@@ -133,7 +133,8 @@ final class MtUniCreditPersistenceSchema
             self::createPhase2TableStatements($prefix),
             self::createPhase3TableStatements($prefix),
             self::createPhase6TableStatements($prefix),
-            self::createPhase7TableStatements($prefix)
+            self::createPhase7TableStatements($prefix),
+            self::createOperationOrderClaimTableStatements($prefix)
         );
     }
 
@@ -316,6 +317,35 @@ final class MtUniCreditPersistenceSchema
                 KEY `idx_mt_uni_credit_attempt_operation` (`store_id`, `entry_point`, `operation_key_hash`, `state`),
                 KEY `idx_mt_uni_credit_attempt_state_updated` (`state`, `updated_at`),
                 KEY `idx_mt_uni_credit_attempt_smartucf_state` (`smartucf_state`, `updated_at`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+        );
+    }
+
+    /**
+     * Durable product/cart operation → local order claim (AUD-006-F01).
+     *
+     * @param string $prefix
+     * @return array<int, string>
+     */
+    public static function createOperationOrderClaimTableStatements($prefix)
+    {
+        $claim = $prefix . MtUniCreditPersistenceTableNames::OPERATION_ORDER_CLAIM;
+
+        return array(
+            "CREATE TABLE IF NOT EXISTS `{$claim}` (
+                `operation_order_claim_id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+                `store_id` INT UNSIGNED NOT NULL,
+                `entry_point` VARCHAR(16) NOT NULL,
+                `operation_key_hash` CHAR(64) NOT NULL,
+                `state` VARCHAR(32) NOT NULL,
+                `order_id` INT UNSIGNED NULL,
+                `claim_owner_token` CHAR(32) NOT NULL,
+                `created_at` DATETIME NOT NULL,
+                `updated_at` DATETIME NOT NULL,
+                PRIMARY KEY (`operation_order_claim_id`),
+                UNIQUE KEY `uniq_mt_uni_credit_operation_order_claim` (`store_id`, `entry_point`, `operation_key_hash`),
+                KEY `idx_mt_uni_credit_operation_order_claim_order` (`store_id`, `order_id`),
+                KEY `idx_mt_uni_credit_operation_order_claim_state` (`state`, `updated_at`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
         );
     }

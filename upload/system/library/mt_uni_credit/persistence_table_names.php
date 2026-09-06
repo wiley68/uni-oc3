@@ -17,6 +17,8 @@ final class MtUniCreditPersistenceTableNames
 
     const FINANCING_ATTEMPT = 'mt_uni_credit_financing_attempt';
 
+    const OPERATION_ORDER_CLAIM = 'mt_uni_credit_operation_order_claim';
+
     /**
      * Phase 2 foundational tables only.
      *
@@ -27,6 +29,18 @@ final class MtUniCreditPersistenceTableNames
         return array(
             self::API_NONCE,
             self::OPERATION_LOCK,
+        );
+    }
+
+    /**
+     * Durable storefront pre-order operation claims (AUD-006).
+     *
+     * @return array<int, string>
+     */
+    public static function operationOrderClaimTables()
+    {
+        return array(
+            self::OPERATION_ORDER_CLAIM,
         );
     }
 
@@ -76,7 +90,8 @@ final class MtUniCreditPersistenceTableNames
             self::phase2Tables(),
             self::phase3Tables(),
             self::phase6Tables(),
-            self::phase7Tables()
+            self::phase7Tables(),
+            self::operationOrderClaimTables()
         );
     }
 }

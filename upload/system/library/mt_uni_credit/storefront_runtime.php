@@ -133,6 +133,7 @@ final class MtUniCreditStorefrontRuntime
         );
         $attempts = new MtUniCreditFinancingAttemptRepository($db);
         $locks = new MtUniCreditOperationLockRepository($db);
+        $orderClaims = new MtUniCreditOperationOrderClaimRepository($db);
         $lifecycle = new MtUniCreditControlPanelOrderLifecycleService(
             $attempts,
             $locks,
@@ -148,7 +149,10 @@ final class MtUniCreditStorefrontRuntime
             $locks,
             $lifecycle,
             $stack['credentials'],
-            MtUniCreditBootstrap::shopConfigurationCacheFromDb($db)
+            MtUniCreditBootstrap::shopConfigurationCacheFromDb($db),
+            null,
+            null,
+            $orderClaims
         );
     }
 
