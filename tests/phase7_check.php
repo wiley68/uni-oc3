@@ -372,15 +372,33 @@ mtuc7_assert(!empty($replaySubmit['local_replay']), 'local replay after success'
 mtuc7_assert(empty($replaySubmit['apply_native_order_status']), 'local replay does not re-apply native status');
 mtuc7_assert(Phase7TestHarness::countOrderPosts($transportGet) === 1, 'local replay: CP POST count remains 1');
 
-// CSRF / intent token
+// Checkout submit intent token (bound to store + prepared order)
 $sessionTok = array();
-$tokenA = MtUniCreditCheckoutSubmitToken::issue($sessionTok);
-$tokenB = MtUniCreditCheckoutSubmitToken::issue($sessionTok);
-mtuc7_assert($tokenA === $tokenB && $tokenA !== '', 'CSRF token stable across GET renders');
-mtuc7_assert(MtUniCreditCheckoutSubmitToken::verify($sessionTok, $tokenA), 'valid CSRF token accepted');
-mtuc7_assert(!MtUniCreditCheckoutSubmitToken::verify($sessionTok, ''), 'missing CSRF token rejected');
-mtuc7_assert(!MtUniCreditCheckoutSubmitToken::verify($sessionTok, 'deadbeef'), 'wrong CSRF token rejected');
-mtuc7_assert(!MtUniCreditCheckoutSubmitToken::verify(array(), $tokenA), 'CSRF fails without session token');
+$tokenA = MtUniCreditCheckoutSubmitToken::issue($sessionTok, Phase5TestHarness::STORE_A, 1001, 1001);
+$tokenB = MtUniCreditCheckoutSubmitToken::issue($sessionTok, Phase5TestHarness::STORE_A, 1001, 1001);
+mtuc7_assert($tokenA === $tokenB && $tokenA !== '', 'submit intent token stable across GET renders');
+mtuc7_assert(
+    MtUniCreditCheckoutSubmitToken::verify($sessionTok, $tokenA, Phase5TestHarness::STORE_A, 1001, 1001),
+    'valid submit intent token accepted'
+);
+mtuc7_assert(
+    !MtUniCreditCheckoutSubmitToken::verify($sessionTok, '', Phase5TestHarness::STORE_A, 1001, 1001),
+    'missing submit intent token rejected'
+);
+mtuc7_assert(
+    !MtUniCreditCheckoutSubmitToken::verify($sessionTok, 'deadbeef', Phase5TestHarness::STORE_A, 1001, 1001),
+    'wrong submit intent token rejected'
+);
+mtuc7_assert(
+    !MtUniCreditCheckoutSubmitToken::verify(array(), $tokenA, Phase5TestHarness::STORE_A, 1001, 1001),
+    'submit intent fails without session token'
+);
+$tokenOtherOrder = MtUniCreditCheckoutSubmitToken::issue($sessionTok, Phase5TestHarness::STORE_A, 1002, 1002);
+mtuc7_assert($tokenOtherOrder !== $tokenA, 'prepared-order change rotates submit intent token');
+mtuc7_assert(
+    !MtUniCreditCheckoutSubmitToken::verify($sessionTok, $tokenA, Phase5TestHarness::STORE_A, 1002, 1002),
+    'stale A token rejected for current B'
+);
 
 // Retryable failure: GET shows retry; POST reuses attempt
 $transportRetry = new Phase4FakeCpHttpTransport();

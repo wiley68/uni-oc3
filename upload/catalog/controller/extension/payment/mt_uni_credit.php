@@ -518,7 +518,12 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
         }
 
         $view = MtUniCreditCheckoutPreparedViewState::fromAttempt($context['attempt']);
-        $token = MtUniCreditCheckoutSubmitToken::issue($this->session->data);
+        $token = MtUniCreditCheckoutSubmitToken::issue(
+            $this->session->data,
+            (int) $context['store_id'],
+            (int) $context['order_id'],
+            (int) $context['prepared_order_id']
+        );
         $flash = $this->consumeCheckoutFlash();
 
         $this->document->setTitle($this->language->get('heading_prepared_title'));
@@ -642,15 +647,24 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
         $token = isset($this->request->post['mt_uni_credit_submit_token'])
             ? $this->request->post['mt_uni_credit_submit_token']
             : '';
-        if (!MtUniCreditCheckoutSubmitToken::verify($this->session->data, $token)) {
-            $this->session->data['mt_uni_credit_checkout_flash'] = $this->language->get('error_submit_token');
-            $this->response->redirect($this->url->link(MtUniCreditConstants::CHECKOUT_PREPARED_ROUTE, '', true));
-            return;
-        }
 
         $context = $this->resolvePreparedContext();
         if ($context === null) {
             $this->response->redirect($this->url->link('checkout/checkout', '', true));
+            return;
+        }
+
+        if (
+            !MtUniCreditCheckoutSubmitToken::verify(
+                $this->session->data,
+                $token,
+                (int) $context['store_id'],
+                (int) $context['order_id'],
+                (int) $context['prepared_order_id']
+            )
+        ) {
+            $this->session->data['mt_uni_credit_checkout_flash'] = $this->language->get('error_submit_token');
+            $this->response->redirect($this->url->link(MtUniCreditConstants::CHECKOUT_PREPARED_ROUTE, '', true));
             return;
         }
 
