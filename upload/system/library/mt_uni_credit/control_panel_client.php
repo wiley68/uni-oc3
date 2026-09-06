@@ -56,7 +56,8 @@ final class MtUniCreditControlPanelClient
             $resolved = (new MtUniCreditDeploymentEnvironment())->controlPanelApiBaseUrl();
         }
 
-        $this->baseUrl = rtrim($resolved, '/');
+        // Defense-in-depth: never accept an unsafe override that bypasses DeploymentEnvironment.
+        $this->baseUrl = (new MtUniCreditCpDestinationPolicy())->assertTrustedApiBase($resolved);
         $this->clock = is_callable($clock) ? $clock : function () {
             return time();
         };

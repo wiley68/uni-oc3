@@ -17,18 +17,25 @@ final class MtUniCreditDeploymentEnvironment
     /** @var string */
     private $configFilePath;
 
+    /** @var MtUniCreditCpDestinationPolicy */
+    private $destinationPolicy;
+
     /**
      * @param string|null $configFilePath
+     * @param MtUniCreditCpDestinationPolicy|null $destinationPolicy
      */
-    public function __construct($configFilePath = null)
+    public function __construct($configFilePath = null, $destinationPolicy = null)
     {
         $this->configFilePath = $configFilePath !== null && $configFilePath !== ''
             ? (string) $configFilePath
             : MtUniCreditExtensionRoot::path() . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, self::RELATIVE_PATH);
+        $this->destinationPolicy = $destinationPolicy instanceof MtUniCreditCpDestinationPolicy
+            ? $destinationPolicy
+            : new MtUniCreditCpDestinationPolicy();
     }
 
     /**
-     * Authoritative Control Panel host base (no API suffix), e.g. https://cp.example.com
+     * Authoritative Control Panel host origin (no API suffix), e.g. https://uni.avalonbg.com
      *
      * @return string
      */
@@ -39,12 +46,16 @@ final class MtUniCreditDeploymentEnvironment
         if (!is_string($url)) {
             throw new RuntimeException('Control Panel URL is not configured in system/library/mt_uni_credit/config/environment.php.');
         }
-        $url = rtrim(trim($url), '/');
-        if ($url === '' || !preg_match('#^https?://#i', $url)) {
-            throw new RuntimeException('Control Panel URL is invalid in system/library/mt_uni_credit/config/environment.php.');
-        }
 
-        return $url;
+        try {
+            return $this->destinationPolicy->assertTrustedOrigin($url);
+        } catch (InvalidArgumentException $exception) {
+            throw new RuntimeException(
+                'Control Panel URL is invalid in system/library/mt_uni_credit/config/environment.php.',
+                0,
+                $exception
+            );
+        }
     }
 
     /**
@@ -54,7 +65,17 @@ final class MtUniCreditDeploymentEnvironment
      */
     public function controlPanelApiBaseUrl()
     {
-        return $this->controlPanelUrl() . self::API_PATH_PREFIX;
+        try {
+            return $this->destinationPolicy->assertTrustedApiBase(
+                $this->controlPanelUrl() . self::API_PATH_PREFIX
+            );
+        } catch (InvalidArgumentException $exception) {
+            throw new RuntimeException(
+                'Control Panel API base URL is invalid.',
+                0,
+                $exception
+            );
+        }
     }
 
     /**
@@ -74,7 +95,7 @@ final class MtUniCreditDeploymentEnvironment
             return null;
         }
 
-        return $parts['host'];
+        return strtolower($parts['host']);
     }
 
     /**

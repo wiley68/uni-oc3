@@ -81,6 +81,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'cp_http_transport.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'curl_cp_http_transport.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'cp_token_repository.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'canonical_shop_url_provider.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'cp_destination_policy.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'deployment_environment.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'control_panel_client.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'shop_configuration_service.php';

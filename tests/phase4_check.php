@@ -44,6 +44,7 @@ $requiredFiles = array(
     'curl_cp_http_transport.php',
     'cp_token_repository.php',
     'canonical_shop_url_provider.php',
+    'cp_destination_policy.php',
     'deployment_environment.php',
     'control_panel_client.php',
     'shop_configuration_service.php',
