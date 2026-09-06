@@ -1,4 +1,13 @@
 ﻿<?php
+
+/**
+ * Included from mtuc10_run() — inherits that function scope (bodies 1–2 run first).
+ *
+ * @var string $root
+ * @var string $lib
+ * @var array<string, mixed> $stackValid
+ */
+
 // ---------------------------------------------------------------------------
 // K. Thank You presentation privacy + missing snapshot safety
 // ---------------------------------------------------------------------------

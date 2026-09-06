@@ -1,4 +1,12 @@
 ﻿<?php
+
+/**
+ * Included from mtuc10_run() — inherits that function scope.
+ *
+ * @var string $root
+ * @var string $lib
+ */
+
 // ---------------------------------------------------------------------------
 // Required files + PHP 7.3 surface
 // ---------------------------------------------------------------------------
