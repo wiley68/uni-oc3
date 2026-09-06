@@ -2,6 +2,9 @@
 
 /**
  * Shared validated shop snapshot persistence for outbound refresh and inbound push.
+ *
+ * Credential + cache replacement is failure-atomic via exact compensating restore
+ * (OC3 DB has no transaction API; oc_setting is not reliably transactional with InnoDB).
  */
 final class MtUniCreditShopCachePersistence
 {
@@ -45,9 +48,10 @@ final class MtUniCreditShopCachePersistence
         $this->validator->validate($shopData, $unicid);
         $partition = MtUniCreditShopSnapshotSanitizer::partitionSensitiveFields($shopData);
 
-        $previousUser = $this->smartucfCredentials->getUser($storeId);
-        $previousPassword = $this->smartucfCredentials->getPassword($storeId);
         $credentialMutation = $partition['smartucf_password'] !== null || $partition['smartucf_user'] !== null;
+        $previousCredentialState = $credentialMutation
+            ? $this->smartucfCredentials->capturePairState($storeId)
+            : null;
 
         try {
             if ($partition['smartucf_password'] !== null) {
@@ -62,8 +66,16 @@ final class MtUniCreditShopCachePersistence
 
             $this->cache->replaceValidated($storeId, $unicid, $partition['sanitized']);
         } catch (Exception $exception) {
-            if ($credentialMutation) {
-                $this->smartucfCredentials->savePair($storeId, $previousUser, $previousPassword);
+            if ($credentialMutation && is_array($previousCredentialState)) {
+                try {
+                    $this->smartucfCredentials->restorePairState($storeId, $previousCredentialState);
+                } catch (Exception $rollbackException) {
+                    throw new MtUniCreditPersistenceException(
+                        'Shop cache credential rollback failed after a persistence error.',
+                        0,
+                        $exception
+                    );
+                }
             }
             throw $exception;
         }

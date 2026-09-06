@@ -51,6 +51,43 @@ final class MtUniCreditSmartucfCredentialsRepository
     }
 
     /**
+     * Capture exact raw setting presence for both credential keys.
+     *
+     * null value means the setting row is absent (not "empty decrypted secret").
+     *
+     * @param int $storeId
+     * @return array{user: string|null, password: string|null}
+     */
+    public function capturePairState($storeId)
+    {
+        return array(
+            'user' => $this->settings->get($storeId, MtUniCreditConstants::MODULE_SETTING_SMARTUCF_USER),
+            'password' => $this->settings->get($storeId, MtUniCreditConstants::MODULE_SETTING_SMARTUCF_PASSWORD),
+        );
+    }
+
+    /**
+     * Restore exact previous raw setting presence/absence for both keys.
+     *
+     * @param int $storeId
+     * @param array{user?: string|null, password?: string|null} $state
+     * @return void
+     */
+    public function restorePairState($storeId, array $state)
+    {
+        $this->restoreRawSetting(
+            $storeId,
+            MtUniCreditConstants::MODULE_SETTING_SMARTUCF_USER,
+            array_key_exists('user', $state) ? $state['user'] : null
+        );
+        $this->restoreRawSetting(
+            $storeId,
+            MtUniCreditConstants::MODULE_SETTING_SMARTUCF_PASSWORD,
+            array_key_exists('password', $state) ? $state['password'] : null
+        );
+    }
+
+    /**
      * @param int $storeId
      * @return string|null
      */
@@ -66,6 +103,23 @@ final class MtUniCreditSmartucfCredentialsRepository
     public function getPassword($storeId)
     {
         return $this->decryptSetting($storeId, MtUniCreditConstants::MODULE_SETTING_SMARTUCF_PASSWORD);
+    }
+
+    /**
+     * @param int $storeId
+     * @param string $key
+     * @param string|null $previousRaw null = delete (restore absence)
+     * @return void
+     */
+    private function restoreRawSetting($storeId, $key, $previousRaw)
+    {
+        if ($previousRaw === null) {
+            $this->settings->delete($storeId, $key);
+
+            return;
+        }
+
+        $this->settings->set($storeId, $key, (string) $previousRaw);
     }
 
     /**
