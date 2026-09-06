@@ -424,74 +424,113 @@ mtucAud007F02_assert(
 );
 
 // ---------------------------------------------------------------------------
-// CP-created / SmartUCF-not-started recovery uses frozen 12 (not live 24)
+// CP-created / SmartUCF-not-started recovery uses frozen products (not live drift)
 // ---------------------------------------------------------------------------
 $transportR = new Phase4FakeCpHttpTransport();
-Phase9TestHarness::enqueueCpCreateSuccess($transportR);
-$smartBodies = array(
-    array('body' => '', 'error' => 'timeout', 'http_code' => 0),
-    array('body' => Phase9TestHarness::successBody(), 'error' => '', 'http_code' => 200),
-);
-$smartIdx = 0;
 $stackR = Phase9TestHarness::stack(
     $transportR,
-    function () use (&$smartBodies, &$smartIdx) {
-        $body = $smartBodies[$smartIdx];
-        if ($smartIdx < count($smartBodies) - 1) {
-            $smartIdx++;
-        }
-
-        return $body;
-    },
+    null,
     null,
     Phase5TestHarness::STORE_A,
     array('uni_proces' => 0)
 );
 $orderR = 9104;
-$addR = 0;
-$inputR = Phase9TestHarness::productStorefrontInput($stackR, $orderR);
-$inputR['add_order'] = function () use (&$addR, $stackR, $orderR) {
-    $addR++;
-    $stackR['memoryDb']->seedOrder($orderR, $stackR['storeId'], MtUniCreditConstants::EXTENSION_CODE);
-
-    return $orderR;
-};
-$firstR = $stackR['storefront']->submit($inputR);
-mtucAud007F02_assert(empty($firstR['success']), 'recovery: first SmartUCF ambiguous/timeout');
-$attemptR = $stackR['attempts']->findByStoreOrder($stackR['storeId'], $orderR);
+$stackR['memoryDb']->seedOrder($orderR, $stackR['storeId'], MtUniCreditConstants::EXTENSION_CODE);
+$shopR = mtuc4_valid_shop_snapshot(array('uni_proces' => 0));
+$calcR = Phase9TestHarness::calculation($shopR);
+$orderRRow = Phase7TestHarness::orderRow($orderR, $stackR['storeId']);
+$orderRProducts = array(
+    array(
+        'product_id' => 42,
+        'name' => 'Example',
+        'model' => 'EX',
+        'quantity' => 1,
+        'price' => 500.0,
+        'total' => 500.0,
+        'tax' => 0.0,
+        'reward' => 0,
+    ),
+);
+$payloadR = (new MtUniCreditControlPanelOrderPayloadBuilder())->build(
+    $orderR,
+    $orderRRow,
+    $orderRProducts,
+    $calcR,
+    $shopR
+);
+$fpR = MtUniCreditControlPanelOrderPayloadBuilder::fingerprint($payloadR);
+$selR = hash('sha256', $calcR->scheme->kopCode . '|' . $calcR->scheme->months . '|' . $fpR);
+$opR = hash('sha256', 'product|' . $stackR['storeId'] . '|' . $orderR . '|f02-recovery');
+$attemptR = $stackR['attempts']->findOrCreateAttempt(
+    $stackR['storeId'],
+    $orderR,
+    Phase4TestHarness::TEST_UNICID,
+    $opR,
+    $selR,
+    $fpR,
+    MtUniCreditOperationEntryPoint::PRODUCT
+);
+$snapR = MtUniCreditApplicationSnapshot::fromLive(
+    $calcR,
+    $orderRRow,
+    $orderRProducts,
+    $shopR,
+    MtUniCreditOperationEntryPoint::PRODUCT,
+    $opR,
+    $selR,
+    $fpR
+);
+$attemptR = $stackR['attempts']->persistApplicationSnapshot((int) $attemptR['attempt_id'], $snapR);
+$stackR['attempts']->persistCpPayload((int) $attemptR['attempt_id'], $payloadR, $fpR);
+$stackR['attempts']->persistControlPanelOrderId((int) $attemptR['attempt_id'], 5559104);
+$stackR['attempts']->transitionFromStates(
+    (int) $attemptR['attempt_id'],
+    array(MtUniCreditFinancingAttemptState::ORDER_CREATED),
+    MtUniCreditFinancingAttemptState::CP_CREATED
+);
+$attemptR = $stackR['attempts']->findById((int) $attemptR['attempt_id']);
 mtucAud007F02_assert(
-    is_array($attemptR) && (int) $attemptR['control_panel_order_id'] > 0,
+    is_array($attemptR) && (int) $attemptR['control_panel_order_id'] === 5559104
+        && (string) $attemptR['state'] === MtUniCreditFinancingAttemptState::CP_CREATED,
     'recovery: CP order created'
 );
-$snapR = MtUniCreditApplicationSnapshot::decode($attemptR['application_snapshot_json']);
 mtucAud007F02_assert(is_array($snapR) && (int) $snapR['scheme']['months'] === 12, 'recovery: frozen months=12');
 
-// Live UI now claims 24 months / 600 — same application token still bound to original selection.
-$inputR2 = $inputR;
-$inputR2['session'] = isset($firstR['session']) ? $firstR['session'] : $inputR['session'];
-$inputR2['product_line'] = new MtUniCreditProductLine(
-    42,
-    'Example',
-    'EX',
-    array(7),
-    1,
-    600.0,
-    600.0,
-    600.0,
-    0,
-    array(),
-    0
+// Mutated live application after CP, before SmartUCF.
+$liveDriftOrder = Phase7TestHarness::orderRow($orderR, $stackR['storeId']);
+$liveDriftOrder['currency_code'] = 'EUR';
+$liveDriftOrder['firstname'] = 'Changed';
+$liveDriftOrder['lastname'] = 'Person';
+$liveDriftOrder['telephone'] = '+359899999999';
+$liveDriftOrder['email'] = 'changed@example.test';
+$liveDriftProducts = array(
+    array(
+        'product_id' => 99,
+        'name' => 'LIVE-CHANGED',
+        'quantity' => 2,
+        'price' => 300.0,
+        'total' => 600.0,
+    ),
 );
-// Keep original token (selection mismatch → reject) — for CP-created recovery we need SAME selection
-// so SmartUCF can resume. Resume with original input:
-$inputR2 = $inputR;
-$inputR2['session'] = isset($firstR['session']) ? $firstR['session'] : $inputR['session'];
-Phase9TestHarness::enqueueCpOrderCreateSuccess($transportR);
-$secondR = $stackR['storefront']->submit($inputR2);
-$smartPayload = Phase9TestHarness::smartUcfPayloadAt($stackR['smartUcfProbe'], 1);
-if ($smartPayload === null) {
-    $smartPayload = Phase9TestHarness::smartUcfPayloadAt($stackR['smartUcfProbe'], 0);
-}
+$liveDriftCalc = mtucAud007F02_calc(24, 600.0);
+$smartCallsBeforeDrift = Phase9TestHarness::smartUcfCallCount($stackR['smartUcfProbe']);
+$driftRecover = $stackR['lifecycle']->submitOrRecover(
+    $attemptR,
+    $liveDriftOrder,
+    $liveDriftProducts,
+    $liveDriftCalc,
+    $shopR,
+    MtUniCreditLockOwnerTokenGenerator::generate()
+);
+mtucAud007F02_assert(!empty($driftRecover->success), 'item-drift recovery: succeeds with frozen application');
+mtucAud007F02_assert(
+    Phase9TestHarness::smartUcfCallCount($stackR['smartUcfProbe']) > $smartCallsBeforeDrift,
+    'item-drift recovery: new SmartUCF handoff issued'
+);
+$smartPayload = Phase9TestHarness::smartUcfPayloadAt(
+    $stackR['smartUcfProbe'],
+    Phase9TestHarness::smartUcfCallCount($stackR['smartUcfProbe']) - 1
+);
 mtucAud007F02_assert(is_array($smartPayload), 'recovery: SmartUCF payload captured');
 $smartMonths = is_array($smartPayload) ? (int) (isset($smartPayload['installmentCount']) ? $smartPayload['installmentCount'] : 0) : 0;
 $smartTotal = is_array($smartPayload) ? (string) (isset($smartPayload['totalPrice']) ? $smartPayload['totalPrice'] : '') : '';
@@ -500,22 +539,74 @@ mtucAud007F02_assert(
     $smartTotal === '500.00' || $smartTotal === '500.0000' || (float) $smartTotal === 500.0,
     'recovery: SmartUCF total frozen at 500 (observed=' . $smartTotal . ')'
 );
+$smartItems = is_array($smartPayload) && isset($smartPayload['items']) && is_array($smartPayload['items'])
+    ? $smartPayload['items']
+    : array();
+mtucAud007F02_assert(count($smartItems) === 1, 'item-drift: items count frozen at 1');
+mtucAud007F02_assert(
+    isset($smartItems[0]['code']) && (int) $smartItems[0]['code'] === 42,
+    'item-drift: product code frozen (not live 99)'
+);
+mtucAud007F02_assert(
+    isset($smartItems[0]['name']) && (string) $smartItems[0]['name'] === 'Example',
+    'item-drift: product name frozen (not LIVE-CHANGED)'
+);
+mtucAud007F02_assert(
+    isset($smartItems[0]['count']) && (int) $smartItems[0]['count'] === 1,
+    'item-drift: quantity frozen at 1 (not live 2)'
+);
+mtucAud007F02_assert(
+    isset($smartItems[0]['singlePrice']) && (float) $smartItems[0]['singlePrice'] === 500.0,
+    'item-drift: singlePrice frozen at 500.00 (observed='
+        . (isset($smartItems[0]['singlePrice']) ? $smartItems[0]['singlePrice'] : '') . ')'
+);
+mtucAud007F02_assert(
+    is_array($smartPayload)
+        && (string) $smartPayload['clientPhone'] === (string) $snapR['customer']['phone'],
+    'item-drift: clientPhone from frozen snapshot'
+);
+mtucAud007F02_assert(
+    is_array($smartPayload)
+        && (string) $smartPayload['clientEmail'] === (string) $snapR['customer']['email'],
+    'item-drift: clientEmail from frozen snapshot'
+);
 
 // Cross-system matrix from frozen snapshot → CP builder + SmartUCF builder
 $shop = mtuc4_valid_shop_snapshot();
 $order = Phase7TestHarness::orderRow(9104, Phase5TestHarness::STORE_A);
 $products = Phase7TestHarness::orderProducts();
 $frozenCalc = MtUniCreditApplicationSnapshot::toCalculationResult($snapR);
+$frozenProducts = MtUniCreditApplicationSnapshot::toOrderProducts($snapR);
 $cpPayload = (new MtUniCreditControlPanelOrderPayloadBuilder())->build(9104, $order, $products, $frozenCalc, $shop);
-$smartFromFrozen = (new MtUniCreditSmartUcfPayloadBuilder())->build($shop, $order, $products, $frozenCalc, 9104);
+$smartFromFrozen = (new MtUniCreditSmartUcfPayloadBuilder())->build(
+    $shop,
+    MtUniCreditApplicationSnapshot::overlayOrderForHandoff($order, $snapR),
+    $frozenProducts,
+    $frozenCalc,
+    9104
+);
 mtucAud007F02_assert((int) $cpPayload['vnoski'] === 12, 'matrix: CP months=12');
 mtucAud007F02_assert((float) $cpPayload['price'] === 500.0, 'matrix: CP price=500');
 mtucAud007F02_assert((int) $smartFromFrozen['installmentCount'] === 12, 'matrix: SmartUCF months=12');
 mtucAud007F02_assert((float) $smartFromFrozen['totalPrice'] === 500.0, 'matrix: SmartUCF total=500');
+mtucAud007F02_assert(
+    isset($smartFromFrozen['items'][0]['singlePrice'])
+        && (float) $smartFromFrozen['items'][0]['singlePrice'] === 500.0,
+    'matrix: SmartUCF singlePrice=500.00'
+);
 echo 'MATRIX 12m/500 snapshot|CP|SmartUCF = '
     . $snapR['scheme']['months'] . '/' . $snapR['financial']['financed_amount']
     . ' | ' . $cpPayload['vnoski'] . '/' . $cpPayload['price']
     . ' | ' . $smartFromFrozen['installmentCount'] . '/' . $smartFromFrozen['totalPrice']
+    . ' items[0].count=' . $smartFromFrozen['items'][0]['count']
+    . ' singlePrice=' . $smartFromFrozen['items'][0]['singlePrice']
+    . PHP_EOL;
+
+echo 'MATRIX field drift (snapshot|live|SmartUCF):'
+    . ' months 12|24|' . $smartMonths
+    . '; total 500.00|600.00|' . $smartTotal
+    . '; qty 1|2|' . (isset($smartItems[0]['count']) ? $smartItems[0]['count'] : '?')
+    . '; singlePrice 500.00|300.00|' . (isset($smartItems[0]['singlePrice']) ? $smartItems[0]['singlePrice'] : '?')
     . PHP_EOL;
 
 // Live 24 must not be used when frozen 12 exists after CP:
@@ -572,15 +663,95 @@ mtucAud007F02_assert(
     'leasing: frozen months=12'
 );
 
+// Multi-item frozen SmartUCF payload (live mutation ignored)
+$multiOrderProducts = array(
+    array(
+        'product_id' => 10,
+        'name' => 'Product A',
+        'quantity' => 1,
+        'price' => 300.0,
+        'total' => 300.0,
+    ),
+    array(
+        'product_id' => 20,
+        'name' => 'Product B',
+        'quantity' => 2,
+        'price' => 100.0,
+        'total' => 200.0,
+    ),
+);
+$multiSnap = MtUniCreditApplicationSnapshot::fromLive(
+    $calc12,
+    Phase7TestHarness::orderRow(9200, Phase5TestHarness::STORE_A),
+    $multiOrderProducts,
+    mtuc4_valid_shop_snapshot(),
+    MtUniCreditOperationEntryPoint::PRODUCT,
+    hash('sha256', 'f02-multi'),
+    hash('sha256', 'f02-multi-sel'),
+    hash('sha256', 'f02-multi-fp')
+);
+$multiLiveDrift = array(
+    array(
+        'product_id' => 1,
+        'name' => 'LIVE-A',
+        'quantity' => 9,
+        'price' => 50.0,
+        'total' => 450.0,
+    ),
+    array(
+        'product_id' => 2,
+        'name' => 'LIVE-B',
+        'quantity' => 9,
+        'price' => 50.0,
+        'total' => 450.0,
+    ),
+    array(
+        'product_id' => 3,
+        'name' => 'LIVE-C',
+        'quantity' => 1,
+        'price' => 100.0,
+        'total' => 100.0,
+    ),
+);
+$multiHandoff = MtUniCreditApplicationSnapshot::resolveHandoffInputs(
+    $multiSnap,
+    Phase7TestHarness::orderRow(9200, Phase5TestHarness::STORE_A, 999.0)
+);
+mtucAud007F02_assert(count($multiHandoff['order_products']) === 2, 'multi-item: frozen product count = 2');
+$multiPayload = (new MtUniCreditSmartUcfPayloadBuilder())->build(
+    mtuc4_valid_shop_snapshot(),
+    $multiHandoff['order'],
+    $multiHandoff['order_products'],
+    $multiHandoff['calculation'],
+    9200
+);
+// Prove live drift array is unused by building with frozen handoff only.
+unset($multiLiveDrift);
+mtucAud007F02_assert(count($multiPayload['items']) === 2, 'multi-item: SmartUCF items = 2');
+mtucAud007F02_assert(
+    (int) $multiPayload['items'][0]['code'] === 10
+        && (string) $multiPayload['items'][0]['name'] === 'Product A'
+        && (int) $multiPayload['items'][0]['count'] === 1
+        && (float) $multiPayload['items'][0]['singlePrice'] === 300.0,
+    'multi-item: item0 frozen Product A / qty1 / 300.00'
+);
+mtucAud007F02_assert(
+    (int) $multiPayload['items'][1]['code'] === 20
+        && (string) $multiPayload['items'][1]['name'] === 'Product B'
+        && (int) $multiPayload['items'][1]['count'] === 2
+        && (float) $multiPayload['items'][1]['singlePrice'] === 100.0,
+    'multi-item: item1 frozen Product B / qty2 / 100.00'
+);
+
 // Fresh application may use new terms (new token + new order)
 $transportF = new Phase4FakeCpHttpTransport();
 Phase9TestHarness::enqueueCpCreateSuccess($transportF);
-$stackF = Phase9TestHarness::stack($transportF, null, null, Phase5TestHarness::STORE_A, array('uni_proces' => 1));
+$stackF = Phase9TestHarness::stack($transportF, null, null, Phase5TestHarness::STORE_A, array('uni_proces' => 0));
 $orderF = 9105;
 $inputF = Phase9TestHarness::productStorefrontInput($stackF, $orderF);
 $inputF['product_line'] = new MtUniCreditProductLine(
     42,
-    'Example',
+    'Fresh Product',
     'EX',
     array(7),
     1,
@@ -606,6 +777,16 @@ $snapF = MtUniCreditApplicationSnapshot::decode(
 mtucAud007F02_assert(
     is_array($snapF) && $snapF['financial']['financed_amount'] === '600.00',
     'fresh application: snapshot stores 600.00'
+);
+$freshSmart = Phase9TestHarness::smartUcfPayloadAt($stackF['smartUcfProbe'], 0);
+mtucAud007F02_assert(is_array($freshSmart), 'fresh application: SmartUCF payload present');
+mtucAud007F02_assert(
+    is_array($freshSmart)
+        && (float) $freshSmart['totalPrice'] === 600.0
+        && isset($freshSmart['items'][0]['singlePrice'])
+        && (float) $freshSmart['items'][0]['singlePrice'] === 600.0
+        && (string) $freshSmart['items'][0]['name'] === 'Fresh Product',
+    'fresh application: SmartUCF uses fresh product terms'
 );
 
 if ($failures !== array()) {

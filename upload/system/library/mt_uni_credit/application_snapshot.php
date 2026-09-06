@@ -232,6 +232,97 @@ final class MtUniCreditApplicationSnapshot
     }
 
     /**
+     * Reconstruct order-product rows for SmartUCF item builder from frozen snapshot products.
+     *
+     * @param array<string, mixed> $snapshot
+     * @return array<int, array<string, mixed>>
+     */
+    public static function toOrderProducts(array $snapshot)
+    {
+        $products = isset($snapshot['products']) && is_array($snapshot['products'])
+            ? $snapshot['products']
+            : array();
+        $rows = array();
+        foreach ($products as $product) {
+            if (!is_array($product)) {
+                continue;
+            }
+            $quantity = max(1, (int) (isset($product['quantity']) ? $product['quantity'] : 1));
+            $total = (float) (isset($product['total']) ? $product['total'] : 0);
+            $rows[] = array(
+                'product_id' => (int) (isset($product['product_id']) ? $product['product_id'] : 0),
+                'name' => (string) (isset($product['name']) ? $product['name'] : ''),
+                'quantity' => $quantity,
+                'total' => $total,
+                'price' => $quantity > 0 ? ($total / $quantity) : $total,
+            );
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Overlay financially material order fields from the frozen snapshot for bank handoff.
+     *
+     * @param array<string, mixed> $order
+     * @param array<string, mixed> $snapshot
+     * @return array<string, mixed>
+     */
+    public static function overlayOrderForHandoff(array $order, array $snapshot)
+    {
+        $financial = isset($snapshot['financial']) && is_array($snapshot['financial'])
+            ? $snapshot['financial']
+            : array();
+        $customer = isset($snapshot['customer']) && is_array($snapshot['customer'])
+            ? $snapshot['customer']
+            : array();
+
+        if (isset($financial['currency']) && trim((string) $financial['currency']) !== '') {
+            $order['currency_code'] = (string) $financial['currency'];
+        }
+        if (array_key_exists('phone', $customer)) {
+            $order['telephone'] = (string) $customer['phone'];
+        }
+        if (array_key_exists('email', $customer)) {
+            $order['email'] = (string) $customer['email'];
+        }
+        if (isset($customer['name']) && trim((string) $customer['name']) !== '') {
+            $parts = preg_split('/\s+/', trim((string) $customer['name']), 2);
+            $order['firstname'] = isset($parts[0]) ? (string) $parts[0] : '';
+            $order['lastname'] = isset($parts[1]) ? (string) $parts[1] : '';
+        }
+        if (isset($customer['address']) && trim((string) $customer['address']) !== '') {
+            // Preserve frozen delivery string; SmartUCF rebuilds address from payment_* fields.
+            $order['payment_address_1'] = (string) $customer['address'];
+            $order['payment_address_2'] = '';
+            $order['payment_city'] = '';
+            $order['payment_postcode'] = '';
+        }
+
+        return $order;
+    }
+
+    /**
+     * Resolve SmartUCF/Process-1 handoff inputs from the immutable application snapshot.
+     *
+     * @param array<string, mixed> $snapshot
+     * @param array<string, mixed> $order
+     * @return array{
+     *   calculation:MtUniCreditCalculationResult,
+     *   order:array<string,mixed>,
+     *   order_products:array<int,array<string,mixed>>
+     * }
+     */
+    public static function resolveHandoffInputs(array $snapshot, array $order)
+    {
+        return array(
+            'calculation' => self::toCalculationResult($snapshot),
+            'order' => self::overlayOrderForHandoff($order, $snapshot),
+            'order_products' => self::toOrderProducts($snapshot),
+        );
+    }
+
+    /**
      * Rebuild a calculation object for CP/SmartUCF builders from the frozen snapshot.
      *
      * @param array<string, mixed> $snapshot

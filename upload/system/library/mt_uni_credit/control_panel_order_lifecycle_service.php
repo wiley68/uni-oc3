@@ -603,7 +603,11 @@ final class MtUniCreditControlPanelOrderLifecycleService
             isset($row['application_snapshot_json']) ? $row['application_snapshot_json'] : null
         );
         if ($frozenSnapshot !== null) {
-            $calculation = MtUniCreditApplicationSnapshot::toCalculationResult($frozenSnapshot);
+            // Explicit frozen authority for Process 1 SmartUCF (calc + items + currency/customer).
+            $handoff = MtUniCreditApplicationSnapshot::resolveHandoffInputs($frozenSnapshot, $order);
+            $calculation = $handoff['calculation'];
+            $order = $handoff['order'];
+            $orderProducts = $handoff['order_products'];
         }
 
         try {

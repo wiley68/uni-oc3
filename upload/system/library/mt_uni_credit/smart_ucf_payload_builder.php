@@ -2,6 +2,9 @@
 
 /**
  * Builds the SmartUCF session-start JSON payload (Process 1 only).
+ *
+ * Callers with an existing financing attempt must pass snapshot-derived
+ * orderProducts / order currency-customer fields (see ApplicationSnapshot::resolveHandoffInputs).
  */
 final class MtUniCreditSmartUcfPayloadBuilder
 {
