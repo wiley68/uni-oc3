@@ -18,8 +18,11 @@ class ControllerExtensionModuleMtUniCredit extends Controller
         $this->load->model('setting/setting');
         $this->load->model('extension/module/mt_uni_credit');
 
-        // Self-heal presentation events on every Module admin open (no Save required).
-        $repairResult = $this->model_extension_module_mt_uni_credit->repairCatalogEvents();
+        // Event repair mutates oc_event — require exact module modify (access-only view must not repair).
+        $repairResult = null;
+        if ($this->user->hasPermission('modify', 'extension/module/mt_uni_credit')) {
+            $repairResult = $this->model_extension_module_mt_uni_credit->repairCatalogEvents();
+        }
 
         if (($this->request->server['REQUEST_METHOD'] === 'POST') && $this->validate()) {
             try {
@@ -151,14 +154,75 @@ class ControllerExtensionModuleMtUniCredit extends Controller
 
     public function install()
     {
+        if (!$this->assertModuleLifecycleModifyPermission()) {
+            return;
+        }
+
         $this->load->model('extension/module/mt_uni_credit');
         $this->model_extension_module_mt_uni_credit->install();
     }
 
     public function uninstall()
     {
+        if (!$this->assertModuleLifecycleModifyPermission()) {
+            return;
+        }
+
         $this->load->model('extension/module/mt_uni_credit');
         $this->model_extension_module_mt_uni_credit->uninstall();
+    }
+
+    /**
+     * Authorize module install/uninstall mutations.
+     *
+     * Native OC3 marketplace install (extension/extension/module/install) validates
+     * modify on extension/extension/module, writes extension/module/{code} permissions
+     * to DB, then load->controller()'s this method. Cart\User is not reloaded, so the
+     * new exact-route permission is often absent in memory on first install — accept
+     * the outer installer modify as the OC3-compatible equivalent for that path.
+     *
+     * Direct route without either permission performs zero mutation.
+     *
+     * @return bool
+     */
+    private function assertModuleLifecycleModifyPermission()
+    {
+        if ($this->user->hasPermission('modify', 'extension/module/mt_uni_credit')) {
+            return true;
+        }
+
+        // Outer native installer context (GET link → extension/extension/module/{install|uninstall}).
+        if ($this->user->hasPermission('modify', 'extension/extension/module')) {
+            return true;
+        }
+
+        $this->denyLifecycleMutation('extension/module/mt_uni_credit');
+
+        return false;
+    }
+
+    /**
+     * @param string $redirectRoute
+     * @return void
+     */
+    private function denyLifecycleMutation($redirectRoute)
+    {
+        $this->load->language('extension/module/mt_uni_credit');
+
+        if (isset($this->session->data) && is_array($this->session->data)) {
+            $this->session->data['error'] = $this->language->get('error_permission');
+        }
+
+        $route = isset($this->request->get['route']) ? (string) $this->request->get['route'] : '';
+        if (
+            $route === 'extension/module/mt_uni_credit/install'
+            || $route === 'extension/module/mt_uni_credit/uninstall'
+        ) {
+            $token = isset($this->session->data['user_token'])
+                ? ('user_token=' . $this->session->data['user_token'])
+                : '';
+            $this->response->redirect($this->url->link($redirectRoute, $token, true));
+        }
     }
 
     /**
@@ -306,6 +370,11 @@ class ControllerExtensionModuleMtUniCredit extends Controller
     private function applyEventRepairWarning(array &$data, $repairResult = null)
     {
         if (!empty($data['error_warning'])) {
+            return;
+        }
+
+        // null = repair not attempted (e.g. access-only admin) — do not surface a false failure.
+        if ($repairResult === null) {
             return;
         }
 

@@ -5,16 +5,22 @@ require_once DIR_SYSTEM . 'library/mt_uni_credit/bootstrap.php';
 /**
  * Product Buy → Checkout payment preselect (native session.payment_method).
  *
- * Invoked from OCMOD hooks on checkout/payment_method — not a public storefront route.
+ * OCMOD invokes applyPaymentPreselect / onPaymentMethodSaved via Loader::controller(),
+ * which always passes array(&$data). Catalog event callbacks pass &$route, &$data.
+ * Direct public routes execute Action with zero args and must not mutate session.
  */
 class ControllerExtensionMtUniCreditProductBuy extends Controller
 {
     /**
      * After payment_methods are discovered: select UniCredit when Buy preference is valid.
      *
+     * Required &$data matches Loader::controller / OCMOD invocation. Direct route
+     * (ControllerStartupRouter → Action::execute with no args) fails closed.
+     *
+     * @param array<string, mixed> $data
      * @return void
      */
-    public function applyPaymentPreselect()
+    public function applyPaymentPreselect(&$data)
     {
         if (!isset($this->session->data) || !is_array($this->session->data)) {
             return;
@@ -37,9 +43,10 @@ class ControllerExtensionMtUniCreditProductBuy extends Controller
     /**
      * After customer saves a payment method: drop Buy preference if they chose another method.
      *
+     * @param array<string, mixed> $data
      * @return void
      */
-    public function onPaymentMethodSaved()
+    public function onPaymentMethodSaved(&$data)
     {
         if (!isset($this->session->data) || !is_array($this->session->data)) {
             return;

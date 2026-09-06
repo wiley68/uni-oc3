@@ -90,14 +90,63 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
 
     public function install()
     {
+        if (!$this->assertPaymentLifecycleModifyPermission()) {
+            return;
+        }
+
         $this->load->model('extension/payment/mt_uni_credit');
         $this->model_extension_payment_mt_uni_credit->install();
     }
 
     public function uninstall()
     {
+        if (!$this->assertPaymentLifecycleModifyPermission()) {
+            return;
+        }
+
         $this->load->model('extension/payment/mt_uni_credit');
         $this->model_extension_payment_mt_uni_credit->uninstall();
+    }
+
+    /**
+     * Authorize payment install/uninstall mutations.
+     *
+     * Native OC3 path: extension/extension/payment/{install|uninstall} validates
+     * modify on extension/extension/payment, adds extension/payment/{code} permissions
+     * to DB, then load->controller()'s this method without reloading Cart\User.
+     *
+     * @return bool
+     */
+    private function assertPaymentLifecycleModifyPermission()
+    {
+        if ($this->user->hasPermission('modify', 'extension/payment/mt_uni_credit')) {
+            return true;
+        }
+
+        if ($this->user->hasPermission('modify', 'extension/extension/payment')) {
+            return true;
+        }
+
+        $this->load->language('extension/payment/mt_uni_credit');
+
+        if (isset($this->session->data) && is_array($this->session->data)) {
+            $this->session->data['error'] = $this->language->get('error_permission');
+        }
+
+        $route = isset($this->request->get['route']) ? (string) $this->request->get['route'] : '';
+        if (
+            $route === 'extension/payment/mt_uni_credit/install'
+            || $route === 'extension/payment/mt_uni_credit/uninstall'
+        ) {
+            $token = isset($this->session->data['user_token'])
+                ? ('user_token=' . $this->session->data['user_token'])
+                : '';
+            $this->response->redirect(
+                $this->url->link('marketplace/extension', $token . '&type=payment', true)
+            );
+        }
+
+        return false;
     }
 
     /**
