@@ -1,22 +1,132 @@
 <?php
 
 /**
- * Offline test network isolation (AUD-033 / F-033-01).
+ * Offline test network isolation (AUD-033 / F-033-01 / F-033-04).
  *
- * Enforcement: CLI re-exec with curl_init/curl_exec disabled so production
- * CP/SmartUCF cURL transports cannot send outbound requests. Fake transports
- * and injected SmartUCF executors do not call cURL and remain usable.
+ * Enforcement: CLI re-exec with curl_* disabled so production CP/SmartUCF
+ * cURL transports cannot send outbound requests. Fake transports and injected
+ * SmartUCF executors do not call cURL and remain usable.
+ *
+ * Activity detection (cross-version):
+ * - re-exec / offline guard marker, and/or
+ * - effective disable_functions listing required curl symbols
+ * - OR curl symbols unavailable (PHP 8+ / extension absent)
+ *
+ * Do NOT rely solely on function_exists() — on PHP 7.3/7.4 disabled functions
+ * may still appear in the function table.
  *
  * Source host scanning remains a diagnostic only.
  */
+
+/**
+ * @return array<int, string>
+ */
+function mtuc_phase0_required_disabled_curl_functions()
+{
+    return array(
+        'curl_init',
+        'curl_exec',
+        'curl_multi_init',
+        'curl_multi_exec',
+        'curl_multi_select',
+    );
+}
+
+/**
+ * @param string|null $raw
+ * @return array<int, string> lower-case function names
+ */
+function mtuc_phase0_parse_disable_functions($raw = null)
+{
+    if ($raw === null) {
+        $raw = ini_get('disable_functions');
+    }
+    $raw = trim((string) $raw);
+    if ($raw === '') {
+        return array();
+    }
+    $parts = preg_split('/\s*,\s*/', strtolower($raw));
+    if (!is_array($parts)) {
+        return array();
+    }
+    $out = array();
+    foreach ($parts as $part) {
+        $part = trim((string) $part);
+        if ($part !== '') {
+            $out[] = $part;
+        }
+    }
+
+    return array_values(array_unique($out));
+}
+
+/**
+ * @param string|null $raw disable_functions ini string
+ * @return bool
+ */
+function mtuc_phase0_curl_functions_disabled_in_ini($raw = null)
+{
+    $disabled = array_fill_keys(mtuc_phase0_parse_disable_functions($raw), true);
+    foreach (mtuc_phase0_required_disabled_curl_functions() as $fn) {
+        if (!isset($disabled[strtolower($fn)])) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/**
+ * Pure predicate for cross-version regression (no I/O).
+ *
+ * @param bool $allowNetwork
+ * @param bool $guardMarker
+ * @param string $disableFunctionsIni
+ * @param bool $curlInitExists
+ * @param bool $curlExecExists
+ * @return bool
+ */
+function mtuc_phase0_evaluate_network_isolation(
+    $allowNetwork,
+    $guardMarker,
+    $disableFunctionsIni,
+    $curlInitExists,
+    $curlExecExists
+) {
+    if ($allowNetwork) {
+        // Explicit opt-out: isolation is not active.
+        return false;
+    }
+
+    $iniBlocks = mtuc_phase0_curl_functions_disabled_in_ini($disableFunctionsIni);
+    $symbolsGone = (!$curlInitExists && !$curlExecExists);
+
+    // Guarded child: require effective disable_functions (PHP 7.x may still function_exists).
+    if ($guardMarker) {
+        return $iniBlocks || $symbolsGone;
+    }
+
+    // Unguarded process may already be offline via php.ini or missing curl extension.
+    return $iniBlocks || $symbolsGone;
+}
 
 /**
  * @return bool
  */
 function mtuc_phase0_network_isolation_active()
 {
-    // Disabled functions report as non-existent.
-    return !function_exists('curl_init') && !function_exists('curl_exec');
+    $allow = getenv('MTUC_PHASE0_ALLOW_NETWORK') === '1';
+    $guard = getenv('MTUC_OFFLINE_NETWORK_GUARD') === '1';
+    $ini = ini_get('disable_functions');
+    $ini = is_string($ini) ? $ini : '';
+
+    return mtuc_phase0_evaluate_network_isolation(
+        $allow,
+        $guard,
+        $ini,
+        function_exists('curl_init'),
+        function_exists('curl_exec')
+    );
 }
 
 /**
@@ -40,7 +150,8 @@ function mtuc_phase0_install_network_guard()
     if (getenv('MTUC_OFFLINE_NETWORK_GUARD') === '1') {
         fwrite(
             STDERR,
-            "MTUC network isolation: curl_init/curl_exec still available after guarded re-exec.\n"
+            "MTUC network isolation: guarded re-exec did not apply required disable_functions"
+                . " for curl_init/curl_exec (and curl_multi_*).\n"
         );
         exit(2);
     }
@@ -56,7 +167,7 @@ function mtuc_phase0_install_network_guard()
     }
 
     $php = (defined('PHP_BINARY') && PHP_BINARY !== '') ? PHP_BINARY : 'php';
-    $disable = 'curl_init,curl_exec,curl_multi_init,curl_multi_exec,curl_multi_select';
+    $disable = implode(',', mtuc_phase0_required_disabled_curl_functions());
     $existing = ini_get('disable_functions');
     if (is_string($existing) && trim($existing) !== '') {
         $disable = trim($existing) . ',' . $disable;

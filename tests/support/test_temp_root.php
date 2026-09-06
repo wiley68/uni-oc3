@@ -2,12 +2,15 @@
 
 /**
  * Unique temporary roots for offline tests (AUD-033 / F-033-03).
- * PHP 7.3 compatible. Cleanup is bounded to allocated roots only.
+ * PHP 7.3 compatible. Cleanup deletes ONLY helper-allocated roots.
  */
 final class MtUniCreditTestTempRoot
 {
-    /** @var array<int, string> */
+    /** @var array<string, string> normalized path => absolute path */
     private static $roots = array();
+
+    /** @var array<string, bool> normalized paths cleaned this process (idempotent) */
+    private static $cleaned = array();
 
     /** @var bool */
     private static $shutdownRegistered = false;
@@ -40,10 +43,16 @@ final class MtUniCreditTestTempRoot
             throw new RuntimeException('MTUC test temp: failed to create ' . $path);
         }
 
-        self::$roots[] = $path;
+        $resolved = realpath($path);
+        if ($resolved === false || $resolved === '') {
+            throw new RuntimeException('MTUC test temp: failed to canonicalize ' . $path);
+        }
+
+        $key = self::normalizePath($resolved);
+        self::$roots[$key] = $resolved;
         self::registerShutdownCleanup();
 
-        return $path;
+        return $resolved;
     }
 
     /**
@@ -64,48 +73,109 @@ final class MtUniCreditTestTempRoot
     }
 
     /**
+     * Delete an exact helper-allocated root only.
+     *
      * @param string $path
-     * @return void
+     * @return bool true when cleanup accepted (deleted or already gone); false when refused
      */
     public static function cleanup($path)
     {
         $path = (string) $path;
-        if ($path === '' || !is_dir($path)) {
-            return;
+        if ($path === '') {
+            return false;
+        }
+
+        $tempRoot = realpath(sys_get_temp_dir());
+        if ($tempRoot === false || $tempRoot === '') {
+            return false;
         }
 
         $resolved = realpath($path);
-        $tempRoot = realpath(sys_get_temp_dir());
-        if ($resolved === false || $tempRoot === false) {
-            return;
+        // Already missing: idempotent only for previously allocated/cleaned roots.
+        if ($resolved === false) {
+            $key = self::normalizePath($path);
+            if (isset(self::$roots[$key]) || isset(self::$cleaned[$key])) {
+                unset(self::$roots[$key]);
+                self::$cleaned[$key] = true;
+
+                return true;
+            }
+
+            return false;
         }
 
-        $resolvedNorm = strtolower(str_replace('\\', '/', $resolved));
-        $tempNorm = strtolower(str_replace('\\', '/', $tempRoot));
+        $key = self::normalizePath($resolved);
+        $tempKey = self::normalizePath($tempRoot);
 
-        // Must stay strictly under the system temp directory.
-        if ($resolvedNorm === $tempNorm || strpos($resolvedNorm, $tempNorm . '/') !== 0) {
-            return;
+        if ($key === '' || $key === $tempKey) {
+            return false;
         }
 
-        // Refuse shallow/dangerous targets (temp root itself or drive roots).
-        $parts = array_values(array_filter(explode('/', trim($resolvedNorm, '/')), 'strlen'));
+        // Exact membership in the allocation registry (not child/parent/unrelated).
+        if (!isset(self::$roots[$key])) {
+            // Idempotent re-clean of a root we already removed this process.
+            if (isset(self::$cleaned[$key])) {
+                return true;
+            }
+
+            return false;
+        }
+
+        // Defense in depth: allocated root must still resolve under system temp.
+        if (strpos($key, $tempKey . '/') !== 0) {
+            return false;
+        }
+
+        $parts = array_values(array_filter(explode('/', trim($key, '/')), 'strlen'));
         if (count($parts) < 2) {
-            return;
+            return false;
         }
 
-        self::deleteTree($resolved);
+        $ok = self::deleteTree($resolved);
+        unset(self::$roots[$key]);
+        self::$cleaned[$key] = true;
+
+        return $ok;
     }
 
     /**
-     * @return void
+     * @return bool true when every registered root cleaned successfully
      */
     public static function cleanupAll()
     {
-        foreach (self::$roots as $root) {
-            self::cleanup($root);
+        $ok = true;
+        $snapshot = self::$roots;
+        foreach ($snapshot as $absolute) {
+            if (!self::cleanup($absolute)) {
+                $ok = false;
+            }
         }
         self::$roots = array();
+
+        return $ok;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public static function allocatedRoots()
+    {
+        return array_values(self::$roots);
+    }
+
+    /**
+     * @param string $path
+     * @return string
+     */
+    private static function normalizePath($path)
+    {
+        $normalized = str_replace('\\', '/', (string) $path);
+        $normalized = rtrim($normalized, '/');
+        if (DIRECTORY_SEPARATOR === '\\') {
+            return strtolower($normalized);
+        }
+
+        return $normalized;
     }
 
     /**
@@ -124,29 +194,38 @@ final class MtUniCreditTestTempRoot
 
     /**
      * @param string $dir
-     * @return void
+     * @return bool
      */
     private static function deleteTree($dir)
     {
         if (!is_dir($dir)) {
-            return;
+            return true;
         }
         $items = @scandir($dir);
         if (!is_array($items)) {
-            return;
+            return false;
         }
+        $ok = true;
         foreach ($items as $item) {
             if ($item === '.' || $item === '..') {
                 continue;
             }
             $full = $dir . DIRECTORY_SEPARATOR . $item;
             if (is_dir($full) && !is_link($full)) {
-                self::deleteTree($full);
+                if (!self::deleteTree($full)) {
+                    $ok = false;
+                }
             } else {
-                @unlink($full);
+                if (!@unlink($full) && file_exists($full)) {
+                    $ok = false;
+                }
             }
         }
-        @rmdir($dir);
+        if (!@rmdir($dir) && is_dir($dir)) {
+            $ok = false;
+        }
+
+        return $ok;
     }
 }
 
