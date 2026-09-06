@@ -83,10 +83,17 @@ mtucAud006_assert(!$locks->release($storeId, $entry, $hash, $ownerA), 'renew: ol
 mtucAud006_assert($locks->release($storeId, $entry, $hash, $ownerB), 'renew: B release succeeds');
 
 $failDb = new class {
+    /**
+     * @param string $sql
+     */
     public function query($sql)
     {
         throw new Exception('simulated DB failure');
     }
+    /**
+     * @param mixed $v
+     * @return string
+     */
     public function escape($v)
     {
         return addslashes((string) $v);
@@ -108,6 +115,79 @@ try {
     $threw = true;
 }
 mtucAud006_assert($threw, 'renew: DB error fails closed');
+
+// ---------------------------------------------------------------------------
+// AUD-006-F01-R1: same-second active-owner renew (MySQL 0 changed rows)
+// ---------------------------------------------------------------------------
+$memory->reset();
+$clockHolder['now'] = $now;
+$hashR1 = str_repeat('9', 64);
+mtucAud006_assert($locks->acquire($storeId, $entry, $hashR1, $ownerA), 'r1: A acquires at T');
+$rowR1 = $locks->find($storeId, $entry, $hashR1);
+mtucAud006_assert(is_array($rowR1), 'r1: lock present');
+// Same second T: UPDATE writes identical expires_at/updated_at → affected=0, still active owner.
+mtucAud006_assert($locks->renew($storeId, $entry, $hashR1, $ownerA), 'r1: same-second renew → true');
+mtucAud006_assert(
+    $locks->acquire($storeId, $entry, $hashR1, $ownerA),
+    'r1: same-second re-entrant acquire → true'
+);
+mtucAud006_assert(!$locks->renew($storeId, $entry, $hashR1, $ownerB), 'r1: wrong owner same-second → false');
+
+$clockHolder['now'] = $now + MtUniCreditSecurityConstants::OPERATION_LOCK_TTL_SECONDS + 1;
+mtucAud006_assert(!$locks->renew($storeId, $entry, $hashR1, $ownerA), 'r1: expired owner → false');
+mtucAud006_assert($locks->acquire($storeId, $entry, $hashR1, $ownerB), 'r1: B takeover after expiry');
+mtucAud006_assert(!$locks->renew($storeId, $entry, $hashR1, $ownerA), 'r1: old owner after takeover → false');
+
+$memory->reset();
+$clockHolder['now'] = $now;
+$hashR1b = str_repeat('8', 64);
+mtucAud006_assert($locks->acquire($storeId, $entry, $hashR1b, $ownerA), 'r1: later-second baseline acquire');
+$clockHolder['now'] = $now + 5;
+mtucAud006_assert($locks->renew($storeId, $entry, $hashR1b, $ownerA), 'r1: later-second renew → true');
+
+$selectFailDb = new class {
+    public $phase = 'update';
+    /**
+     * @param string $sql
+     * @return object
+     */
+    public function query($sql)
+    {
+        if ($this->phase === 'update' && stripos(trim($sql), 'UPDATE') === 0) {
+            $this->phase = 'select';
+
+            return (object) array('num_rows' => 0, 'row' => array(), 'rows' => array());
+        }
+        throw new Exception('simulated SELECT failure');
+    }
+    /**
+     * @param mixed $v
+     * @return string
+     */
+    public function escape($v)
+    {
+        return addslashes((string) $v);
+    }
+    public function countAffected()
+    {
+        return 0;
+    }
+    public function getPrefix()
+    {
+        return 'oc_';
+    }
+};
+$threwSelect = false;
+try {
+    $selectFailLocks = new MtUniCreditOperationLockRepository(
+        new MtUniCreditDbAdapter($selectFailDb, 'oc_'),
+        $clock
+    );
+    $selectFailLocks->renew($storeId, $entry, $hashR1b, $ownerA);
+} catch (Exception $exception) {
+    $threwSelect = true;
+}
+mtucAud006_assert($threwSelect, 'r1: fallback SELECT DB error → exception');
 
 // ---------------------------------------------------------------------------
 // Long-running ownership: renew keeps B rejected

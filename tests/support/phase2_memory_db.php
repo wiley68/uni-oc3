@@ -390,10 +390,13 @@ final class Phase2MemoryDb
                 if (!((string) $row['expires_at'] > $gtNow)) {
                     return $this->emptyResult();
                 }
+                // MySQL changed-row semantics: identical DATETIME values → affected = 0.
+                $unchanged = ((string) $row['expires_at'] === (string) $expiresAt)
+                    && ((string) $row['updated_at'] === (string) $updatedAt);
                 $row['expires_at'] = $expiresAt;
                 $row['updated_at'] = $updatedAt;
                 $this->operationLocks[$key] = $row;
-                $this->affected = 1;
+                $this->affected = $unchanged ? 0 : 1;
 
                 return $this->emptyResult();
             }
@@ -705,7 +708,22 @@ final class Phase2MemoryDb
             return $this->emptyResult();
         }
 
-        return $this->singleRow($this->operationLocks[$key]);
+        $row = $this->operationLocks[$key];
+
+        $whereOwner = $this->extractWhereQuoted($sql, 'owner_token');
+        if ($whereOwner !== '' && (string) $row['owner_token'] !== $whereOwner) {
+            return $this->emptyResult();
+        }
+
+        $gtNow = $this->extractQuoted($sql, 'expires_at` > \'', '\'');
+        if ($gtNow === '') {
+            $gtNow = $this->extractQuoted($sql, 'expires_at > \'', '\'');
+        }
+        if ($gtNow !== '' && !((string) $row['expires_at'] > $gtNow)) {
+            return $this->emptyResult();
+        }
+
+        return $this->singleRow($row);
     }
 
     /**
