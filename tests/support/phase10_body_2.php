@@ -8,7 +8,7 @@
  */
 
 // ---------------------------------------------------------------------------
-// I. Stale bound order → unbind + fresh addOrder
+// I. Stale bound order (missing A, no attempt) → fail closed (AUD-007-F03)
 // ---------------------------------------------------------------------------
 $transportStale = new Phase4FakeCpHttpTransport();
 Phase9TestHarness::enqueueCpCreateSuccess($transportStale);
@@ -49,22 +49,43 @@ $staleInput['add_order'] = function ($orderData) use (&$addOrderCalls, $stackSta
     return $freshOrderId;
 };
 $staleResult = $stackStale['storefront']->submit($staleInput);
-mtuc10_assert(!empty($staleResult['success']), 'stale binding: fresh submit succeeds');
-mtuc10_assert($addOrderCalls === 1, 'stale binding: new addOrder() call = 1');
-mtuc10_assert((int) $staleResult['order_id'] === $freshOrderId, 'stale binding: new order id used');
+mtuc10_assert(empty($staleResult['success']), 'stale binding: fail closed');
+mtuc10_assert($addOrderCalls === 0, 'stale binding: addOrder = 0');
 mtuc10_assert(
-    isset($staleResult['session'][MtUniCreditStorefrontFinancingSubmissionService::SESSION_ORDER_BIND_KEY][$bindKey])
-        && (int) $staleResult['session'][MtUniCreditStorefrontFinancingSubmissionService::SESSION_ORDER_BIND_KEY][$bindKey] === $freshOrderId,
-    'stale binding: session rebound to fresh order under application bind key'
+    isset($staleResult['error']) && (
+        (string) $staleResult['error'] === 'legacy_binding_unresolved'
+        || (string) $staleResult['error'] === 'order_missing'
+    ),
+    'stale binding: legacy_binding_unresolved'
+);
+mtuc10_assert(
+    !isset($staleResult['session'][MtUniCreditStorefrontFinancingSubmissionService::SESSION_ORDER_BIND_KEY][$bindKey]),
+    'stale binding: fragile session bind cleared'
 );
 mtuc10_assert(
     !isset($staleResult['session'][MtUniCreditStorefrontFinancingSubmissionService::SESSION_ORDER_BIND_KEY][$selectionHash]),
     'stale binding: legacy bare product bind pruned'
 );
 $staleAttempt = $stackStale['attempts']->findByStoreOrder($stackStale['storeId'], $freshOrderId);
-mtuc10_assert($staleAttempt !== null, 'stale binding: attempt tied to fresh order');
+mtuc10_assert($staleAttempt === null, 'stale binding: no replacement attempt');
 $oldAttempt = $stackStale['attempts']->findByStoreOrder($stackStale['storeId'], $staleOrderId);
-mtuc10_assert($oldAttempt === null, 'stale binding: old attempt not reused/migrated');
+mtuc10_assert($oldAttempt === null, 'stale binding: no phantom attempt for missing A');
+$claimsStale = new MtUniCreditOperationOrderClaimRepository($stackStale['db'], $stackStale['clock']);
+$claimStale = $claimsStale->find(
+    $stackStale['storeId'],
+    MtUniCreditOperationEntryPoint::PRODUCT,
+    $bindKey
+);
+mtuc10_assert(
+    is_array($claimStale)
+        && (
+            !isset($claimStale['order_id'])
+            || $claimStale['order_id'] === null
+            || $claimStale['order_id'] === ''
+            || (int) $claimStale['order_id'] === 0
+        ),
+    'stale binding: durable claim not poisoned with missing/wrong order'
+);
 
 // ---------------------------------------------------------------------------
 // J. Valid bound order replay — addOrder = 0

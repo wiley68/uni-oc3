@@ -221,7 +221,8 @@ final class MtUniCreditStorefrontFinancingSubmissionService
         }
 
         try {
-            $orderId = $this->resolveBoundOrderId($sessionData, $operationKeyHash);
+            $sessionBoundOrderId = $this->resolveBoundOrderId($sessionData, $operationKeyHash);
+            $orderId = $sessionBoundOrderId;
             $addOrder = isset($input['add_order']) && is_callable($input['add_order'])
                 ? $input['add_order']
                 : null;
@@ -260,46 +261,83 @@ final class MtUniCreditStorefrontFinancingSubmissionService
             $order = null;
             if ($orderId > 0) {
                 if ($loadOrder === null) {
-                    $this->unbindOrderId($sessionData, $operationKeyHash);
-                    $orderId = 0;
-                } else {
-                    $loaded = call_user_func($loadOrder, $orderId);
-                    $order = is_array($loaded) ? $loaded : null;
-                    if (!$this->isReusableBoundOrder($order, $orderId, $storeId)) {
-                        $this->unbindOrderId($sessionData, $operationKeyHash);
-                        $orderId = 0;
-                        $order = null;
-                        $reuseReason = 'stale_missing_order';
-                    } else {
-                        $existingAttempt = $this->attempts->findByStoreOrder($storeId, $orderId);
-                        if (
-                            $existingAttempt !== null
-                            && !hash_equals(
-                                (string) $existingAttempt['operation_key_hash'],
-                                (string) $operationKeyHash
-                            )
-                        ) {
-                            // Cross-operation guard: never resume unrelated attempt.
-                            $this->unbindOrderId($sessionData, $operationKeyHash);
-                            $this->logDecision(
-                                $correlationId,
-                                $entryPoint,
-                                $operationKeyHash,
-                                $orderId,
-                                (int) $existingAttempt['attempt_id'],
-                                (string) $existingAttempt['state'],
-                                'reject_stale',
-                                'attempt_operation_mismatch'
-                            );
-                            $orderId = 0;
-                            $order = null;
-                            $reuseReason = 'attempt_operation_mismatch';
-                        } else {
-                            $decision = 'replay';
-                            $reuseReason = $claimOrderId > 0 ? 'durable_claim_order' : 'session_bind_match';
-                        }
-                    }
+                    return $this->rejectUnresolvedLegacyBinding(
+                        $correlationId,
+                        $entryPoint,
+                        $operationKeyHash,
+                        $storeId,
+                        $orderId,
+                        $claimOrderId,
+                        $sessionData
+                    );
                 }
+                $loaded = call_user_func($loadOrder, $orderId);
+                $order = is_array($loaded) ? $loaded : null;
+                if (!$this->isReusableBoundOrder($order, $orderId, $storeId)) {
+                    // AUD-007-F03: never materialize a replacement order for a known prior binding.
+                    return $this->rejectUnresolvedLegacyBinding(
+                        $correlationId,
+                        $entryPoint,
+                        $operationKeyHash,
+                        $storeId,
+                        $orderId,
+                        $claimOrderId,
+                        $sessionData
+                    );
+                }
+                $existingAttempt = $this->attempts->findByStoreOrder($storeId, $orderId);
+                if (
+                    $existingAttempt !== null
+                    && !hash_equals(
+                        (string) $existingAttempt['operation_key_hash'],
+                        (string) $operationKeyHash
+                    )
+                ) {
+                    // Cross-operation guard: never resume unrelated attempt or create replacement.
+                    $this->logDecision(
+                        $correlationId,
+                        $entryPoint,
+                        $operationKeyHash,
+                        $orderId,
+                        (int) $existingAttempt['attempt_id'],
+                        (string) $existingAttempt['state'],
+                        'reject_stale',
+                        'attempt_operation_mismatch'
+                    );
+
+                    return $this->fail('conflict', true);
+                }
+
+                $decision = 'replay';
+                $reuseReason = $claimOrderId > 0 ? 'durable_claim_order' : 'session_bind_match';
+
+                // Valid legacy session-only adoption must become durable immediately.
+                if ($claimOrderId <= 0) {
+                    try {
+                        $this->orderClaims->bindOrderId(
+                            $storeId,
+                            $entryPoint,
+                            $operationKeyHash,
+                            $orderId
+                        );
+                    } catch (MtUniCreditPersistenceValidationException $exception) {
+                        $this->logDecision(
+                            $correlationId,
+                            $entryPoint,
+                            $operationKeyHash,
+                            $orderId,
+                            $existingAttempt !== null ? (int) $existingAttempt['attempt_id'] : 0,
+                            $existingAttempt !== null ? (string) $existingAttempt['state'] : '',
+                            'reject_stale',
+                            'claim_bind_conflict'
+                        );
+
+                        return $this->fail('conflict', true);
+                    }
+                    $claimOrderId = $orderId;
+                    $reuseReason = 'session_bind_adopted_durable';
+                }
+                $this->bindOrderId($sessionData, $operationKeyHash, $orderId);
             }
 
             // Ignore legacy product/cart-only binds from other applications.
@@ -667,6 +705,71 @@ final class MtUniCreditStorefrontFinancingSubmissionService
         }
 
         return null;
+    }
+
+    /**
+     * AUD-007-F03: session/claim binding to an unusable order must fail closed.
+     * Never authorize replacement addOrder for the same operation in this request.
+     *
+     * @param string $correlationId
+     * @param string $entryPoint
+     * @param string $operationKeyHash
+     * @param int $storeId
+     * @param int $boundOrderId
+     * @param int $claimOrderId
+     * @param array<string, mixed> $sessionData
+     * @return array<string, mixed>
+     */
+    private function rejectUnresolvedLegacyBinding(
+        $correlationId,
+        $entryPoint,
+        $operationKeyHash,
+        $storeId,
+        $boundOrderId,
+        $claimOrderId,
+        array &$sessionData
+    ) {
+        $boundOrderId = (int) $boundOrderId;
+        $claimOrderId = (int) $claimOrderId;
+        $priorAttempt = $boundOrderId > 0
+            ? $this->attempts->findByStoreOrder($storeId, $boundOrderId)
+            : null;
+        $attemptId = $priorAttempt !== null ? (int) $priorAttempt['attempt_id'] : 0;
+        $attemptState = $priorAttempt !== null ? (string) $priorAttempt['state'] : '';
+
+        $reason = 'legacy_stale_session_binding';
+        $error = 'legacy_binding_unresolved';
+        if ($claimOrderId > 0) {
+            $reason = 'durable_claim_order_missing';
+            $error = 'order_missing';
+        } elseif ($priorAttempt !== null) {
+            if (
+                !hash_equals(
+                    (string) $priorAttempt['operation_key_hash'],
+                    (string) $operationKeyHash
+                )
+            ) {
+                $reason = 'attempt_operation_mismatch';
+                $error = 'conflict';
+            } else {
+                $reason = 'legacy_prior_attempt_unresolved';
+            }
+        }
+
+        $this->logDecision(
+            $correlationId,
+            $entryPoint,
+            $operationKeyHash,
+            $boundOrderId,
+            $attemptId,
+            $attemptState,
+            'reject_stale',
+            $reason
+        );
+        // Session cleanup only — do not bind durable claim to a missing/wrong order.
+        $this->unbindOrderId($sessionData, $operationKeyHash);
+
+        return $this->fail($error, true);
     }
 
     /**
