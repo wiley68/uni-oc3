@@ -86,7 +86,23 @@ function mtucAud010F01_chars($n, $ch = 'a')
     return str_repeat($ch, (int) $n);
 }
 
-$validator = new MtUniCreditStorefrontApplicantFieldValidator();
+if (!class_exists('Aud010F01LangFake', false)) {
+    final class Aud010F01LangFake
+    {
+        /**
+         * @param string $key
+         * @return string
+         */
+        public function get($key)
+        {
+            return (string) $key;
+        }
+    }
+}
+
+$validator = new MtUniCreditStorefrontApplicantFieldValidator(
+    MtUniCreditStorefrontValidationCopy::applicantMessages(new Aud010F01LangFake())
+);
 
 // -------------------------------------------------------------------------
 // Shared structural proof

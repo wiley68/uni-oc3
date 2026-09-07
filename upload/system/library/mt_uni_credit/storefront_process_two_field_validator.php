@@ -10,18 +10,12 @@ final class MtUniCreditStorefrontProcessTwoFieldValidator
     private $messages;
 
     /**
-     * @param array<string, string> $messages Localized message overrides
+     * @param array<string, string> $messages Localized messages from StorefrontValidationCopy
      */
     public function __construct(array $messages = array())
     {
-        $this->messages = array_merge(array(
-            'egn_required' => 'Полето е задължително.',
-            'egn_invalid' =>
-            'ЕГН трябва да съдържа 10 цифри. Първите 8 трябва да са валидна дата във формат ГГГГММДД.',
-            'phone2_required' => 'Полето е задължително.',
-            'phone2_invalid' =>
-            'Вторият телефон може да съдържа цифри, интервали, +, -, ( и ).',
-        ), $messages);
+        // No parallel customer-facing catalogue: OpenCart language via ValidationCopy is authoritative.
+        $this->messages = $messages;
     }
 
     /**

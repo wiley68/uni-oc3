@@ -25,20 +25,12 @@ final class MtUniCreditStorefrontApplicantFieldValidator
     private $messages;
 
     /**
-     * @param array<string, string> $messages Localized message overrides
+     * @param array<string, string> $messages Localized messages from StorefrontValidationCopy
      */
     public function __construct(array $messages = array())
     {
-        $this->messages = array_merge(array(
-            'required' => 'Полето е задължително.',
-            'name_length' => 'Полето трябва да бъде между 1 и 32 символа.',
-            'address_length' => 'Полето трябва да бъде между 3 и 128 символа.',
-            'phone_length' => 'Полето трябва да бъде между 3 и 32 символа.',
-            'phone_invalid' => 'Въведете валиден телефонен номер.',
-            'email_invalid' => 'Въведете валиден e-mail адрес.',
-            'email_length' => 'Полето трябва да бъде максимум 96 символа.',
-            'invalid_encoding' => 'Полето съдържа невалидни символи.',
-        ), $messages);
+        // No parallel customer-facing catalogue: OpenCart language via ValidationCopy is authoritative.
+        $this->messages = $messages;
     }
 
     /**

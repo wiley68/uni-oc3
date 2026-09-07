@@ -1,0 +1,9 @@
+{
+  "name": "mtuc-aud010-f02-jsdom",
+  "private": true,
+  "description": "Minimal jsdom+jquery harness for AUD-010 F02 production storefront.js proofs",
+  "dependencies": {
+    "jquery": "3.7.1",
+    "jsdom": "24.1.3"
+  }
+}

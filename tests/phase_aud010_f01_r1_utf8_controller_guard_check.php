@@ -281,7 +281,9 @@ function mtucAud010F01R1_chars($n, $ch = 'A')
     return str_repeat($ch, (int) $n);
 }
 
-$validator = new MtUniCreditStorefrontApplicantFieldValidator();
+$validator = new MtUniCreditStorefrontApplicantFieldValidator(
+    MtUniCreditStorefrontValidationCopy::applicantMessages(new Aud010F01R1LanguageFake())
+);
 $malformed = mtucAud010F01R1_malformedUtf8();
 
 // -------------------------------------------------------------------------

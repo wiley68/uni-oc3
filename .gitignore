@@ -1,3 +1,4 @@
 /dist/
 .tmp-authority/
+tests/support/aud010_f02_jsdom/node_modules/
 
