@@ -11,6 +11,12 @@ final class MtUniCreditRecordingProcessTwoMailer implements MtUniCreditProcessTw
     /** @var bool */
     public $forceFailure = false;
 
+    /** @var array<string, bool> lowercase email => force fail */
+    public $forceFailureByEmail = array();
+
+    /** @var callable|null fn(audience, email): void — invoked immediately after a successful send record */
+    public $afterSuccessfulSend;
+
     /** @var MtUniCreditProcessTwoLeasingMailPresenter */
     private $presenter;
 
@@ -27,6 +33,99 @@ final class MtUniCreditRecordingProcessTwoMailer implements MtUniCreditProcessTw
     /**
      * @param array<string, mixed> $shop
      * @param array<string, mixed> $orderContext
+     * @return array<int, array{audience: string, email: string, recipient_key: string}>
+     */
+    public function resolveProcess2Recipients(array $shop, array $orderContext)
+    {
+        $from = (string) (isset($orderContext['store_email']) ? $orderContext['store_email'] : '');
+        $adminEmails = $this->parseAdminEmails($shop, $from);
+        $customerEmail = trim((string) (isset($orderContext['customer_email']) ? $orderContext['customer_email'] : ''));
+        $recipients = array();
+        foreach ($adminEmails as $email) {
+            $recipients[] = array(
+                'audience' => 'admin',
+                'email' => $email,
+                'recipient_key' => MtUniCreditProcessTwoMailRecipientRepository::normalizeRecipientKey($email),
+            );
+        }
+        if (
+            $customerEmail !== ''
+            && !in_array(strtolower($customerEmail), array_map('strtolower', $adminEmails), true)
+        ) {
+            $recipients[] = array(
+                'audience' => 'customer',
+                'email' => $customerEmail,
+                'recipient_key' => MtUniCreditProcessTwoMailRecipientRepository::normalizeRecipientKey($customerEmail),
+            );
+        }
+
+        return $recipients;
+    }
+
+    /**
+     * @param array<string, mixed> $shop
+     * @param array<string, mixed> $orderContext
+     * @param MtUniCreditProcessTwoSensitiveData|null $sensitive
+     * @param string $audience
+     * @param string $email
+     * @return bool
+     */
+    public function sendProcess2Recipient(array $shop, array $orderContext, $sensitive, $audience, $email)
+    {
+        $audience = (string) $audience;
+        $email = trim((string) $email);
+        $key = strtolower($email);
+        if ($this->forceFailure || !empty($this->forceFailureByEmail[$key])) {
+            return false;
+        }
+
+        if ($audience === 'admin') {
+            $html = $this->presenter->renderHtml($this->presenter->adminRows($orderContext, $sensitive));
+            if (strpos($html, MtUniCreditFinancingLeasingPresenter::TITLE) === false) {
+                return false;
+            }
+            $this->sent[] = array(
+                'audience' => 'admin',
+                'to' => $email,
+                'html' => $html,
+                'has_egn' => $sensitive instanceof MtUniCreditProcessTwoSensitiveData
+                    && $sensitive->egn !== ''
+                    && strpos($html, $sensitive->egn) !== false,
+            );
+            if (is_callable($this->afterSuccessfulSend)) {
+                call_user_func($this->afterSuccessfulSend, $audience, $email);
+            }
+
+            return true;
+        }
+
+        if ($audience === 'customer') {
+            $html = $this->presenter->renderHtml($this->presenter->customerRows($orderContext));
+            if (preg_match('/\b\d{10}\b/', $html) && strpos($html, 'ЕГН') !== false) {
+                return false;
+            }
+            if (strpos($html, MtUniCreditFinancingLeasingPresenter::TITLE) === false) {
+                return false;
+            }
+            $this->sent[] = array(
+                'audience' => 'customer',
+                'to' => $email,
+                'html' => $html,
+                'has_egn' => false,
+            );
+            if (is_callable($this->afterSuccessfulSend)) {
+                call_user_func($this->afterSuccessfulSend, $audience, $email);
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<string, mixed> $shop
+     * @param array<string, mixed> $orderContext
      * @param MtUniCreditProcessTwoSensitiveData|null $sensitive
      * @return bool
      */
@@ -35,45 +134,16 @@ final class MtUniCreditRecordingProcessTwoMailer implements MtUniCreditProcessTw
         if ($this->forceFailure) {
             return false;
         }
-
-        $adminEmails = $this->parseAdminEmails($shop, (string) (isset($orderContext['store_email']) ? $orderContext['store_email'] : ''));
-        $customerEmail = trim((string) (isset($orderContext['customer_email']) ? $orderContext['customer_email'] : ''));
         $ok = true;
-
-        if ($adminEmails !== array()) {
-            $adminHtml = $this->presenter->renderHtml($this->presenter->adminRows($orderContext, $sensitive));
-            if (strpos($adminHtml, MtUniCreditFinancingLeasingPresenter::TITLE) === false) {
+        foreach ($this->resolveProcess2Recipients($shop, $orderContext) as $recipient) {
+            if (!$this->sendProcess2Recipient(
+                $shop,
+                $orderContext,
+                $sensitive,
+                $recipient['audience'],
+                $recipient['email']
+            )) {
                 $ok = false;
-            } else {
-                foreach ($adminEmails as $to) {
-                    $this->sent[] = array(
-                        'audience' => 'admin',
-                        'to' => $to,
-                        'html' => $adminHtml,
-                        'has_egn' => $sensitive instanceof MtUniCreditProcessTwoSensitiveData
-                            && $sensitive->egn !== ''
-                            && strpos($adminHtml, $sensitive->egn) !== false,
-                    );
-                }
-            }
-        }
-
-        if (
-            $customerEmail !== ''
-            && !in_array(strtolower($customerEmail), array_map('strtolower', $adminEmails), true)
-        ) {
-            $customerHtml = $this->presenter->renderHtml($this->presenter->customerRows($orderContext));
-            if (preg_match('/\b\d{10}\b/', $customerHtml) && strpos($customerHtml, 'ЕГН') !== false) {
-                $ok = false;
-            } elseif (strpos($customerHtml, MtUniCreditFinancingLeasingPresenter::TITLE) === false) {
-                $ok = false;
-            } else {
-                $this->sent[] = array(
-                    'audience' => 'customer',
-                    'to' => $customerEmail,
-                    'html' => $customerHtml,
-                    'has_egn' => false,
-                );
             }
         }
 

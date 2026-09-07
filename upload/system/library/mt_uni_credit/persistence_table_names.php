@@ -19,6 +19,8 @@ final class MtUniCreditPersistenceTableNames
 
     const OPERATION_ORDER_CLAIM = 'mt_uni_credit_operation_order_claim';
 
+    const PROCESS2_MAIL_RECIPIENT = 'mt_uni_credit_process2_mail_recipient';
+
     /**
      * Phase 2 foundational tables only.
      *
@@ -84,6 +86,21 @@ final class MtUniCreditPersistenceTableNames
     /**
      * @return array<int, string>
      */
+    /**
+     * Process 2 recipient-level mail delivery (AUD-012).
+     *
+     * @return array<int, string>
+     */
+    public static function process2MailRecipientTables()
+    {
+        return array(
+            self::PROCESS2_MAIL_RECIPIENT,
+        );
+    }
+
+    /**
+     * @return array<int, string>
+     */
     public static function allPersistenceTables()
     {
         return array_merge(
@@ -91,7 +108,8 @@ final class MtUniCreditPersistenceTableNames
             self::phase3Tables(),
             self::phase6Tables(),
             self::phase7Tables(),
-            self::operationOrderClaimTables()
+            self::operationOrderClaimTables(),
+            self::process2MailRecipientTables()
         );
     }
 }

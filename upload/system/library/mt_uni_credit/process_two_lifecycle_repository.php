@@ -5,6 +5,9 @@
  */
 final class MtUniCreditProcessTwoLifecycleRepository
 {
+    /** Active process2_preparing claims older than this are reclaimable. */
+    const STALE_PREPARING_SECONDS = 45;
+
     /** @var MtUniCreditDbAdapter */
     private $db;
 
@@ -81,6 +84,7 @@ final class MtUniCreditProcessTwoLifecycleRepository
         }
         $result = $this->db->query(
             "SELECT `attempt_id`, `process2_state`, `process2_sensitive_enc`, `process2_mail_sent`,
+                    `process2_claimed_at`, `process2_claim_owner`,
                     `leasing_presentation_json`,
                     `store_id`, `order_id`, `control_panel_order_id`, `state`
              FROM `" . $this->tableName() . "`
@@ -91,21 +95,61 @@ final class MtUniCreditProcessTwoLifecycleRepository
     }
 
     /**
-     * @param int $attemptId
+     * @param array<string, mixed> $row
      * @return bool
      */
-    public function claimPreparing($attemptId)
+    public function isStalePreparing(array $row)
+    {
+        if (
+            (string) (isset($row['process2_state']) ? $row['process2_state'] : '')
+            !== MtUniCreditProcessTwoLifecycleStates::PREPARING
+        ) {
+            return false;
+        }
+        $claimedAt = isset($row['process2_claimed_at']) ? (string) $row['process2_claimed_at'] : '';
+        if ($claimedAt === '') {
+            return true;
+        }
+        $timestamp = strtotime($claimedAt . ' UTC');
+
+        return $timestamp === false || ($this->clock->now() - $timestamp) >= self::STALE_PREPARING_SECONDS;
+    }
+
+    /**
+     * Atomic claim of process2_preparing from not_started/failed or stale preparing.
+     *
+     * @param int $attemptId
+     * @param string $ownerToken
+     * @return bool
+     */
+    public function claimPreparing($attemptId, $ownerToken = '')
     {
         $attemptId = (int) $attemptId;
+        $ownerToken = (string) $ownerToken;
+        if ($ownerToken === '' || !MtUniCreditLockOwnerTokenGenerator::isValidFormat($ownerToken)) {
+            $ownerToken = MtUniCreditLockOwnerTokenGenerator::generate();
+        }
         $now = $this->now();
+        $cutoff = $this->clock->formatUtc($this->clock->now() - self::STALE_PREPARING_SECONDS);
         $this->db->query(
             "UPDATE `" . $this->tableName() . "`
              SET `process2_state` = '" . MtUniCreditProcessTwoLifecycleStates::PREPARING . "',
+                 `process2_claimed_at` = '" . $this->db->escape($now) . "',
+                 `process2_claim_owner` = '" . $this->db->escape($ownerToken) . "',
                  `updated_at` = '" . $this->db->escape($now) . "'
              WHERE `attempt_id` = " . $attemptId . "
-               AND `process2_state` IN (
-                    '" . MtUniCreditProcessTwoLifecycleStates::NOT_STARTED . "',
-                    '" . MtUniCreditProcessTwoLifecycleStates::FAILED . "'
+               AND (
+                    `process2_state` IN (
+                        '" . MtUniCreditProcessTwoLifecycleStates::NOT_STARTED . "',
+                        '" . MtUniCreditProcessTwoLifecycleStates::FAILED . "'
+                    )
+                    OR (
+                        `process2_state` = '" . MtUniCreditProcessTwoLifecycleStates::PREPARING . "'
+                        AND (
+                            `process2_claimed_at` IS NULL
+                            OR `process2_claimed_at` <= '" . $this->db->escape($cutoff) . "'
+                        )
+                    )
                )"
         );
 
@@ -123,6 +167,8 @@ final class MtUniCreditProcessTwoLifecycleRepository
         $this->db->query(
             "UPDATE `" . $this->tableName() . "`
              SET `process2_state` = '" . MtUniCreditProcessTwoLifecycleStates::PREPARED . "',
+                 `process2_claimed_at` = NULL,
+                 `process2_claim_owner` = NULL,
                  `updated_at` = '" . $this->db->escape($now) . "'
              WHERE `attempt_id` = " . $attemptId . "
                AND `process2_state` IN (
@@ -154,6 +200,8 @@ final class MtUniCreditProcessTwoLifecycleRepository
         $this->db->query(
             "UPDATE `" . $this->tableName() . "`
              SET `process2_state` = '" . MtUniCreditProcessTwoLifecycleStates::FAILED . "',
+                 `process2_claimed_at` = NULL,
+                 `process2_claim_owner` = NULL,
                  `updated_at` = '" . $this->db->escape($now) . "'
              WHERE `attempt_id` = " . $attemptId . "
                AND `process2_state` = '" . MtUniCreditProcessTwoLifecycleStates::PREPARING . "'"
@@ -172,6 +220,8 @@ final class MtUniCreditProcessTwoLifecycleRepository
     }
 
     /**
+     * Aggregate completion marker derived from recipient-level durable sent state.
+     *
      * @param int $attemptId
      * @return void
      */

@@ -49,6 +49,7 @@ final class MtUniCreditPersistenceSchema
         $this->ensurePhase9Columns();
         $this->ensurePhase10Columns();
         $this->ensureAud007F02Columns();
+        $this->ensureAud012Columns();
     }
 
     /**
@@ -79,6 +80,22 @@ final class MtUniCreditPersistenceSchema
     public function ensureAud007F02Columns()
     {
         $this->ensureAlterColumns(self::createAud007F02AlterStatements($this->db->getPrefix()));
+    }
+
+    /**
+     * AUD-012 Process 2 preparing claim + recipient mail durability.
+     *
+     * @return void
+     */
+    public function ensureAud012Columns()
+    {
+        $this->ensureAlterColumns(self::createAud012AlterStatements($this->db->getPrefix()));
+        foreach (self::createAud012TableStatements($this->db->getPrefix()) as $sql) {
+            try {
+                $this->db->query($sql);
+            } catch (Exception $ignored) {
+            }
+        }
     }
 
     /**
@@ -145,7 +162,8 @@ final class MtUniCreditPersistenceSchema
             self::createPhase3TableStatements($prefix),
             self::createPhase6TableStatements($prefix),
             self::createPhase7TableStatements($prefix),
-            self::createOperationOrderClaimTableStatements($prefix)
+            self::createOperationOrderClaimTableStatements($prefix),
+            self::createAud012TableStatements($prefix)
         );
     }
 
@@ -202,6 +220,51 @@ final class MtUniCreditPersistenceSchema
         return array(
             "ALTER TABLE `{$financingAttempt}` ADD COLUMN `application_snapshot_json` LONGTEXT NULL",
             "ALTER TABLE `{$financingAttempt}` ADD COLUMN `application_snapshot_hash` CHAR(64) NULL",
+        );
+    }
+
+    /**
+     * Idempotent AUD-012 column upgrades for financing_attempt.
+     *
+     * @param string $prefix
+     * @return array<int, string>
+     */
+    public static function createAud012AlterStatements($prefix)
+    {
+        $financingAttempt = $prefix . MtUniCreditPersistenceTableNames::FINANCING_ATTEMPT;
+
+        return array(
+            "ALTER TABLE `{$financingAttempt}` ADD COLUMN `process2_claimed_at` DATETIME NULL",
+            "ALTER TABLE `{$financingAttempt}` ADD COLUMN `process2_claim_owner` CHAR(32) NULL",
+        );
+    }
+
+    /**
+     * Durable Process 2 mail recipient delivery state (AUD-012 F02/F03).
+     *
+     * @param string $prefix
+     * @return array<int, string>
+     */
+    public static function createAud012TableStatements($prefix)
+    {
+        $table = $prefix . MtUniCreditPersistenceTableNames::PROCESS2_MAIL_RECIPIENT;
+
+        return array(
+            "CREATE TABLE IF NOT EXISTS `{$table}` (
+                `process2_mail_recipient_id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+                `attempt_id` INT UNSIGNED NOT NULL,
+                `audience` VARCHAR(16) NOT NULL,
+                `recipient_key` VARCHAR(255) NOT NULL,
+                `recipient_email` VARCHAR(255) NOT NULL,
+                `state` VARCHAR(32) NOT NULL DEFAULT 'pending',
+                `claim_owner_token` CHAR(32) NULL,
+                `claimed_at` DATETIME NULL,
+                `created_at` DATETIME NOT NULL,
+                `updated_at` DATETIME NOT NULL,
+                PRIMARY KEY (`process2_mail_recipient_id`),
+                UNIQUE KEY `uniq_mt_uni_credit_p2_mail_recipient` (`attempt_id`, `recipient_key`),
+                KEY `idx_mt_uni_credit_p2_mail_recipient_state` (`state`, `claimed_at`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
         );
     }
 

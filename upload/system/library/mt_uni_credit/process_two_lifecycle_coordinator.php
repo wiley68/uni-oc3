@@ -6,6 +6,7 @@
 final class MtUniCreditProcessTwoLifecycleCoordinator
 {
     const ERROR_CP_BANK_STATUS_SYNC_PENDING = 'cp_bank_status_sync_pending';
+    const ERROR_LOCAL_BANK_STATUS_FAILED = 'local_bank_status_failed';
     const CUSTOMER_SUCCESS_MESSAGE =
     'Очаквайте контакт за потвърждаване на направената от Вас заявка.';
     const CUSTOMER_FAILED_MESSAGE =
@@ -14,6 +15,9 @@ final class MtUniCreditProcessTwoLifecycleCoordinator
 
     /** @var MtUniCreditProcessTwoLifecycleRepository */
     private $lifecycle;
+
+    /** @var MtUniCreditProcessTwoMailRecipientRepository */
+    private $mailRecipients;
 
     /** @var MtUniCreditOrderBankStatusRepository */
     private $bankStatuses;
@@ -29,6 +33,7 @@ final class MtUniCreditProcessTwoLifecycleCoordinator
 
     /**
      * @param MtUniCreditProcessTwoLifecycleRepository $lifecycle
+     * @param MtUniCreditProcessTwoMailRecipientRepository $mailRecipients
      * @param MtUniCreditOrderBankStatusRepository $bankStatuses
      * @param MtUniCreditControlPanelClient $controlPanel
      * @param MtUniCreditProcessTwoSensitiveCipher $cipher
@@ -36,12 +41,14 @@ final class MtUniCreditProcessTwoLifecycleCoordinator
      */
     public function __construct(
         MtUniCreditProcessTwoLifecycleRepository $lifecycle,
+        MtUniCreditProcessTwoMailRecipientRepository $mailRecipients,
         MtUniCreditOrderBankStatusRepository $bankStatuses,
         MtUniCreditControlPanelClient $controlPanel,
         MtUniCreditProcessTwoSensitiveCipher $cipher,
         MtUniCreditProcessTwoMailPort $mailer
     ) {
         $this->lifecycle = $lifecycle;
+        $this->mailRecipients = $mailRecipients;
         $this->bankStatuses = $bankStatuses;
         $this->controlPanel = $controlPanel;
         $this->cipher = $cipher;
@@ -84,7 +91,7 @@ final class MtUniCreditProcessTwoLifecycleCoordinator
             : MtUniCreditProcessTwoLifecycleStates::NOT_STARTED);
 
         if ($state === MtUniCreditProcessTwoLifecycleStates::PREPARED) {
-            $this->reconcileBankStatus($attemptId, $storeId, $localOrderId);
+            $this->reconcileBankStatus($attemptId, $storeId, $localOrderId, false);
             if (!$this->lifecycle->isMailSent($attemptId)) {
                 $this->trySendMail($attemptId, $row, $shop, $orderContext);
             }
@@ -97,7 +104,10 @@ final class MtUniCreditProcessTwoLifecycleCoordinator
             );
         }
 
-        if ($state === MtUniCreditProcessTwoLifecycleStates::PREPARING) {
+        if (
+            $state === MtUniCreditProcessTwoLifecycleStates::PREPARING
+            && !$this->lifecycle->isStalePreparing($row)
+        ) {
             return array(
                 'success' => false,
                 'error' => 'operation_processing',
@@ -106,7 +116,8 @@ final class MtUniCreditProcessTwoLifecycleCoordinator
             );
         }
 
-        if (!$this->lifecycle->claimPreparing($attemptId)) {
+        $ownerToken = MtUniCreditLockOwnerTokenGenerator::generate();
+        if (!$this->lifecycle->claimPreparing($attemptId, $ownerToken)) {
             $fresh = $this->lifecycle->findByAttempt($attemptId);
             if (
                 $fresh !== null
@@ -124,12 +135,22 @@ final class MtUniCreditProcessTwoLifecycleCoordinator
             );
         }
 
+        $row = $this->lifecycle->findByAttempt($attemptId);
+        if ($row === null) {
+            return array(
+                'success' => false,
+                'error' => 'process2_failed',
+                'message' => self::CUSTOMER_FAILED_MESSAGE,
+                'recoverable' => true,
+            );
+        }
+
         try {
             $enc = (string) (isset($row['process2_sensitive_enc']) ? $row['process2_sensitive_enc'] : '');
             if ($enc === '') {
                 throw new RuntimeException('Process 2 sensitive payload missing.');
             }
-            $this->reconcileBankStatus($attemptId, $storeId, $localOrderId);
+            $this->reconcileBankStatus($attemptId, $storeId, $localOrderId, true);
             $this->lifecycle->markPrepared($attemptId);
             $this->trySendMail($attemptId, $row, $shop, $orderContext);
             $this->lifecycle->redactExpiredSensitiveBatch();
@@ -171,6 +192,17 @@ final class MtUniCreditProcessTwoLifecycleCoordinator
         if ($this->lifecycle->isMailSent($attemptId)) {
             return;
         }
+
+        $recipients = $this->mailer->resolveProcess2Recipients($shop, $orderContext);
+        $this->mailRecipients->ensureRecipients($attemptId, $recipients);
+        $this->mailRecipients->normalizeStaleSendingToUncertain($attemptId);
+
+        if ($recipients === array() || $this->mailRecipients->areAllRecipientsSent($attemptId)) {
+            $this->lifecycle->markMailSent($attemptId);
+
+            return;
+        }
+
         $sensitive = null;
         $enc = (string) (isset($row['process2_sensitive_enc']) ? $row['process2_sensitive_enc'] : '');
         if ($enc !== '') {
@@ -180,18 +212,69 @@ final class MtUniCreditProcessTwoLifecycleCoordinator
                 error_log('mt_uni_credit: Process 2 sensitive decrypt failed attempt_id=' . $attemptId);
             }
         }
+
         try {
             $orderContext = $this->enrichMailContext($attemptId, $row, $orderContext);
-            $ok = $this->mailer->sendProcess2Notifications($shop, $orderContext, $sensitive);
-            if ($ok) {
-                $this->lifecycle->markMailSent($attemptId);
-            }
         } catch (Throwable $exception) {
-            // Bank status already prepared — mail is independent (OC4 PS9 parity).
             error_log(
-                'mt_uni_credit: Process 2 mail failed attempt_id=' . $attemptId
+                'mt_uni_credit: Process 2 mail context failed attempt_id=' . $attemptId
                     . ' class=' . get_class($exception)
             );
+
+            return;
+        }
+
+        foreach ($recipients as $recipient) {
+            $key = isset($recipient['recipient_key'])
+                ? (string) $recipient['recipient_key']
+                : MtUniCreditProcessTwoMailRecipientRepository::normalizeRecipientKey($recipient['email']);
+            $existing = $this->mailRecipients->find($attemptId, $key);
+            if ($existing !== null) {
+                $existingState = (string) (isset($existing['state']) ? $existing['state'] : '');
+                if (
+                    $existingState === MtUniCreditProcessTwoMailRecipientStates::SENT
+                    || $existingState === MtUniCreditProcessTwoMailRecipientStates::UNCERTAIN
+                ) {
+                    continue;
+                }
+            }
+
+            $ownerToken = MtUniCreditLockOwnerTokenGenerator::generate();
+            if (!$this->mailRecipients->claimForSending($attemptId, $key, $ownerToken)) {
+                continue;
+            }
+
+            try {
+                $ok = $this->mailer->sendProcess2Recipient(
+                    $shop,
+                    $orderContext,
+                    $sensitive,
+                    (string) $recipient['audience'],
+                    (string) $recipient['email']
+                );
+                if ($ok) {
+                    if (!$this->mailRecipients->markSent($attemptId, $key, $ownerToken)) {
+                        $this->mailRecipients->markUncertain($attemptId, $key);
+                        error_log(
+                            'mt_uni_credit: Process 2 mail send-before-marker ambiguous'
+                                . ' attempt_id=' . $attemptId
+                                . ' recipient_key=' . $key
+                        );
+                    }
+                } else {
+                    $this->mailRecipients->markFailed($attemptId, $key, $ownerToken);
+                }
+            } catch (Throwable $exception) {
+                $this->mailRecipients->markFailed($attemptId, $key, $ownerToken);
+                error_log(
+                    'mt_uni_credit: Process 2 mail failed attempt_id=' . $attemptId
+                        . ' class=' . get_class($exception)
+                );
+            }
+        }
+
+        if ($this->mailRecipients->areAllRecipientsSent($attemptId)) {
+            $this->lifecycle->markMailSent($attemptId);
         }
     }
 
@@ -227,21 +310,41 @@ final class MtUniCreditProcessTwoLifecycleCoordinator
      * @param int $attemptId
      * @param int $storeId
      * @param int $localOrderId
+     * @param bool $requireSuccess when true, local+CP failures block prepared/mail
      * @return void
      */
-    private function reconcileBankStatus($attemptId, $storeId, $localOrderId)
+    private function reconcileBankStatus($attemptId, $storeId, $localOrderId, $requireSuccess)
     {
         $status = MtUniCreditBankStatus::process2Sent();
         $shopOrderId = substr((string) $localOrderId, 0, 13);
+
         try {
-            $this->bankStatuses->updateByOrderIdentifier(
+            $local = $this->bankStatuses->updateByOrderIdentifier(
                 $storeId,
                 $shopOrderId,
                 $status['status_id'],
                 $status['status_label']
             );
-        } catch (Throwable $ignored) {
+        } catch (Throwable $exception) {
+            if ($requireSuccess) {
+                throw new RuntimeException(self::ERROR_LOCAL_BANK_STATUS_FAILED, 0, $exception);
+            }
+            $local = null;
         }
+
+        if ($requireSuccess) {
+            if ($local === null) {
+                throw new RuntimeException(self::ERROR_LOCAL_BANK_STATUS_FAILED);
+            }
+            $verified = $this->bankStatuses->findByOrderId($storeId, $localOrderId);
+            if (
+                $verified === null
+                || (string) $verified['status_id'] !== (string) $status['status_id']
+            ) {
+                throw new RuntimeException(self::ERROR_LOCAL_BANK_STATUS_FAILED);
+            }
+        }
+
         try {
             $this->controlPanel->updateOrderStatus(
                 $shopOrderId,
@@ -256,6 +359,9 @@ final class MtUniCreditProcessTwoLifecycleCoordinator
                     . ' status_id=' . $status['status_id']
                     . ' class=' . get_class($exception)
             );
+            if ($requireSuccess) {
+                throw $exception;
+            }
         }
     }
 }

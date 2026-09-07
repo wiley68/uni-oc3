@@ -21,6 +21,7 @@ final class MtUniCreditProcessTwoServiceFactory
         $encryptionSecretOverride = null
     ) {
         $lifecycle = new MtUniCreditProcessTwoLifecycleRepository($db, $clock);
+        $mailRecipients = new MtUniCreditProcessTwoMailRecipientRepository($db, $clock);
         $bankStatuses = new MtUniCreditOrderBankStatusRepository($db, $clock);
         $cipher = new MtUniCreditProcessTwoSensitiveCipher($encryptionSecretOverride);
         if (!$mailer instanceof MtUniCreditProcessTwoMailPort) {
@@ -29,6 +30,7 @@ final class MtUniCreditProcessTwoServiceFactory
 
         return new MtUniCreditProcessTwoLifecycleCoordinator(
             $lifecycle,
+            $mailRecipients,
             $bankStatuses,
             $controlPanelClient,
             $cipher,

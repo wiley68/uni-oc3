@@ -50,6 +50,9 @@ final class Phase2MemoryDb
     /** @var array<int, array<string, mixed>> */
     private $financingAttempts = array();
 
+    /** @var array<string, array<string, mixed>> attemptId|recipientKey => row */
+    private $process2MailRecipients = array();
+
     /** @var int */
     private $nextShopCacheId = 1;
 
@@ -61,6 +64,9 @@ final class Phase2MemoryDb
 
     /** @var int */
     private $nextFinancingAttemptId = 1;
+
+    /** @var int */
+    private $nextProcess2MailRecipientId = 1;
 
     /** @var string */
     private $prefix = 'oc_';
@@ -237,6 +243,10 @@ final class Phase2MemoryDb
             return $this->insertIgnoreOperationOrderClaim($sql);
         }
 
+        if (stripos($sql, 'INSERT IGNORE INTO') === 0 && strpos($sql, 'process2_mail_recipient') !== false) {
+            return $this->insertIgnoreProcess2MailRecipient($sql);
+        }
+
         if (stripos($sql, 'INSERT INTO') === 0 && strpos($sql, 'shop_cache') !== false) {
             return $this->upsertShopCache($sql);
         }
@@ -263,6 +273,10 @@ final class Phase2MemoryDb
 
         if (stripos($sql, 'UPDATE') === 0 && strpos($sql, 'operation_order_claim') !== false) {
             return $this->updateOperationOrderClaim($sql);
+        }
+
+        if (stripos($sql, 'UPDATE') === 0 && strpos($sql, 'process2_mail_recipient') !== false) {
+            return $this->updateProcess2MailRecipient($sql);
         }
 
         if (stripos($sql, 'UPDATE') === 0 && strpos($sql, 'financing_attempt') !== false) {
@@ -315,6 +329,10 @@ final class Phase2MemoryDb
 
         if (stripos($sql, 'SELECT') === 0 && strpos($sql, 'financing_attempt') !== false) {
             return $this->selectFinancingAttempt($sql);
+        }
+
+        if (stripos($sql, 'SELECT') === 0 && strpos($sql, 'process2_mail_recipient') !== false) {
+            return $this->selectProcess2MailRecipient($sql);
         }
 
         if (stripos($sql, 'SELECT') === 0 && strpos($sql, 'setting') !== false) {
@@ -1295,6 +1313,8 @@ final class Phase2MemoryDb
             'process2_state' => MtUniCreditProcessTwoLifecycleStates::NOT_STARTED,
             'process2_sensitive_enc' => null,
             'process2_mail_sent' => 0,
+            'process2_claimed_at' => null,
+            'process2_claim_owner' => null,
             'leasing_presentation_json' => null,
             'application_snapshot_json' => null,
             'application_snapshot_hash' => null,
@@ -1319,6 +1339,43 @@ final class Phase2MemoryDb
 
         $row = $this->financingAttempts[$attemptId];
 
+        // AUD-012: claimPreparing with stale preparing reclaim OR-clause.
+        if (
+            strpos($sql, '`process2_claimed_at`') !== false
+            && strpos($sql, "SET `process2_state` = '" . MtUniCreditProcessTwoLifecycleStates::PREPARING . "'") !== false
+            && strpos($sql, 'OR (') !== false
+        ) {
+            $currentP2 = (string) (isset($row['process2_state']) ? $row['process2_state'] : '');
+            $freshOk = in_array(
+                $currentP2,
+                array(
+                    MtUniCreditProcessTwoLifecycleStates::NOT_STARTED,
+                    MtUniCreditProcessTwoLifecycleStates::FAILED,
+                ),
+                true
+            );
+            $staleOk = false;
+            if ($currentP2 === MtUniCreditProcessTwoLifecycleStates::PREPARING) {
+                $cutoff = '';
+                if (preg_match("/`process2_claimed_at`\\s*<=\\s*'([^']*)'/", $sql, $cutoffMatch)) {
+                    $cutoff = (string) $cutoffMatch[1];
+                }
+                $claimedAt = isset($row['process2_claimed_at']) ? $row['process2_claimed_at'] : null;
+                $staleOk = ($claimedAt === null || $claimedAt === '' || ($cutoff !== '' && (string) $claimedAt <= $cutoff));
+            }
+            if (!$freshOk && !$staleOk) {
+                return $this->emptyResult();
+            }
+        } elseif (preg_match("/AND `process2_state` IN \\(([^)]+)\\)/", $sql, $p2StateMatch)) {
+            $allowedP2 = array();
+            if (preg_match_all("/'([^']+)'/", $p2StateMatch[1], $parts)) {
+                $allowedP2 = $parts[1];
+            }
+            if (!in_array((string) (isset($row['process2_state']) ? $row['process2_state'] : ''), $allowedP2, true)) {
+                return $this->emptyResult();
+            }
+        }
+
         if (preg_match("/AND `state` IN \\(([^)]+)\\)/", $sql, $stateMatch)) {
             $allowed = array();
             if (preg_match_all("/'([^']+)'/", $stateMatch[1], $parts)) {
@@ -1335,16 +1392,6 @@ final class Phase2MemoryDb
                 $allowedSmart = $parts[1];
             }
             if (!in_array((string) $row['smartucf_state'], $allowedSmart, true)) {
-                return $this->emptyResult();
-            }
-        }
-
-        if (preg_match("/AND `process2_state` IN \\(([^)]+)\\)/", $sql, $p2StateMatch)) {
-            $allowedP2 = array();
-            if (preg_match_all("/'([^']+)'/", $p2StateMatch[1], $parts)) {
-                $allowedP2 = $parts[1];
-            }
-            if (!in_array((string) (isset($row['process2_state']) ? $row['process2_state'] : ''), $allowedP2, true)) {
                 return $this->emptyResult();
             }
         }
@@ -1417,6 +1464,8 @@ final class Phase2MemoryDb
             'smartucf_completed_at',
             'process2_state',
             'process2_sensitive_enc',
+            'process2_claimed_at',
+            'process2_claim_owner',
             'leasing_presentation_json',
             'application_snapshot_json',
             'application_snapshot_hash',
@@ -1483,6 +1532,159 @@ final class Phase2MemoryDb
     /**
      * @return object
      */
+    /**
+     * @param string $sql
+     * @return object
+     */
+    private function insertIgnoreProcess2MailRecipient($sql)
+    {
+        $fields = $this->parseInsertValues($sql);
+        $attemptId = (int) $fields['attempt_id'];
+        $recipientKey = (string) $fields['recipient_key'];
+        $key = $attemptId . '|' . $recipientKey;
+        if (isset($this->process2MailRecipients[$key])) {
+            $this->affected = 0;
+
+            return $this->emptyResult();
+        }
+
+        $this->process2MailRecipients[$key] = array(
+            'process2_mail_recipient_id' => $this->nextProcess2MailRecipientId++,
+            'attempt_id' => $attemptId,
+            'audience' => (string) $fields['audience'],
+            'recipient_key' => $recipientKey,
+            'recipient_email' => (string) $fields['recipient_email'],
+            'state' => (string) $fields['state'],
+            'claim_owner_token' => null,
+            'claimed_at' => null,
+            'created_at' => (string) $fields['created_at'],
+            'updated_at' => (string) $fields['updated_at'],
+        );
+        $this->affected = 1;
+
+        return $this->emptyResult();
+    }
+
+    /**
+     * @param string $sql
+     * @return object
+     */
+    private function updateProcess2MailRecipient($sql)
+    {
+        $attemptId = (int) $this->extractWhereInt($sql, 'attempt_id');
+        $recipientKey = $this->extractWhereQuoted($sql, 'recipient_key');
+        $keys = array();
+        if ($recipientKey !== '') {
+            if ($attemptId > 0) {
+                $keys[] = $attemptId . '|' . $recipientKey;
+            } else {
+                foreach ($this->process2MailRecipients as $key => $row) {
+                    if ((string) $row['recipient_key'] === $recipientKey) {
+                        $keys[] = $key;
+                    }
+                }
+            }
+        } else {
+            foreach ($this->process2MailRecipients as $key => $row) {
+                if ((int) $row['attempt_id'] === $attemptId) {
+                    $keys[] = $key;
+                }
+            }
+        }
+
+        $affected = 0;
+        foreach ($keys as $key) {
+            if (!isset($this->process2MailRecipients[$key])) {
+                continue;
+            }
+            $row = $this->process2MailRecipients[$key];
+
+            if (preg_match("/AND `state` IN \\(([^)]+)\\)/", $sql, $stateInMatch)) {
+                $allowed = array();
+                if (preg_match_all("/'([^']+)'/", $stateInMatch[1], $parts)) {
+                    $allowed = $parts[1];
+                }
+                if (!in_array((string) $row['state'], $allowed, true)) {
+                    continue;
+                }
+            }
+
+            if (preg_match("/AND `state` = '([^']+)'/", $sql, $stateExactMatch)) {
+                if ((string) $row['state'] !== $stateExactMatch[1]) {
+                    continue;
+                }
+            }
+
+            if (preg_match("/AND `claim_owner_token` = '([^']*)'/", $sql, $ownerMatch)) {
+                if ((string) (isset($row['claim_owner_token']) ? $row['claim_owner_token'] : '') !== $ownerMatch[1]) {
+                    continue;
+                }
+            }
+
+            if (
+                strpos($sql, '`claimed_at` IS NULL OR `claimed_at` <=') !== false
+                || preg_match("/`claimed_at`\\s*<=\\s*'([^']*)'/", $sql, $cutoffMatch)
+            ) {
+                $cutoff = isset($cutoffMatch[1]) ? (string) $cutoffMatch[1] : '';
+                if ($cutoff === '' && preg_match("/`claimed_at`\\s*<=\\s*'([^']*)'/", $sql, $m2)) {
+                    $cutoff = (string) $m2[1];
+                }
+                $claimedAt = isset($row['claimed_at']) ? $row['claimed_at'] : null;
+                if (!($claimedAt === null || $claimedAt === '' || ($cutoff !== '' && (string) $claimedAt <= $cutoff))) {
+                    continue;
+                }
+            }
+
+            foreach (array('state', 'claim_owner_token', 'claimed_at', 'updated_at') as $column) {
+                if (stripos($sql, '`' . $column . '` = NULL') !== false) {
+                    $row[$column] = null;
+                    continue;
+                }
+                $value = $this->extractSetValue($sql, $column);
+                if ($value !== '') {
+                    $row[$column] = $value;
+                }
+            }
+
+            $this->process2MailRecipients[$key] = $row;
+            $affected++;
+        }
+
+        $this->affected = $affected;
+
+        return $this->emptyResult();
+    }
+
+    /**
+     * @param string $sql
+     * @return object
+     */
+    private function selectProcess2MailRecipient($sql)
+    {
+        $attemptId = (int) $this->extractWhereInt($sql, 'attempt_id');
+        $recipientKey = $this->extractWhereQuoted($sql, 'recipient_key');
+        if ($recipientKey !== '') {
+            $key = $attemptId . '|' . $recipientKey;
+            if (!isset($this->process2MailRecipients[$key])) {
+                return $this->emptyResult();
+            }
+
+            return $this->singleRow($this->process2MailRecipients[$key]);
+        }
+
+        $rows = array();
+        foreach ($this->process2MailRecipients as $row) {
+            if ((int) $row['attempt_id'] === $attemptId) {
+                $rows[] = $row;
+            }
+        }
+        usort($rows, function ($a, $b) {
+            return ((int) $a['process2_mail_recipient_id']) - ((int) $b['process2_mail_recipient_id']);
+        });
+
+        return $this->rowsResult($rows);
+    }
+
     /**
      * Simulate MySQL GET_LOCK / RELEASE_LOCK (connection-owned, no wait sleep).
      *

@@ -12,9 +12,11 @@
 // ---------------------------------------------------------------------------
 $required = array(
     'process_two_lifecycle_states.php',
+    'process_two_mail_recipient_states.php',
     'process_two_sensitive_data.php',
     'process_two_sensitive_cipher.php',
     'process_two_lifecycle_repository.php',
+    'process_two_mail_recipient_repository.php',
     'process_two_lifecycle_coordinator.php',
     'process_two_submission_support.php',
     'process_two_service_factory.php',
@@ -45,6 +47,11 @@ $phase10Sql = MtUniCreditPersistenceSchema::createPhase10AlterStatements('oc_');
 mtuc10_assert(count($phase10Sql) >= 4, 'phase 10 schema alter statements present');
 mtuc10_assert(strpos(implode("\n", $phase10Sql), 'process2_sensitive_enc') !== false, 'phase 10 adds process2_sensitive_enc');
 mtuc10_assert(strpos(implode("\n", $phase10Sql), 'process2_mail_sent') !== false, 'phase 10 adds process2_mail_sent');
+
+$aud012Sql = MtUniCreditPersistenceSchema::createAud012AlterStatements('oc_');
+mtuc10_assert(strpos(implode("\n", $aud012Sql), 'process2_claimed_at') !== false, 'AUD-012 adds process2_claimed_at');
+$aud012Tables = MtUniCreditPersistenceSchema::createAud012TableStatements('oc_');
+mtuc10_assert(strpos(implode("\n", $aud012Tables), 'process2_mail_recipient') !== false, 'AUD-012 adds process2_mail_recipient table');
 
 $forbiddenTokens = array(
     'str_contains',
