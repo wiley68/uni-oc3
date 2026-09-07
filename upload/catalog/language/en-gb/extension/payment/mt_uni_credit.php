@@ -11,6 +11,7 @@ $_['text_prepared_ready'] = 'The financing request is prepared and can be submit
 $_['text_prepared_success'] = 'The order has been sent to the financing system.';
 $_['text_prepared_retryable'] = 'The order was created, but sending to the financing system was not successful. You may try again.';
 $_['text_prepared_ambiguous'] = 'The order was created locally, but the financing submission result is not confirmed. Please do not submit again — contact the store.';
+$_['text_prepared_conflict'] = 'The financing request already exists, but its details do not match the current order. Please do not submit again — contact the store.';
 $_['text_prepared_in_progress'] = 'The financing request is already being processed. Please wait.';
 $_['button_submit_financing'] = 'Submit financing request';
 $_['button_retry_financing'] = 'Try again';
