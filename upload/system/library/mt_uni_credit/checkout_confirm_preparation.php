@@ -39,14 +39,6 @@ final class MtUniCreditCheckoutConfirmPreparation
             return array('error' => 'order_missing');
         }
 
-        $preparedOrderId = (int) (isset($input['prepared_order_id']) ? $input['prepared_order_id'] : 0);
-        if ($preparedOrderId === $orderId) {
-            return array(
-                'success' => true,
-                'continuation_route' => MtUniCreditConstants::CHECKOUT_PREPARED_ROUTE,
-            );
-        }
-
         $order = isset($input['order']) && is_array($input['order']) ? $input['order'] : null;
         if ($order === null) {
             return array('error' => 'order_missing');
@@ -60,6 +52,12 @@ final class MtUniCreditCheckoutConfirmPreparation
 
         if ((int) (isset($order['order_id']) ? $order['order_id'] : 0) !== $orderId) {
             return array('error' => 'order_missing');
+        }
+
+        $actor = isset($input['actor']) && is_array($input['actor']) ? $input['actor'] : array();
+        $ownershipError = MtUniCreditCheckoutOrderActorOwnership::rejectReason($order, $actor);
+        if ($ownershipError !== null) {
+            return array('error' => $ownershipError);
         }
 
         $orderPaymentCode = trim((string) (isset($order['payment_code']) ? $order['payment_code'] : ''));
@@ -81,6 +79,7 @@ final class MtUniCreditCheckoutConfirmPreparation
             };
         $checkoutGrandTotal = (float) (isset($input['checkout_grand_total']) ? $input['checkout_grand_total'] : 0.0);
         $currencyCode = (string) (isset($input['currency_code']) ? $input['currency_code'] : '');
+        $currencyValue = array_key_exists('currency_value', $input) ? $input['currency_value'] : null;
 
         if (!MtUniCreditCheckoutOrderCartParity::matchesCurrentCart(
             $order,
@@ -88,9 +87,19 @@ final class MtUniCreditCheckoutConfirmPreparation
             $getOptions,
             $cartProducts,
             $checkoutGrandTotal,
-            $currencyCode
+            $currencyCode,
+            $currencyValue
         )) {
             return array('error' => 'order_changed');
+        }
+
+        $preparedOrderId = (int) (isset($input['prepared_order_id']) ? $input['prepared_order_id'] : 0);
+        // Prepared marker is UX-only: ownership/parity already revalidated above.
+        if ($preparedOrderId === $orderId) {
+            return array(
+                'success' => true,
+                'continuation_route' => MtUniCreditConstants::CHECKOUT_PREPARED_ROUTE,
+            );
         }
 
         if (!$this->availability->isEligibleForPreparedOrder(

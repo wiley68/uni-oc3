@@ -134,7 +134,15 @@ final class Phase7TestHarness
             return array(7);
         });
 
-        return $factory->create(Phase5TestHarness::cartProducts(), $total);
+        return $factory->create(array(
+            array(
+                'product_id' => 42,
+                'quantity' => 1,
+                'price' => 500.0,
+                'tax_class_id' => 0,
+                'option' => array(),
+            ),
+        ), $total);
     }
 
     /**

@@ -103,7 +103,40 @@ final class Phase5TestHarness
             'order_status_id' => 0,
             'payment_code' => MtUniCreditConstants::EXTENSION_CODE,
             'currency_code' => 'BGN',
+            'currency_value' => 1.0,
+            'customer_id' => 0,
+            'email' => 'guest@example.test',
             'total' => (float) $total,
+        );
+    }
+
+    /**
+     * Guest checkout actor matching Phase5TestHarness::orderRow email.
+     *
+     * @param string $email
+     * @return array{customer_id: int, is_guest: bool, guest_email: string}
+     */
+    public static function guestActor($email = 'guest@example.test')
+    {
+        return array(
+            'customer_id' => 0,
+            'is_guest' => true,
+            'guest_email' => (string) $email,
+        );
+    }
+
+    /**
+     * Logged-in checkout actor.
+     *
+     * @param int $customerId
+     * @return array{customer_id: int, is_guest: bool, guest_email: string}
+     */
+    public static function loggedInActor($customerId)
+    {
+        return array(
+            'customer_id' => (int) $customerId,
+            'is_guest' => false,
+            'guest_email' => '',
         );
     }
 }

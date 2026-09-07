@@ -289,6 +289,12 @@ final class MtUniCreditCheckoutFinancingSubmissionService
             return array('error' => 'order_store_mismatch');
         }
 
+        $actor = isset($input['actor']) && is_array($input['actor']) ? $input['actor'] : array();
+        $ownershipError = MtUniCreditCheckoutOrderActorOwnership::rejectReason($order, $actor);
+        if ($ownershipError !== null) {
+            return array('error' => $ownershipError);
+        }
+
         $paymentCode = isset($order['payment_code']) ? (string) $order['payment_code'] : '';
         if (
             $paymentCode !== MtUniCreditConstants::EXTENSION_CODE
@@ -328,6 +334,28 @@ final class MtUniCreditCheckoutFinancingSubmissionService
         $orderTotal = round((float) (isset($order['total']) ? $order['total'] : 0), 2);
         if (abs($orderTotal - round((float) $cartContext->total, 2)) > 0.009) {
             return array('error' => 'amount_changed');
+        }
+
+        $cartProducts = isset($input['cart_products']) && is_array($input['cart_products'])
+            ? $input['cart_products']
+            : $this->cartProductsFromContext($cartContext);
+        $getOptions = isset($input['get_order_options']) && is_callable($input['get_order_options'])
+            ? $input['get_order_options']
+            : function () {
+                return array();
+            };
+        $currencyCode = (string) (isset($input['currency_code']) ? $input['currency_code'] : '');
+        $currencyValue = array_key_exists('currency_value', $input) ? $input['currency_value'] : null;
+        if (!MtUniCreditCheckoutOrderCartParity::matchesCurrentCart(
+            $order,
+            $orderProducts,
+            $getOptions,
+            $cartProducts,
+            (float) $cartContext->total,
+            $currencyCode,
+            $currencyValue
+        )) {
+            return array('error' => 'order_changed');
         }
 
         $resolution = $this->cartSchemes->resolve($shop, $cartContext);
@@ -376,6 +404,29 @@ final class MtUniCreditCheckoutFinancingSubmissionService
             'calculation' => $calculation,
             'unicid' => $unicid,
         );
+    }
+
+    /**
+     * Rebuild cart product rows (with options) from CartContext for structural parity.
+     *
+     * @param MtUniCreditCartContext $cartContext
+     * @return array<int, array<string, mixed>>
+     */
+    private function cartProductsFromContext(MtUniCreditCartContext $cartContext)
+    {
+        $products = array();
+        foreach ($cartContext->lines as $line) {
+            if (!$line instanceof MtUniCreditCartLine) {
+                continue;
+            }
+            $products[] = array(
+                'product_id' => (int) $line->product->productId,
+                'quantity' => (int) $line->quantity,
+                'option' => is_array($line->options) ? $line->options : array(),
+            );
+        }
+
+        return $products;
     }
 
     /**

@@ -58,6 +58,8 @@ class ModelExtensionPaymentMtUniCredit extends Model
         $orderProducts = $orderId > 0 ? $this->model_checkout_order->getOrderProducts($orderId) : array();
         $checkoutGrandTotal = $this->calculateCheckoutGrandTotal();
         $currency = (string) (isset($this->session->data['currency']) ? $this->session->data['currency'] : $this->config->get('config_currency'));
+        $currencyValue = $this->resolveSessionCurrencyValue($currency);
+        $cartProducts = is_array($this->cart->getProducts()) ? $this->cart->getProducts() : array();
 
         $preparation = new MtUniCreditCheckoutConfirmPreparation(
             $this->createPaymentAvailability(),
@@ -72,10 +74,12 @@ class ModelExtensionPaymentMtUniCredit extends Model
                 : 0),
             'order' => is_array($order) ? $order : null,
             'order_products' => is_array($orderProducts) ? $orderProducts : array(),
-            'cart_products' => $this->cart->getProducts(),
+            'cart_products' => $cartProducts,
             'get_order_options' => array($this->model_checkout_order, 'getOrderOptions'),
             'checkout_grand_total' => $checkoutGrandTotal,
             'currency_code' => $currency,
+            'currency_value' => $currencyValue,
+            'actor' => $this->resolveCheckoutActor(),
             'store_id' => $this->resolveStoreId(),
             'module_enabled' => $this->isModuleEnabled(),
             'payment_enabled' => $this->isPaymentEnabled(),
@@ -110,12 +114,20 @@ class ModelExtensionPaymentMtUniCredit extends Model
         );
         $service = $this->createCheckoutFinancingSubmissionService($db, $stack);
 
+        $currency = (string) (isset($this->session->data['currency']) ? $this->session->data['currency'] : $this->config->get('config_currency'));
+        $cartProducts = is_array($this->cart->getProducts()) ? $this->cart->getProducts() : array();
+
         return $service->submit(array(
             'store_id' => $storeId,
             'order_id' => $orderId,
             'order' => is_array($order) ? $order : null,
             'order_products' => is_array($orderProducts) ? $orderProducts : array(),
             'cart_context' => $this->createCheckoutCartContext(),
+            'cart_products' => $cartProducts,
+            'get_order_options' => array($this->model_checkout_order, 'getOrderOptions'),
+            'currency_code' => $currency,
+            'currency_value' => $this->resolveSessionCurrencyValue($currency),
+            'actor' => $this->resolveCheckoutActor(),
             'process2' => is_array($process2) ? $process2 : array(),
             'scheme_key' => isset($selection['scheme_key']) ? (string) $selection['scheme_key'] : '',
             'first_installment' => isset($selection['first_installment'])
@@ -384,5 +396,74 @@ class ModelExtensionPaymentMtUniCredit extends Model
     private function resolveStoreId()
     {
         return (int) $this->config->get('config_store_id');
+    }
+
+    /**
+     * Current checkout actor from OpenCart customer/session authority (never posted).
+     *
+     * @return array{customer_id: int, is_guest: bool, guest_email: string}
+     */
+    private function resolveCheckoutActor()
+    {
+        $customerId = 0;
+        if (
+            isset($this->customer)
+            && is_object($this->customer)
+            && method_exists($this->customer, 'isLogged')
+            && $this->customer->isLogged()
+            && method_exists($this->customer, 'getId')
+        ) {
+            $customerId = (int) $this->customer->getId();
+        }
+
+        if ($customerId > 0) {
+            return array(
+                'customer_id' => $customerId,
+                'is_guest' => false,
+                'guest_email' => '',
+            );
+        }
+
+        $guestEmail = '';
+        if (isset($this->session->data['guest']['email'])) {
+            $guestEmail = (string) $this->session->data['guest']['email'];
+        }
+
+        return array(
+            'customer_id' => 0,
+            'is_guest' => true,
+            'guest_email' => $guestEmail,
+        );
+    }
+
+    /**
+     * Active session currency conversion value from OpenCart currency library.
+     *
+     * @param string $currencyCode
+     * @return float|null
+     */
+    private function resolveSessionCurrencyValue($currencyCode)
+    {
+        $currencyCode = trim((string) $currencyCode);
+        if (
+            $currencyCode === ''
+            || !isset($this->currency)
+            || !is_object($this->currency)
+            || !method_exists($this->currency, 'getValue')
+        ) {
+            return null;
+        }
+
+        try {
+            $value = $this->currency->getValue($currencyCode);
+        } catch (Exception $exception) {
+            return null;
+        }
+
+        if (!is_numeric($value)) {
+            return null;
+        }
+
+        return (float) $value;
     }
 }

@@ -474,12 +474,20 @@ final class Phase9TestHarness
      */
     public static function submitInput(int $orderId, int $storeId): array
     {
+        $order = Phase7TestHarness::orderRow($orderId, $storeId);
+
         return array(
             'store_id' => $storeId,
             'order_id' => $orderId,
-            'order' => Phase7TestHarness::orderRow($orderId, $storeId),
+            'order' => $order,
             'order_products' => Phase7TestHarness::orderProducts(),
             'cart_context' => Phase7TestHarness::cartContext(),
+            'currency_code' => (string) $order['currency_code'],
+            'currency_value' => isset($order['currency_value']) ? (float) $order['currency_value'] : 1.0,
+            'actor' => Phase5TestHarness::guestActor((string) $order['email']),
+            'get_order_options' => function () {
+                return array();
+            },
         );
     }
 
@@ -509,6 +517,7 @@ final class Phase9TestHarness
         $order['email'] = 'customer@example.test';
         $order['store_email'] = 'store@example.test';
         $input['order'] = $order;
+        $input['actor'] = Phase5TestHarness::guestActor('customer@example.test');
 
         return $input;
     }

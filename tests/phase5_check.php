@@ -173,6 +173,8 @@ $result = $preparation->prepare(array(
     },
     'checkout_grand_total' => 500.0,
     'currency_code' => 'BGN',
+    'currency_value' => 1.0,
+    'actor' => Phase5TestHarness::guestActor(),
     'store_id' => Phase5TestHarness::STORE_A,
     'module_enabled' => true,
     'payment_enabled' => true,
@@ -197,6 +199,8 @@ $resultMissing = $preparation->prepare(array(
     },
     'checkout_grand_total' => 500.0,
     'currency_code' => 'BGN',
+    'currency_value' => 1.0,
+    'actor' => Phase5TestHarness::guestActor(),
     'store_id' => Phase5TestHarness::STORE_A,
     'module_enabled' => true,
     'payment_enabled' => true,
@@ -215,6 +219,8 @@ $resultStore = $preparation->prepare(array(
     },
     'checkout_grand_total' => 500.0,
     'currency_code' => 'BGN',
+    'currency_value' => 1.0,
+    'actor' => Phase5TestHarness::guestActor(),
     'store_id' => Phase5TestHarness::STORE_A,
     'module_enabled' => true,
     'payment_enabled' => true,
@@ -233,6 +239,8 @@ $resultChanged = $preparation->prepare(array(
     },
     'checkout_grand_total' => 500.0,
     'currency_code' => 'BGN',
+    'currency_value' => 1.0,
+    'actor' => Phase5TestHarness::guestActor(),
     'store_id' => Phase5TestHarness::STORE_A,
     'module_enabled' => true,
     'payment_enabled' => true,
@@ -244,13 +252,15 @@ $resultIdempotent = $preparation->prepare(array(
     'order_id' => 42,
     'prepared_order_id' => 42,
     'order' => $order,
-    'order_products' => array(),
-    'cart_products' => array(),
+    'order_products' => array(array('order_product_id' => 1, 'product_id' => 1, 'quantity' => 1)),
+    'cart_products' => $cartProducts,
     'get_order_options' => function () {
         return array();
     },
     'checkout_grand_total' => 500.0,
     'currency_code' => 'BGN',
+    'currency_value' => 1.0,
+    'actor' => Phase5TestHarness::guestActor(),
     'store_id' => Phase5TestHarness::STORE_A,
     'module_enabled' => true,
     'payment_enabled' => true,
@@ -259,6 +269,29 @@ mtuc5_assert(!empty($resultIdempotent['success']), 'prepared order id is idempot
 mtuc5_assert(
     isset($resultIdempotent['continuation_route']) && $resultIdempotent['continuation_route'] === MtUniCreditConstants::CHECKOUT_PREPARED_ROUTE,
     'idempotent confirm returns same continuation route'
+);
+
+$resultPreparedStale = $preparation->prepare(array(
+    'payment_code' => MtUniCreditConstants::EXTENSION_CODE,
+    'order_id' => 42,
+    'prepared_order_id' => 42,
+    'order' => $order,
+    'order_products' => array(array('order_product_id' => 1, 'product_id' => 1, 'quantity' => 1)),
+    'cart_products' => array(array('product_id' => 99, 'quantity' => 1, 'price' => 500.0, 'option' => array())),
+    'get_order_options' => function () {
+        return array();
+    },
+    'checkout_grand_total' => 500.0,
+    'currency_code' => 'BGN',
+    'currency_value' => 1.0,
+    'actor' => Phase5TestHarness::guestActor(),
+    'store_id' => Phase5TestHarness::STORE_A,
+    'module_enabled' => true,
+    'payment_enabled' => true,
+));
+mtuc5_assert(
+    isset($resultPreparedStale['error']) && $resultPreparedStale['error'] === 'order_changed',
+    'prepared shortcut still requires current cart parity'
 );
 
 $preparedAccess = MtUniCreditCheckoutPreparedBoundary::validateAccess(

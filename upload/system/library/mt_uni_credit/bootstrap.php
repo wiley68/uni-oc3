@@ -52,6 +52,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'checkout_submit_token.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'checkout_prepared_view_state.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'checkout_live_grand_total.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'checkout_order_cart_parity.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'checkout_order_actor_ownership.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'oc3_cart_context_factory.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'checkout_financing_eligibility.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'checkout_payment_availability.php';
