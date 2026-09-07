@@ -299,9 +299,10 @@ final class MtUniCreditControlPanelOrderLifecycleService
 
         try {
             $response = $this->client->createOrder($payload);
-            $cpId = isset($response['data']['id']) ? (int) $response['data']['id'] : 0;
+            // createOrder() already enforced strict response-owned identity (int id > 0, …).
+            $cpId = (int) $response['data']['id'];
             if ($cpId <= 0) {
-                // 2xx with success/data but unusable id — persistence at CP cannot be disproven.
+                // Defense-in-depth if client contract drifts — treat as post-send unknown.
                 $this->attempts->persistFailure(
                     $attemptId,
                     MtUniCreditControlPanelErrorClass::INVALID_RESPONSE,

@@ -236,13 +236,93 @@ final class MtUniCreditControlPanelClient
             }
         }
 
-        if (!isset($response['data']) || !is_array($response['data'])) {
+        $this->assertOrderCreateSuccessIdentity($response, $order);
+
+        return $response;
+    }
+
+    /**
+     * Strict response-owned identity for 2xx POST /orders success (create or equivalent replay).
+     * Failures are post-send uncertainty — CP may already have persisted.
+     *
+     * @param array<string, mixed> $response
+     * @param array<string, mixed> $order Submitted create payload (frozen order_id)
+     * @return void
+     */
+    private function assertOrderCreateSuccessIdentity(array $response, array $order)
+    {
+        if (
+            !isset($response['data'])
+            || !is_array($response['data'])
+            || !$this->isJsonObjectArray($response['data'])
+        ) {
             throw new MtUniCreditCpUncertainResponseException(
                 'The Control Panel order response has no valid data object.'
             );
         }
 
-        return $response;
+        $data = $response['data'];
+
+        if (!array_key_exists('id', $data) || !is_int($data['id']) || $data['id'] <= 0) {
+            throw new MtUniCreditCpUncertainResponseException(
+                'The Control Panel order response id is missing or invalid.'
+            );
+        }
+
+        if (!array_key_exists('shop_id', $data) || !is_int($data['shop_id']) || $data['shop_id'] <= 0) {
+            throw new MtUniCreditCpUncertainResponseException(
+                'The Control Panel order response shop_id is missing or invalid.'
+            );
+        }
+
+        $expectedOrderId = array_key_exists('order_id', $order) ? $order['order_id'] : null;
+        if (!is_string($expectedOrderId)) {
+            throw new MtUniCreditCpUncertainResponseException(
+                'The Control Panel order request identity is incomplete.'
+            );
+        }
+        if (
+            !array_key_exists('order_id', $data)
+            || !is_string($data['order_id'])
+            || $data['order_id'] !== $expectedOrderId
+        ) {
+            throw new MtUniCreditCpUncertainResponseException(
+                'The Control Panel order response order_id does not match the submitted order.'
+            );
+        }
+
+        $expectedUnicid = $this->credentials->getUnicid($this->storeId);
+        if (!is_string($expectedUnicid) || $expectedUnicid === '') {
+            throw new MtUniCreditCpUncertainResponseException(
+                'The Control Panel store identity is incomplete.'
+            );
+        }
+        if (
+            !array_key_exists('unicid', $data)
+            || !is_string($data['unicid'])
+            || $data['unicid'] !== $expectedUnicid
+        ) {
+            throw new MtUniCreditCpUncertainResponseException(
+                'The Control Panel order response unicid does not match the configured store.'
+            );
+        }
+    }
+
+    /**
+     * JSON object → associative array with string keys; JSON list → integer keys.
+     *
+     * @param array<mixed, mixed> $value
+     * @return bool
+     */
+    private function isJsonObjectArray(array $value)
+    {
+        foreach (array_keys($value) as $key) {
+            if (!is_string($key)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**

@@ -138,6 +138,9 @@ final class Phase7TestHarness
     }
 
     /**
+     * Minimal success fixture (data.id only). Fake transport completes Phase-A identity
+     * fields from the outbound POST /orders payload when order_id/shop_id/unicid are all absent.
+     *
      * @return array<string, mixed>
      */
     public static function loginAndOrderSuccessPayloads()

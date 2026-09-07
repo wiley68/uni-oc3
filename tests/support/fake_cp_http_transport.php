@@ -92,7 +92,18 @@ final class Phase4FakeCpHttpTransport implements MtUniCreditCpHttpTransport
                 );
             }
 
-            return new MtUniCreditCpHttpResponse((int) $next['status'], (string) $next['body']);
+            $status = (int) $next['status'];
+            $body = (string) $next['body'];
+            if (
+                $status >= 200
+                && $status < 300
+                && strtoupper((string) $method) === 'POST'
+                && substr((string) $url, -7) === '/orders'
+            ) {
+                $body = $this->completeOrderCreateSuccessIdentity($body, $payload);
+            }
+
+            return new MtUniCreditCpHttpResponse($status, $body);
         }
 
         // Auto-respond to bank status sync when tests only queued login/create.
@@ -124,5 +135,56 @@ final class Phase4FakeCpHttpTransport implements MtUniCreditCpHttpTransport
         }
 
         throw new RuntimeException('FakeCpHttpTransport has no queued response for ' . $method . ' ' . $url);
+    }
+
+    /**
+     * Fill missing Phase-A identity fields on success fixtures without overwriting
+     * intentionally incomplete/mismatched values used by negative tests.
+     *
+     * @param string $body
+     * @param array<string, mixed>|null $payload
+     * @return string
+     */
+    private function completeOrderCreateSuccessIdentity($body, $payload)
+    {
+        try {
+            $decoded = json_decode((string) $body, true, 512, JSON_THROW_ON_ERROR);
+        } catch (JsonException $exception) {
+            return (string) $body;
+        }
+
+        if (!is_array($decoded) || !isset($decoded['success']) || $decoded['success'] !== true) {
+            return (string) $body;
+        }
+        if (!isset($decoded['data']) || !is_array($decoded['data'])) {
+            return (string) $body;
+        }
+
+        foreach (array_keys($decoded['data']) as $key) {
+            if (!is_string($key)) {
+                return (string) $body;
+            }
+        }
+
+        // Legacy fixtures often queued only data.id. Complete identity only when none of the
+        // Phase-A fields are present so negative "missing field" cases stay intentional.
+        $hasOrderId = array_key_exists('order_id', $decoded['data']);
+        $hasUnicid = array_key_exists('unicid', $decoded['data']);
+        $hasShopId = array_key_exists('shop_id', $decoded['data']);
+        if ($hasOrderId || $hasUnicid || $hasShopId) {
+            return (string) $body;
+        }
+
+        if (is_array($payload) && array_key_exists('order_id', $payload)) {
+            $decoded['data']['order_id'] = $payload['order_id'];
+        }
+        $decoded['data']['unicid'] = '123e4567-e89b-12d3-a456-426614174000';
+        $decoded['data']['shop_id'] = 1;
+
+        try {
+            return json_encode($decoded, JSON_THROW_ON_ERROR);
+        } catch (JsonException $exception) {
+            return (string) $body;
+        }
     }
 }
