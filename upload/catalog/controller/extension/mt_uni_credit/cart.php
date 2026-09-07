@@ -639,30 +639,7 @@ class ControllerExtensionMtUniCreditCart extends Controller
             $this->request->post,
             array()
         );
-        $errors = array();
-        $firstname = trim((string) (isset($normalized['firstname']) ? $normalized['firstname'] : ''));
-        $lastname = trim((string) (isset($normalized['lastname']) ? $normalized['lastname'] : ''));
-        $email = trim((string) (isset($normalized['email']) ? $normalized['email'] : ''));
-        $telephone = trim((string) (isset($normalized['telephone']) ? $normalized['telephone'] : ''));
-        $address1 = trim((string) (isset($normalized['address_1']) ? $normalized['address_1'] : ''));
-
-        if ($firstname === '') {
-            $errors['firstname'] = 'Полето е задължително.';
-        }
-        if ($lastname === '') {
-            $errors['lastname'] = 'Полето е задължително.';
-        }
-        if ($address1 === '') {
-            $errors['address'] = 'Полето е задължително.';
-        }
-        if ($telephone === '') {
-            $errors['phone'] = 'Полето е задължително.';
-        } elseif (!(new MtUniCreditStorefrontProcessTwoFieldValidator())->isValidPhone($telephone)) {
-            $errors['phone'] = 'Въведете валиден телефонен номер.';
-        }
-        if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            $errors['email'] = 'Въведете валиден e-mail адрес.';
-        }
+        $errors = (new MtUniCreditStorefrontApplicantFieldValidator())->validate($normalized);
 
         if ($process2) {
             $p2 = (new MtUniCreditStorefrontProcessTwoFieldValidator())->validate($this->request->post);
