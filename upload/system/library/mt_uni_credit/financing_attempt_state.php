@@ -16,6 +16,12 @@ final class MtUniCreditFinancingAttemptState
     const CP_OUTCOME_UNKNOWN = 'cp_outcome_unknown';
 
     /**
+     * Definitive CP create rejection (e.g. HTTP 422) — not automatic-retry eligible.
+     * Used for Checkout native-terminal authorization (AUD-014 F02).
+     */
+    const TERMINAL_FAILED = 'terminal_failed';
+
+    /**
      * CP proven an order already exists for this shop/order identity, but the
      * frozen local payload conflicts — automatic create retry is not permitted.
      */
@@ -32,6 +38,7 @@ final class MtUniCreditFinancingAttemptState
             self::CP_CREATED,
             self::CP_FAILED_RETRYABLE,
             self::CP_OUTCOME_UNKNOWN,
+            self::TERMINAL_FAILED,
             self::CP_EXISTING_CONFLICT,
         );
     }

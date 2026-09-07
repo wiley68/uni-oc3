@@ -15,6 +15,8 @@ final class MtUniCreditCheckoutPreparedViewState
 
     const MODE_CONFLICT = 'conflict';
 
+    const MODE_TERMINAL = 'terminal_failed';
+
     const MODE_IN_PROGRESS = 'in_progress';
 
     /**
@@ -78,6 +80,16 @@ final class MtUniCreditCheckoutPreparedViewState
                 'ambiguous' => false,
                 'can_submit' => true,
                 'message_key' => 'text_prepared_retryable',
+            );
+        }
+
+        if ($state === MtUniCreditFinancingAttemptState::TERMINAL_FAILED) {
+            return array(
+                'mode' => self::MODE_TERMINAL,
+                'success' => false,
+                'ambiguous' => false,
+                'can_submit' => false,
+                'message_key' => 'text_prepared_conflict',
             );
         }
 

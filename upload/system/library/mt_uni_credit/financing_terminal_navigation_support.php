@@ -70,6 +70,12 @@ final class MtUniCreditFinancingTerminalNavigationSupport
      * Candidate for persisting bank_send_failed_cp before native finalization (AUD-014 F03).
      * Does not itself authorize native status or Thank You.
      *
+     * AUD-014 F02 classification order:
+     * 1. ambiguous / outcome unknown → non-terminal (common gates)
+     * 2. recoverable == true → non-terminal
+     * 3. attempt.state == cp_failed_retryable → non-terminal
+     * 4. only then definitive CP rejection/error class (or proven durable bank status)
+     *
      * @param array<string, mixed> $result
      * @return bool
      */
@@ -79,15 +85,27 @@ final class MtUniCreditFinancingTerminalNavigationSupport
             return false;
         }
 
+        // F02 gate: recoverable CP failures never authorize native terminalization.
+        if (!empty($result['recoverable'])) {
+            return false;
+        }
+
+        $attempt = isset($result['attempt']) && is_array($result['attempt']) ? $result['attempt'] : null;
+        if (
+            is_array($attempt)
+            && (string) (isset($attempt['state']) ? $attempt['state'] : '')
+            === MtUniCreditFinancingAttemptState::CP_FAILED_RETRYABLE
+        ) {
+            // F02 gate: retryable attempt state never authorizes native terminalization.
+            return false;
+        }
+
         $bankStatus = isset($result['bank_status']) ? (string) $result['bank_status'] : '';
         if ($bankStatus === MtUniCreditBankStatus::SEND_FAILED_CP) {
             return true;
         }
 
         $error = (string) (isset($result['error']) ? $result['error'] : '');
-        // F02: AUTH_FAILED / cp_failed_retryable alone are not definitive.
-        // REJECTED / VALIDATION_FAILED / INVALID_RESPONSE may authorize persist+terminal
-        // even when attempt.state remains CP_FAILED_RETRYABLE (CP create 4xx shapes).
         $definitive = array(
             MtUniCreditControlPanelErrorClass::REJECTED,
             MtUniCreditControlPanelErrorClass::INVALID_RESPONSE,

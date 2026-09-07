@@ -455,10 +455,17 @@ final class MtUniCreditControlPanelOrderLifecycleService
                 );
             }
             if ($status >= 400 && $status < 500) {
+                // AUD-014 F02: only rate-limit (429) stays recoverable/retryable.
+                // Definitive client rejections (incl. HTTP 422) are non-recoverable and
+                // terminal_failed so Checkout may authorize native finalization once.
+                $recoverable = ($status === 429);
+                $failureState = $recoverable
+                    ? MtUniCreditFinancingAttemptState::CP_FAILED_RETRYABLE
+                    : MtUniCreditFinancingAttemptState::TERMINAL_FAILED;
                 $this->attempts->persistFailure(
                     $attemptId,
                     MtUniCreditControlPanelErrorClass::REJECTED,
-                    MtUniCreditFinancingAttemptState::CP_FAILED_RETRYABLE
+                    $failureState
                 );
                 $this->recordCpCreateDiagnostic(
                     $storeId,
@@ -471,7 +478,7 @@ final class MtUniCreditControlPanelOrderLifecycleService
 
                 return MtUniCreditControlPanelOrderSubmissionResult::fail(
                     MtUniCreditControlPanelErrorClass::REJECTED,
-                    $status === 422 || $status === 429,
+                    $recoverable,
                     $status
                 );
             }
