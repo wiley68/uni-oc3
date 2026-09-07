@@ -175,6 +175,25 @@ final class MtUniCreditApplicationSnapshot
                 ? (string) $attempt['application_snapshot_hash']
                 : self::hash($existing);
             if (!hash_equals($existingHash, $liveHash)) {
+                // F-010-03-R1: additive customer.firstname/lastname must not drift-reject
+                // semantically identical live orders against historical name-only snapshots.
+                if (
+                    self::mustMatchLiveIntent($attempt)
+                    && self::isLegacyCustomerNameOnlySnapshot($existing)
+                    && self::isStructuredCustomerNameSnapshot($liveSnapshot)
+                    && hash_equals(
+                        $existingHash,
+                        self::hash(self::projectLiveSnapshotToLegacyCustomerShape($liveSnapshot))
+                    )
+                ) {
+                    return array(
+                        'ok' => true,
+                        'attempt' => $attempt,
+                        'snapshot' => $existing,
+                        'calculation' => self::toCalculationResult($existing),
+                    );
+                }
+
                 if (self::mustMatchLiveIntent($attempt)) {
                     return array('ok' => false, 'error' => 'application_drift');
                 }
@@ -231,6 +250,65 @@ final class MtUniCreditApplicationSnapshot
             'snapshot' => $stored,
             'calculation' => self::toCalculationResult($stored),
         );
+    }
+
+    /**
+     * Historical snapshots stored only customer.name (pre F-010-03 structured fields).
+     *
+     * @param array<string, mixed> $snapshot
+     * @return bool
+     */
+    private static function isLegacyCustomerNameOnlySnapshot(array $snapshot)
+    {
+        if (!isset($snapshot['customer']) || !is_array($snapshot['customer'])) {
+            return false;
+        }
+        $customer = $snapshot['customer'];
+        if (array_key_exists('firstname', $customer) || array_key_exists('lastname', $customer)) {
+            return false;
+        }
+
+        return array_key_exists('name', $customer);
+    }
+
+    /**
+     * Current snapshots store authoritative firstname/lastname separately.
+     *
+     * @param array<string, mixed> $snapshot
+     * @return bool
+     */
+    private static function isStructuredCustomerNameSnapshot(array $snapshot)
+    {
+        if (!isset($snapshot['customer']) || !is_array($snapshot['customer'])) {
+            return false;
+        }
+        $customer = $snapshot['customer'];
+
+        return array_key_exists('firstname', $customer) && array_key_exists('lastname', $customer);
+    }
+
+    /**
+     * Project a structured live snapshot into the historical customer shape for hash compare.
+     * Does not mutate the stored legacy snapshot.
+     *
+     * @param array<string, mixed> $liveSnapshot
+     * @return array<string, mixed>
+     */
+    private static function projectLiveSnapshotToLegacyCustomerShape(array $liveSnapshot)
+    {
+        $projected = $liveSnapshot;
+        if (!isset($projected['customer']) || !is_array($projected['customer'])) {
+            return $projected;
+        }
+
+        $customer = $projected['customer'];
+        $firstname = (string) $customer['firstname'];
+        $lastname = (string) $customer['lastname'];
+        $customer['name'] = trim($firstname . ' ' . $lastname);
+        unset($customer['firstname'], $customer['lastname']);
+        $projected['customer'] = $customer;
+
+        return $projected;
     }
 
     /**
