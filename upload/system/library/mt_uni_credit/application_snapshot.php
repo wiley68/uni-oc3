@@ -96,6 +96,8 @@ final class MtUniCreditApplicationSnapshot
             ),
             'customer' => array(
                 'name' => trim($firstname . ' ' . $lastname),
+                'firstname' => $firstname,
+                'lastname' => $lastname,
                 'phone' => isset($order['telephone']) ? (string) $order['telephone'] : '',
                 'email' => isset($order['email']) ? (string) $order['email'] : '',
                 'address' => $billing,
@@ -286,7 +288,12 @@ final class MtUniCreditApplicationSnapshot
         if (array_key_exists('email', $customer)) {
             $order['email'] = (string) $customer['email'];
         }
-        if (isset($customer['name']) && trim((string) $customer['name']) !== '') {
+        // Prefer immutable structured names. Legacy snapshots only had customer.name and
+        // reconstructed via whitespace split — irreversible for compound first/last names.
+        if (array_key_exists('firstname', $customer) && array_key_exists('lastname', $customer)) {
+            $order['firstname'] = (string) $customer['firstname'];
+            $order['lastname'] = (string) $customer['lastname'];
+        } elseif (isset($customer['name']) && trim((string) $customer['name']) !== '') {
             $parts = preg_split('/\s+/', trim((string) $customer['name']), 2);
             $order['firstname'] = isset($parts[0]) ? (string) $parts[0] : '';
             $order['lastname'] = isset($parts[1]) ? (string) $parts[1] : '';
