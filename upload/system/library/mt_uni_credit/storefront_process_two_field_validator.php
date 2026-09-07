@@ -2,15 +2,36 @@
 
 /**
  * Process 2 EGN / phone2 validation (OC4 ProcessTwoFieldValidator parity).
+ * Customer-facing copy is injected from language resources (F-010-02).
  */
 final class MtUniCreditStorefrontProcessTwoFieldValidator
 {
-    const MSG_EGN_REQUIRED = 'Полето е задължително.';
-    const MSG_EGN_INVALID =
-    'ЕГН трябва да съдържа 10 цифри. Първите 8 трябва да са валидна дата във формат ГГГГММДД.';
-    const MSG_PHONE2_REQUIRED = 'Полето е задължително.';
-    const MSG_PHONE2_INVALID =
-    'Вторият телефон може да съдържа цифри, интервали, +, -, ( и ).';
+    /** @var array<string, string> */
+    private $messages;
+
+    /**
+     * @param array<string, string> $messages Localized message overrides
+     */
+    public function __construct(array $messages = array())
+    {
+        $this->messages = array_merge(array(
+            'egn_required' => 'Полето е задължително.',
+            'egn_invalid' =>
+            'ЕГН трябва да съдържа 10 цифри. Първите 8 трябва да са валидна дата във формат ГГГГММДД.',
+            'phone2_required' => 'Полето е задължително.',
+            'phone2_invalid' =>
+            'Вторият телефон може да съдържа цифри, интервали, +, -, ( и ).',
+        ), $messages);
+    }
+
+    /**
+     * @param string $key
+     * @return string
+     */
+    private function message($key)
+    {
+        return isset($this->messages[$key]) ? (string) $this->messages[$key] : '';
+    }
 
     /**
      * @param array<string, mixed> $posted
@@ -27,16 +48,16 @@ final class MtUniCreditStorefrontProcessTwoFieldValidator
             $egnDigits = '';
         }
         if ($egnDigits === '') {
-            $errors['egn'] = self::MSG_EGN_REQUIRED;
+            $errors['egn'] = $this->message('egn_required');
         } elseif (!$this->isValidEgn($egnDigits)) {
-            $errors['egn'] = self::MSG_EGN_INVALID;
+            $errors['egn'] = $this->message('egn_invalid');
         }
 
         $phone2 = $this->sanitizePhone($phone2Raw);
         if ($phone2 === '') {
-            $errors['phone2'] = self::MSG_PHONE2_REQUIRED;
+            $errors['phone2'] = $this->message('phone2_required');
         } elseif (!$this->isValidPhone($phone2)) {
-            $errors['phone2'] = self::MSG_PHONE2_INVALID;
+            $errors['phone2'] = $this->message('phone2_invalid');
         }
 
         return array(

@@ -512,6 +512,7 @@ class ControllerExtensionMtUniCreditProduct extends Controller
         $data['text_glp'] = $this->language->get('text_glp');
         $data['text_gpr'] = $this->language->get('text_gpr');
         $data['error_generic'] = $this->language->get('error_generic');
+        $data['mtuc_i18n'] = MtUniCreditStorefrontValidationCopy::bootstrapI18n($this->language);
         $data['calculator'] = $calculator;
         $data['modal_meta'] = $modalMeta;
         $data['customer'] = $prefill;
@@ -653,23 +654,27 @@ class ControllerExtensionMtUniCreditProduct extends Controller
             $this->request->post,
             array()
         );
-        $errors = (new MtUniCreditStorefrontApplicantFieldValidator())->validate($normalized);
+        $errors = (new MtUniCreditStorefrontApplicantFieldValidator(
+            MtUniCreditStorefrontValidationCopy::applicantMessages($this->language)
+        ))->validate($normalized);
 
         if ($process2) {
-            $p2 = (new MtUniCreditStorefrontProcessTwoFieldValidator())->validate($this->request->post);
+            $p2 = (new MtUniCreditStorefrontProcessTwoFieldValidator(
+                MtUniCreditStorefrontValidationCopy::processTwoMessages($this->language)
+            ))->validate($this->request->post);
             foreach ($p2['errors'] as $key => $message) {
                 $errors[$key] = $message;
             }
         } else {
             // Process 1 privacy: reject accidental EGN/phone2 leakage as customer fields.
             if (trim((string) $this->posted('egn', '')) !== '' || trim((string) $this->posted('phone2', '')) !== '') {
-                $errors['privacy'] = 'Невалидни полета за Process 1.';
+                $errors['privacy'] = $this->language->get('error_privacy_process1');
             }
         }
 
         return array(
             'ok' => $errors === array(),
-            'message' => $errors === array() ? '' : 'Моля, коригирайте данните.',
+            'message' => $errors === array() ? '' : $this->language->get('error_validation'),
             'errors' => $errors,
         );
     }

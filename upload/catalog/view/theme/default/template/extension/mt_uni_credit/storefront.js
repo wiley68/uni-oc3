@@ -77,9 +77,18 @@
     $root.attr("data-mtuc-bound", "1");
 
     var bootstrap = parseBootstrap($root) || {};
+    var i18n = bootstrap.i18n && typeof bootstrap.i18n === "object" ? bootstrap.i18n : {};
     var state = bootstrap.calculator || {};
     var entryPoint =
       $root.attr("data-entry-point") || bootstrap.entry_point || "product";
+
+    function t(key, fallback) {
+      var value = i18n[key];
+      if (typeof value === "string" && value !== "" && value !== key) {
+        return value;
+      }
+      return fallback || "";
+    }
     var modalId =
       entryPoint === "cart"
         ? "#mt-uni-credit-cart-modal"
@@ -175,13 +184,13 @@
       if (!$errorModal.length) {
         $modal
           .find("[data-mtuc-submit-error]")
-          .text(message || "Заявката не беше успешна.");
+          .text(message || t("error_request_failed", ""));
         return;
       }
       moveErrorModalToBody();
       $errorModal
         .find("[data-mtuc-error-message]")
-        .text(message || "Заявката не беше успешна.");
+        .text(message || t("error_request_failed", ""));
       $errorModal.removeAttr("hidden").attr("aria-hidden", "false");
       $errorModal.find(".mt-uni-credit-storefront__dialog").trigger("focus");
     }
@@ -370,6 +379,116 @@
       return $modal.find('[data-mtuc-form] [name="' + name + '"]').get(0);
     }
 
+    function fieldErrorEl(name) {
+      return $modal.find('[data-mtuc-field-error="' + name + '"]').get(0);
+    }
+
+    function clearAllFieldErrors() {
+      $modal.find("[data-mtuc-field-error]").text("");
+      $modal.find("[data-mtuc-submit-error]").text("");
+      $modal.find("[data-mtuc-form] input, [data-mtuc-form] select, [data-mtuc-form] textarea")
+        .attr("aria-invalid", "false");
+    }
+
+    function clearOneFieldError(name) {
+      if (!name) {
+        return;
+      }
+      var $span = $modal.find('[data-mtuc-field-error="' + name + '"]');
+      if ($span.length) {
+        $span.text("");
+      }
+      var input = customerField(name);
+      if (input) {
+        $(input).attr("aria-invalid", "false");
+      }
+    }
+
+    function isFieldRenderable(name) {
+      if (name === "phone2" || name === "egn") {
+        var input = customerField(name);
+        if (!input) {
+          return false;
+        }
+        var $input = $(input);
+        if ($input.is(":hidden") || !$input.is(":visible")) {
+          return false;
+        }
+      }
+      return !!fieldErrorEl(name);
+    }
+
+    function showFieldErrors(errors) {
+      if (!errors || typeof errors !== "object") {
+        return;
+      }
+      $.each(errors, function (key, message) {
+        if (!isFieldRenderable(key)) {
+          return;
+        }
+        var $span = $modal.find('[data-mtuc-field-error="' + key + '"]');
+        if (!$span.length) {
+          return;
+        }
+        $span.text(String(message == null ? "" : message));
+        var input = customerField(key);
+        if (input) {
+          $(input).attr("aria-invalid", message ? "true" : "false");
+        }
+      });
+    }
+
+    function focusFirstInvalidField(errors) {
+      if (!errors || typeof errors !== "object") {
+        return;
+      }
+      var order = [
+        "firstname",
+        "lastname",
+        "address",
+        "phone",
+        "email",
+        "phone2",
+        "egn",
+      ];
+      var i;
+      for (i = 0; i < order.length; i += 1) {
+        var name = order[i];
+        if (!errors[name] || !isFieldRenderable(name)) {
+          continue;
+        }
+        var el = customerField(name);
+        if (el && !el.disabled && $(el).is(":visible")) {
+          $(el).trigger("focus");
+          return;
+        }
+      }
+    }
+
+    function mapClientFieldErrors(codeErrors) {
+      var out = {};
+      if (!codeErrors || typeof codeErrors !== "object") {
+        return out;
+      }
+      $.each(codeErrors, function (key, code) {
+        if (code === "required") {
+          out[key] = t("error_field_required", "");
+        } else if (key === "email") {
+          out[key] = t("error_email_invalid", "");
+        } else if (key === "phone" || key === "phone2") {
+          out[key] = t(
+            key === "phone2" ? "error_phone2_invalid" : "error_phone_invalid",
+            "",
+          );
+        } else if (key === "egn") {
+          out[key] = t("error_egn_invalid", "");
+        } else {
+          out[key] = t("error_field_required", "");
+        }
+      });
+      return out;
+    }
+
     function consentCheckboxes() {
       return $modal.find("[data-mtuc-consent-checkbox]");
     }
@@ -479,6 +598,11 @@
           if (target.value !== sanitized) {
             target.value = sanitized;
           }
+        }
+        if (name === "consent[]" || name === "consent") {
+          // Consent checkboxes: leave applicant field errors intact.
+        } else if (name) {
+          clearOneFieldError(name);
         }
         updateSubmitState();
       });
@@ -935,7 +1059,7 @@
       }
       if (!selectedSchemeKey) {
         setProcessing(false);
-        setPopupError("Неуспешно изчисление.");
+        setPopupError(t("error_recalculate", ""));
         return;
       }
       sequence += 1;
@@ -973,8 +1097,7 @@
         setProcessing(false);
         if (err || !response || !response.success || !response.calculation) {
           setPopupError(
-            (response && response.message) ||
-              "Неуспешно изчисление. Моля, опитайте отново.",
+            (response && response.message) || t("error_recalculate", ""),
           );
           return;
         }
@@ -1005,6 +1128,11 @@
       setStep: setStep,
       setProcessing: setProcessing,
       isTerminalSubmitLocked: isTerminalSubmitLocked,
+      clearAllFieldErrors: clearAllFieldErrors,
+      clearOneFieldError: clearOneFieldError,
+      showFieldErrors: showFieldErrors,
+      focusFirstInvalidField: focusFirstInvalidField,
+      mapClientFieldErrors: mapClientFieldErrors,
       selectScheme: function (key) {
         if (isTerminalSubmitLocked()) {
           return;
@@ -1073,17 +1201,23 @@
         if (!$form.length) {
           return;
         }
+        clearAllFieldErrors();
         if (!updateSubmitState()) {
+          var clientErrors = mapClientFieldErrors(getStep2FieldErrors());
+          showFieldErrors(clientErrors);
+          focusFirstInvalidField(clientErrors);
           $modal
             .find("[data-mtuc-submit-error]")
             .text(
-              "Моля, попълнете всички задължителни полета и приемете условията.",
+              t(
+                "error_validation_incomplete",
+                t("error_validation", ""),
+              ),
             );
           return;
         }
         terminalSubmitInFlight = true;
         setProcessing(true);
-        $modal.find("[data-mtuc-submit-error]").text("");
         var process = $form.attr("data-mtuc-process") || "1";
         var data = {
           csrf: $root.attr("data-csrf"),
@@ -1133,7 +1267,9 @@
               terminalSubmitInFlight = false;
               setProcessing(false);
               closeModal();
-              showErrorModal("Заявката не беше успешна.");
+              showErrorModal(
+                t("error_request_failed", ""),
+              );
               return;
             }
             // Bank / terminal redirect: keep loader locked until navigation leaves the page.
@@ -1148,18 +1284,34 @@
               closeModal();
               return;
             }
+            // Field-level validation: keep modal open, render server errors.
+            if (response.error === "validation") {
+              clearAllFieldErrors();
+              showFieldErrors(response.errors || {});
+              $modal
+                .find("[data-mtuc-submit-error]")
+                .text(
+                  response.message ||
+                    t("error_validation", t("error_request_failed", "")),
+                );
+              focusFirstInvalidField(response.errors || {});
+              updateSubmitState();
+              return;
+            }
             // CP-create failure (and similar stay-on-page results): close financing UI, show error dialog.
             if (
               response.terminal_ui === "error_modal" ||
               response.stay_on_page === true
             ) {
               closeModal();
-              showErrorModal(response.message || "Заявката не беше успешна.");
+              showErrorModal(
+                response.message || t("error_request_failed", ""),
+              );
               return;
             }
             $modal
               .find("[data-mtuc-submit-error]")
-              .text(response.message || "Заявката не беше успешна.");
+              .text(response.message || t("error_request_failed", ""));
           },
         );
       },

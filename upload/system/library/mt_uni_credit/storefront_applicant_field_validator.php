@@ -7,6 +7,7 @@
  * (reference-oc3-core catalog/controller/checkout/*.php) + oc_order column widths.
  *
  * Fail-closed: values must be valid UTF-8 before character-length is trusted.
+ * Customer-facing copy is injected from language resources (F-010-02).
  */
 final class MtUniCreditStorefrontApplicantFieldValidator
 {
@@ -20,14 +21,34 @@ final class MtUniCreditStorefrontApplicantFieldValidator
     const ADDRESS_MIN = 3;
     const ADDRESS_MAX = 128;
 
-    const MSG_REQUIRED = 'Полето е задължително.';
-    const MSG_NAME_LENGTH = 'Полето трябва да бъде между 1 и 32 символа.';
-    const MSG_ADDRESS_LENGTH = 'Полето трябва да бъде между 3 и 128 символа.';
-    const MSG_PHONE_LENGTH = 'Полето трябва да бъде между 3 и 32 символа.';
-    const MSG_PHONE_INVALID = 'Въведете валиден телефонен номер.';
-    const MSG_EMAIL_INVALID = 'Въведете валиден e-mail адрес.';
-    const MSG_EMAIL_LENGTH = 'Полето трябва да бъде максимум 96 символа.';
-    const MSG_INVALID_ENCODING = 'Невалидни символи.';
+    /** @var array<string, string> */
+    private $messages;
+
+    /**
+     * @param array<string, string> $messages Localized message overrides
+     */
+    public function __construct(array $messages = array())
+    {
+        $this->messages = array_merge(array(
+            'required' => 'Полето е задължително.',
+            'name_length' => 'Полето трябва да бъде между 1 и 32 символа.',
+            'address_length' => 'Полето трябва да бъде между 3 и 128 символа.',
+            'phone_length' => 'Полето трябва да бъде между 3 и 32 символа.',
+            'phone_invalid' => 'Въведете валиден телефонен номер.',
+            'email_invalid' => 'Въведете валиден e-mail адрес.',
+            'email_length' => 'Полето трябва да бъде максимум 96 символа.',
+            'invalid_encoding' => 'Полето съдържа невалидни символи.',
+        ), $messages);
+    }
+
+    /**
+     * @param string $key
+     * @return string
+     */
+    private function message($key)
+    {
+        return isset($this->messages[$key]) ? (string) $this->messages[$key] : '';
+    }
 
     /**
      * @param array<string, mixed> $normalized Output of StorefrontPopupFormNormalizer
@@ -44,61 +65,61 @@ final class MtUniCreditStorefrontApplicantFieldValidator
         $address1 = trim((string) (isset($normalized['address_1']) ? $normalized['address_1'] : ''));
 
         if ($firstname === '') {
-            $errors['firstname'] = self::MSG_REQUIRED;
+            $errors['firstname'] = $this->message('required');
         } elseif (!$this->isValidUtf8($firstname)) {
-            $errors['firstname'] = self::MSG_INVALID_ENCODING;
+            $errors['firstname'] = $this->message('invalid_encoding');
         } else {
             $firstLen = $this->characterLength($firstname);
             if ($firstLen < self::FIRSTNAME_MIN || $firstLen > self::FIRSTNAME_MAX) {
-                $errors['firstname'] = self::MSG_NAME_LENGTH;
+                $errors['firstname'] = $this->message('name_length');
             }
         }
 
         if ($lastname === '') {
-            $errors['lastname'] = self::MSG_REQUIRED;
+            $errors['lastname'] = $this->message('required');
         } elseif (!$this->isValidUtf8($lastname)) {
-            $errors['lastname'] = self::MSG_INVALID_ENCODING;
+            $errors['lastname'] = $this->message('invalid_encoding');
         } else {
             $lastLen = $this->characterLength($lastname);
             if ($lastLen < self::LASTNAME_MIN || $lastLen > self::LASTNAME_MAX) {
-                $errors['lastname'] = self::MSG_NAME_LENGTH;
+                $errors['lastname'] = $this->message('name_length');
             }
         }
 
         if ($address1 === '') {
-            $errors['address'] = self::MSG_REQUIRED;
+            $errors['address'] = $this->message('required');
         } elseif (!$this->isValidUtf8($address1)) {
-            $errors['address'] = self::MSG_INVALID_ENCODING;
+            $errors['address'] = $this->message('invalid_encoding');
         } else {
             $addressLen = $this->characterLength($address1);
             if ($addressLen < self::ADDRESS_MIN || $addressLen > self::ADDRESS_MAX) {
-                $errors['address'] = self::MSG_ADDRESS_LENGTH;
+                $errors['address'] = $this->message('address_length');
             }
         }
 
         if ($telephone === '') {
-            $errors['phone'] = self::MSG_REQUIRED;
+            $errors['phone'] = $this->message('required');
         } elseif (!$this->isValidUtf8($telephone)) {
-            $errors['phone'] = self::MSG_INVALID_ENCODING;
+            $errors['phone'] = $this->message('invalid_encoding');
         } else {
             $phoneLen = $this->characterLength($telephone);
             if ($phoneLen < self::TELEPHONE_MIN || $phoneLen > self::TELEPHONE_MAX) {
-                $errors['phone'] = self::MSG_PHONE_LENGTH;
+                $errors['phone'] = $this->message('phone_length');
             } elseif (!(new MtUniCreditStorefrontProcessTwoFieldValidator())->isValidPhone($telephone)) {
-                $errors['phone'] = self::MSG_PHONE_INVALID;
+                $errors['phone'] = $this->message('phone_invalid');
             }
         }
 
         if ($email === '') {
-            $errors['email'] = self::MSG_EMAIL_INVALID;
+            $errors['email'] = $this->message('email_invalid');
         } elseif (!$this->isValidUtf8($email)) {
-            $errors['email'] = self::MSG_INVALID_ENCODING;
+            $errors['email'] = $this->message('invalid_encoding');
         } else {
             $emailLen = $this->characterLength($email);
             if ($emailLen > self::EMAIL_MAX) {
-                $errors['email'] = self::MSG_EMAIL_LENGTH;
+                $errors['email'] = $this->message('email_length');
             } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                $errors['email'] = self::MSG_EMAIL_INVALID;
+                $errors['email'] = $this->message('email_invalid');
             }
         }
 
@@ -118,13 +139,11 @@ final class MtUniCreditStorefrontApplicantFieldValidator
             return (bool) mb_check_encoding($value, 'UTF-8');
         }
 
-        // No mbstring: //u succeeds iff the subject is valid UTF-8.
         return preg_match('//u', $value) === 1;
     }
 
     /**
      * UTF-8 character length after validity is established.
-     * Malformed UTF-8 must not be treated as a bounded acceptable string.
      *
      * @param string $value
      * @return int|null Character length, or null when value is not valid UTF-8

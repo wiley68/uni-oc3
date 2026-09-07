@@ -131,6 +131,35 @@ if (!class_exists('Aud010F01R1ConfigFake', false)) {
     }
 }
 
+if (!class_exists('Aud010F01R1LanguageFake', false)) {
+    final class Aud010F01R1LanguageFake
+    {
+        /**
+         * @param string $key
+         * @return string
+         */
+        public function get($key)
+        {
+            $map = array(
+                'error_validation' => 'Моля, коригирайте данните.',
+                'error_privacy_process1' => 'Невалидни полета за Process 1.',
+                'error_field_required' => 'Полето е задължително.',
+                'error_name_length' => 'Полето трябва да бъде между 1 и 32 символа.',
+                'error_address_length' => 'Полето трябва да бъде между 3 и 128 символа.',
+                'error_phone_length' => 'Полето трябва да бъде между 3 и 32 символа.',
+                'error_phone_invalid' => 'Въведете валиден телефонен номер.',
+                'error_email_invalid' => 'Въведете валиден e-mail адрес.',
+                'error_email_length' => 'Полето трябва да бъде максимум 96 символа.',
+                'error_invalid_characters' => 'Полето съдържа невалидни символи.',
+                'error_egn_invalid' => 'ЕГН трябва да съдържа 10 цифри. Първите 8 трябва да са валидна дата във формат ГГГГММДД.',
+                'error_phone2_invalid' => 'Вторият телефон може да съдържа цифри, интервали, +, -, ( и ).',
+            );
+
+            return isset($map[$key]) ? $map[$key] : (string) $key;
+        }
+    }
+}
+
 require_once $ctrlDir . DIRECTORY_SEPARATOR . 'product.php';
 require_once $ctrlDir . DIRECTORY_SEPARATOR . 'cart.php';
 
@@ -198,6 +227,7 @@ function mtucAud010F01R1_makeController($controllerClass, array $post)
     $registry->set('request', $request);
     $registry->set('session', $session);
     $registry->set('config', $configObj);
+    $registry->set('language', new Aud010F01R1LanguageFake());
 
     return new $controllerClass($registry);
 }
