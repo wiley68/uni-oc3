@@ -318,8 +318,13 @@ mtucAud025R1_assert(
     'busy error leaks neither UNICID nor credentials'
 );
 
-$releaseCode = $stackA['lock']->release($stackA['storeId'], $stackA['unicid']);
-mtucAud025R1_assert($releaseCode === 1, 'A releases lock after hold');
+$releaseResult = $stackA['lock']->release($stackA['storeId'], $stackA['unicid']);
+mtucAud025R1_assert(
+    is_array($releaseResult)
+        && !empty($releaseResult['ok'])
+        && $releaseResult['outcome'] === MtUniCreditShopCachePersistenceLock::RELEASE_OUTCOME_RELEASED,
+    'A releases lock after hold'
+);
 
 $stackB['persistence']->replaceValidatedSnapshot(
     $stackB['storeId'],
@@ -454,7 +459,7 @@ mtucAud025R1_assert(
     'diff-store: store B credentials written while store A lock held'
 );
 mtucAud025R1_assert(
-    $dsA['lock']->release($dsA['storeId'], $dsA['unicid']) === 1,
+    $dsA['lock']->release($dsA['storeId'], $dsA['unicid'])['ok'] === true,
     'diff-store: A still owns its lock after B completed'
 );
 

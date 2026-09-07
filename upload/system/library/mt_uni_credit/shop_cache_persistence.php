@@ -11,6 +11,8 @@
  */
 final class MtUniCreditShopCachePersistence
 {
+    const EVENT_LOCK_RELEASE_ANOMALY = 'shop_cache_lock_release_anomaly';
+
     /** @var MtUniCreditShopCacheRepository */
     private $cache;
 
@@ -23,22 +25,28 @@ final class MtUniCreditShopCachePersistence
     /** @var MtUniCreditShopCachePersistenceLock */
     private $persistenceLock;
 
+    /** @var callable|null fn(string $message): void */
+    private $infrastructureLogger;
+
     /**
      * @param MtUniCreditShopCacheRepository $cache
      * @param MtUniCreditShopConfigurationSnapshotValidator $validator
      * @param MtUniCreditSmartucfCredentialsRepository $smartucfCredentials
      * @param MtUniCreditShopCachePersistenceLock $persistenceLock
+     * @param callable|null $infrastructureLogger Optional override; default error_log.
      */
     public function __construct(
         MtUniCreditShopCacheRepository $cache,
         MtUniCreditShopConfigurationSnapshotValidator $validator,
         MtUniCreditSmartucfCredentialsRepository $smartucfCredentials,
-        MtUniCreditShopCachePersistenceLock $persistenceLock
+        MtUniCreditShopCachePersistenceLock $persistenceLock,
+        $infrastructureLogger = null
     ) {
         $this->cache = $cache;
         $this->validator = $validator;
         $this->smartucfCredentials = $smartucfCredentials;
         $this->persistenceLock = $persistenceLock;
+        $this->infrastructureLogger = is_callable($infrastructureLogger) ? $infrastructureLogger : null;
     }
 
     /**
@@ -102,17 +110,49 @@ final class MtUniCreditShopCachePersistence
             }
         } finally {
             if ($lockHeld) {
-                try {
-                    $this->persistenceLock->release($storeId, $unicid);
-                } catch (Exception $releaseException) {
-                    // Persistence already committed or rolled back under the lock.
-                    // Do not convert a successful replacement into a caller-visible failure.
-                    if (!$persistedOk) {
-                        // Keep the original failure path dominant; release noise is secondary.
-                        unset($releaseException);
-                    }
+                $release = $this->persistenceLock->release($storeId, $unicid);
+                if (!is_array($release) || empty($release['ok'])) {
+                    $outcome = is_array($release) && isset($release['outcome'])
+                        ? (string) $release['outcome']
+                        : MtUniCreditShopCachePersistenceLock::RELEASE_OUTCOME_MISSING_OR_ERROR;
+                    $this->recordLockReleaseAnomaly((int) $storeId, $outcome, $persistedOk);
                 }
             }
+        }
+    }
+
+    /**
+     * Local infrastructure diagnostic only — never affects business success/failure.
+     *
+     * @param int $storeId
+     * @param string $outcome
+     * @param bool $persistedOk
+     * @return void
+     */
+    private function recordLockReleaseAnomaly($storeId, $outcome, $persistedOk)
+    {
+        $safeOutcome = preg_replace('/[^a-z0-9_]/', '', strtolower((string) $outcome));
+        if (!is_string($safeOutcome) || $safeOutcome === '') {
+            $safeOutcome = 'unknown';
+        }
+
+        $message = 'mt_uni_credit: ' . self::EVENT_LOCK_RELEASE_ANOMALY
+            . ' component=shop_cache_persistence'
+            . ' event=' . self::EVENT_LOCK_RELEASE_ANOMALY
+            . ' store_id=' . (int) $storeId
+            . ' outcome=' . $safeOutcome
+            . ' persistence=' . ($persistedOk ? 'committed' : 'failed');
+
+        try {
+            if ($this->infrastructureLogger !== null) {
+                call_user_func($this->infrastructureLogger, $message);
+
+                return;
+            }
+            error_log($message);
+        } catch (Exception $exception) {
+            // Observability must not convert committed persistence into business failure.
+            unset($exception);
         }
     }
 }

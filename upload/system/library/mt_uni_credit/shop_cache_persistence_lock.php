@@ -19,6 +19,14 @@ final class MtUniCreditShopCachePersistenceLock
      */
     const ACQUIRE_TIMEOUT_SECONDS = 5;
 
+    const RELEASE_OUTCOME_RELEASED = 'released';
+
+    const RELEASE_OUTCOME_NOT_OWNED = 'not_owned';
+
+    const RELEASE_OUTCOME_MISSING_OR_ERROR = 'missing_or_error';
+
+    const RELEASE_OUTCOME_QUERY_EXCEPTION = 'query_exception';
+
     /** @var MtUniCreditDbAdapter */
     private $db;
 
@@ -78,17 +86,50 @@ final class MtUniCreditShopCachePersistenceLock
     /**
      * Release a lock previously acquired on this same DB connection.
      *
+     * Never throws: query failures are classified as RELEASE_OUTCOME_QUERY_EXCEPTION.
+     *
      * @param int $storeId
      * @param string $unicid
-     * @return int|null 1 released, 0 not owned by this connection, null missing/error
+     * @return array{ok: bool, outcome: string, value: int|null}
      */
     public function release($storeId, $unicid)
     {
-        $name = $this->lockName($storeId, $unicid);
-        $sql = "SELECT RELEASE_LOCK('" . $this->db->escape($name) . "') AS `mtuc_lock`";
-        $result = $this->db->query($sql);
+        try {
+            $name = $this->lockName($storeId, $unicid);
+            $sql = "SELECT RELEASE_LOCK('" . $this->db->escape($name) . "') AS `mtuc_lock`";
+            $result = $this->db->query($sql);
+            $value = $this->scalarLockResult($result);
 
-        return $this->scalarLockResult($result);
+            if ($value === 1) {
+                return array(
+                    'ok' => true,
+                    'outcome' => self::RELEASE_OUTCOME_RELEASED,
+                    'value' => 1,
+                );
+            }
+
+            if ($value === 0) {
+                return array(
+                    'ok' => false,
+                    'outcome' => self::RELEASE_OUTCOME_NOT_OWNED,
+                    'value' => 0,
+                );
+            }
+
+            return array(
+                'ok' => false,
+                'outcome' => self::RELEASE_OUTCOME_MISSING_OR_ERROR,
+                'value' => null,
+            );
+        } catch (Exception $exception) {
+            unset($exception);
+
+            return array(
+                'ok' => false,
+                'outcome' => self::RELEASE_OUTCOME_QUERY_EXCEPTION,
+                'value' => null,
+            );
+        }
     }
 
     /**
