@@ -206,9 +206,44 @@ final class MtUniCreditControlPanelClient
      */
     public function createOrder(array $order)
     {
-        $response = $this->authenticatedRequest('POST', '/orders', $order);
+        // Auth/token bootstrap is pre-send for POST /orders. Response defects there
+        // remain definitive InvalidPayload (and Uncertain from transport is remapped).
+        try {
+            $token = $this->ensureToken();
+        } catch (MtUniCreditCpUncertainResponseException $exception) {
+            throw new MtUniCreditCpInvalidPayloadException($exception->getMessage(), 0, $exception);
+        }
+
+        try {
+            try {
+                $response = $this->send('POST', '/orders', $order, $token, true);
+            } catch (MtUniCreditCpAuthenticationException $exception) {
+                $this->tokens->invalidate();
+                $this->login();
+                $retryToken = $this->tokens->getAccessToken();
+                if ($retryToken === null) {
+                    throw new MtUniCreditCpAuthenticationException(
+                        'Control Panel re-authentication did not provide a token.'
+                    );
+                }
+
+                try {
+                    $response = $this->send('POST', '/orders', $order, $retryToken, true);
+                } catch (MtUniCreditCpAuthenticationException $retryException) {
+                    $this->tokens->invalidate();
+                    throw $retryException;
+                }
+            }
+        } catch (MtUniCreditCpInvalidPayloadException $exception) {
+            // Transport already returned a body (or size-aborted after receive). Persistence
+            // at CP cannot be ruled out — elevate to uncertain response.
+            throw new MtUniCreditCpUncertainResponseException($exception->getMessage(), 0, $exception);
+        }
+
         if (!isset($response['data']) || !is_array($response['data'])) {
-            throw new MtUniCreditCpInvalidPayloadException('The Control Panel order response has no valid data object.');
+            throw new MtUniCreditCpUncertainResponseException(
+                'The Control Panel order response has no valid data object.'
+            );
         }
 
         return $response;
@@ -388,9 +423,12 @@ final class MtUniCreditControlPanelClient
      * @param string $path
      * @param array<string, mixed>|null $payload
      * @param string|null $token
+     * @param bool $uncertainOnInvalidSuccess When true, a 2xx body that does not confirm
+     *                                        success is treated as post-send uncertainty
+     *                                        (order create). Other CP routes keep InvalidPayload.
      * @return array<string, mixed>
      */
-    private function send($method, $path, $payload = null, $token = null)
+    private function send($method, $path, $payload = null, $token = null, $uncertainOnInvalidSuccess = false)
     {
         $headers = array(
             'Accept' => 'application/json',
@@ -421,6 +459,11 @@ final class MtUniCreditControlPanelClient
         $decoded = $this->decode($response->getBody());
 
         if (!isset($decoded['success']) || $decoded['success'] !== true) {
+            if ($uncertainOnInvalidSuccess) {
+                throw new MtUniCreditCpUncertainResponseException(
+                    'The Control Panel response does not confirm success.'
+                );
+            }
             throw new MtUniCreditCpInvalidPayloadException('The Control Panel response does not confirm success.');
         }
 

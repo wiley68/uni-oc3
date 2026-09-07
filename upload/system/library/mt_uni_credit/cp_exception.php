@@ -108,3 +108,9 @@ final class MtUniCreditCpInvalidPayloadException extends MtUniCreditCpException
         return true;
     }
 }
+
+/**
+ * Post-send CP response defect: the request may already have been processed remotely,
+ * so persistence cannot be disproven. Lifecycle must treat this as outcome-unknown.
+ */
+final class MtUniCreditCpUncertainResponseException extends MtUniCreditCpException {}

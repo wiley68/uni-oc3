@@ -280,24 +280,26 @@ final class MtUniCreditControlPanelOrderLifecycleService
             $response = $this->client->createOrder($payload);
             $cpId = isset($response['data']['id']) ? (int) $response['data']['id'] : 0;
             if ($cpId <= 0) {
+                // 2xx with success/data but unusable id — persistence at CP cannot be disproven.
                 $this->attempts->persistFailure(
                     $attemptId,
                     MtUniCreditControlPanelErrorClass::INVALID_RESPONSE,
-                    MtUniCreditFinancingAttemptState::CP_FAILED_RETRYABLE
+                    MtUniCreditFinancingAttemptState::CP_OUTCOME_UNKNOWN
                 );
                 $this->recordCpCreateDiagnostic(
                     $storeId,
                     $orderId,
                     $entryPoint,
-                    MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_REJECTED,
+                    MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_OUTCOME_UNKNOWN,
                     200,
                     array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::INVALID_RESPONSE)
                 );
 
                 return MtUniCreditControlPanelOrderSubmissionResult::fail(
                     MtUniCreditControlPanelErrorClass::INVALID_RESPONSE,
-                    true,
-                    200
+                    false,
+                    200,
+                    true
                 );
             }
 
@@ -459,7 +461,31 @@ final class MtUniCreditControlPanelOrderLifecycleService
                 $status,
                 true
             );
+        } catch (MtUniCreditCpUncertainResponseException $exception) {
+            // Post-send response defect (malformed success shape, oversized body, …).
+            // errorClass remains INVALID_RESPONSE diagnostically; attempt is outcome-unknown.
+            $this->attempts->persistFailure(
+                $attemptId,
+                MtUniCreditControlPanelErrorClass::INVALID_RESPONSE,
+                MtUniCreditFinancingAttemptState::CP_OUTCOME_UNKNOWN
+            );
+            $this->recordCpCreateDiagnostic(
+                $storeId,
+                $orderId,
+                $entryPoint,
+                MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_OUTCOME_UNKNOWN,
+                null,
+                array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::INVALID_RESPONSE)
+            );
+
+            return MtUniCreditControlPanelOrderSubmissionResult::fail(
+                MtUniCreditControlPanelErrorClass::INVALID_RESPONSE,
+                false,
+                null,
+                true
+            );
         } catch (MtUniCreditCpInvalidPayloadException $exception) {
+            // Pre-send / local payload-style defects that still use this exception type.
             $this->attempts->persistFailure(
                 $attemptId,
                 MtUniCreditControlPanelErrorClass::INVALID_RESPONSE,

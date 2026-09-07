@@ -53,6 +53,16 @@ final class Phase4FakeCpHttpTransport implements MtUniCreditCpHttpTransport
     }
 
     /**
+     * Simulate post-receive size abort (same exception class as curl transport).
+     *
+     * @return void
+     */
+    public function enqueueSizeAbort()
+    {
+        $this->responses[] = array('size_abort' => true);
+    }
+
+    /**
      * @param string $method
      * @param string $url
      * @param array<string, string> $headers
@@ -75,6 +85,11 @@ final class Phase4FakeCpHttpTransport implements MtUniCreditCpHttpTransport
             }
             if (!empty($next['connection'])) {
                 throw new MtUniCreditCpConnectionException('Fake Control Panel connection failure.');
+            }
+            if (!empty($next['size_abort'])) {
+                throw new MtUniCreditCpInvalidPayloadException(
+                    'The Control Panel response exceeded the allowed size.'
+                );
             }
 
             return new MtUniCreditCpHttpResponse((int) $next['status'], (string) $next['body']);
