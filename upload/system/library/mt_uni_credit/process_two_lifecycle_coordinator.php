@@ -244,6 +244,7 @@ final class MtUniCreditProcessTwoLifecycleCoordinator
                 continue;
             }
 
+            $externalSendSucceeded = false;
             try {
                 $ok = $this->mailer->sendProcess2Recipient(
                     $shop,
@@ -253,23 +254,56 @@ final class MtUniCreditProcessTwoLifecycleCoordinator
                     (string) $recipient['email']
                 );
                 if ($ok) {
-                    if (!$this->mailRecipients->markSent($attemptId, $key, $ownerToken)) {
-                        $this->mailRecipients->markUncertain($attemptId, $key);
+                    $externalSendSucceeded = true;
+                    // Post-send marker path: never downgrade ambiguity to retryable failed.
+                    try {
+                        if (!$this->mailRecipients->markSent($attemptId, $key, $ownerToken)) {
+                            $this->mailRecipients->markUncertain($attemptId, $key);
+                            error_log(
+                                'mt_uni_credit: Process 2 mail send-before-marker ambiguous'
+                                    . ' attempt_id=' . $attemptId
+                                    . ' recipient_key=' . $key
+                            );
+                        }
+                    } catch (Throwable $markerException) {
+                        try {
+                            $this->mailRecipients->markUncertain($attemptId, $key);
+                        } catch (Throwable $ignored) {
+                            // Leave durable sending; stale recovery normalizes to uncertain.
+                        }
                         error_log(
                             'mt_uni_credit: Process 2 mail send-before-marker ambiguous'
                                 . ' attempt_id=' . $attemptId
                                 . ' recipient_key=' . $key
+                                . ' class=' . get_class($markerException)
                         );
                     }
                 } else {
                     $this->mailRecipients->markFailed($attemptId, $key, $ownerToken);
                 }
             } catch (Throwable $exception) {
-                $this->mailRecipients->markFailed($attemptId, $key, $ownerToken);
-                error_log(
-                    'mt_uni_credit: Process 2 mail failed attempt_id=' . $attemptId
-                        . ' class=' . get_class($exception)
-                );
+                if ($externalSendSucceeded) {
+                    // Should be unreachable: post-send errors are handled above.
+                    try {
+                        $this->mailRecipients->markUncertain($attemptId, $key);
+                    } catch (Throwable $ignored) {
+                    }
+                    error_log(
+                        'mt_uni_credit: Process 2 mail send-before-marker ambiguous'
+                            . ' attempt_id=' . $attemptId
+                            . ' recipient_key=' . $key
+                            . ' class=' . get_class($exception)
+                    );
+                } else {
+                    try {
+                        $this->mailRecipients->markFailed($attemptId, $key, $ownerToken);
+                    } catch (Throwable $ignored) {
+                    }
+                    error_log(
+                        'mt_uni_credit: Process 2 mail failed attempt_id=' . $attemptId
+                            . ' class=' . get_class($exception)
+                    );
+                }
             }
         }
 

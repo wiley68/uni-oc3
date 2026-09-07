@@ -102,6 +102,120 @@ final class MtUniCreditAud012FailClosedBankStatuses
 }
 
 /**
+ * Delegates to production mail-recipient repository; can force markSent() to throw (AUD-012-F03).
+ */
+final class MtUniCreditAud012ThrowingMarkSentMailRecipients
+{
+    /** @var MtUniCreditProcessTwoMailRecipientRepository */
+    private $inner;
+
+    /** @var bool */
+    public $throwOnMarkSent = false;
+
+    /**
+     * @param MtUniCreditProcessTwoMailRecipientRepository $inner
+     */
+    public function __construct(MtUniCreditProcessTwoMailRecipientRepository $inner)
+    {
+        $this->inner = $inner;
+    }
+
+    /**
+     * @param int $attemptId
+     * @param array<int, array<string, mixed>> $recipients
+     * @return void
+     */
+    public function ensureRecipients($attemptId, array $recipients)
+    {
+        $this->inner->ensureRecipients($attemptId, $recipients);
+    }
+
+    /**
+     * @param int $attemptId
+     * @return array<int, array<string, mixed>>
+     */
+    public function listByAttempt($attemptId)
+    {
+        return $this->inner->listByAttempt($attemptId);
+    }
+
+    /**
+     * @param int $attemptId
+     * @param string $recipientKey
+     * @return array<string, mixed>|null
+     */
+    public function find($attemptId, $recipientKey)
+    {
+        return $this->inner->find($attemptId, $recipientKey);
+    }
+
+    /**
+     * @param int $attemptId
+     * @param string $recipientKey
+     * @param string $ownerToken
+     * @return bool
+     */
+    public function claimForSending($attemptId, $recipientKey, $ownerToken)
+    {
+        return $this->inner->claimForSending($attemptId, $recipientKey, $ownerToken);
+    }
+
+    /**
+     * @param int $attemptId
+     * @param string $recipientKey
+     * @param string $ownerToken
+     * @return bool
+     */
+    public function markSent($attemptId, $recipientKey, $ownerToken)
+    {
+        if ($this->throwOnMarkSent) {
+            throw new RuntimeException('AUD-012 forced markSent persistence failure after external send success');
+        }
+
+        return $this->inner->markSent($attemptId, $recipientKey, $ownerToken);
+    }
+
+    /**
+     * @param int $attemptId
+     * @param string $recipientKey
+     * @param string $ownerToken
+     * @return void
+     */
+    public function markFailed($attemptId, $recipientKey, $ownerToken)
+    {
+        $this->inner->markFailed($attemptId, $recipientKey, $ownerToken);
+    }
+
+    /**
+     * @param int $attemptId
+     * @param string $recipientKey
+     * @return void
+     */
+    public function markUncertain($attemptId, $recipientKey)
+    {
+        $this->inner->markUncertain($attemptId, $recipientKey);
+    }
+
+    /**
+     * @param int $attemptId
+     * @return int
+     */
+    public function normalizeStaleSendingToUncertain($attemptId)
+    {
+        return $this->inner->normalizeStaleSendingToUncertain($attemptId);
+    }
+
+    /**
+     * @param int $attemptId
+     * @return bool
+     */
+    public function areAllRecipientsSent($attemptId)
+    {
+        return $this->inner->areAllRecipientsSent($attemptId);
+    }
+}
+
+/**
  * @param array<string, mixed> $stack
  * @param int $orderId
  * @return int
@@ -542,6 +656,97 @@ mtucAud012_assert(
     'F03 ambiguity: uncertain recipient not blindly resent'
 );
 mtucAud012_assert(Phase9TestHarness::smartUcfCallCount($stackAmb['smartUcfProbe']) === 0, 'F03 ambiguity: SmartUCF = 0');
+
+// ---------------------------------------------------------------------------
+// F03 residual — markSent() THROWS after external send success → uncertain (not failed)
+// ---------------------------------------------------------------------------
+$transportThrow = new Phase4FakeCpHttpTransport();
+Phase9TestHarness::enqueueCpCreateSuccess($transportThrow);
+$mailerThrow = new MtUniCreditRecordingProcessTwoMailer();
+$stackThrow = Phase9TestHarness::stack(
+    $transportThrow,
+    null,
+    null,
+    Phase5TestHarness::STORE_A,
+    array('uni_proces' => 1, 'uni_email' => 'throw-admin@example.test')
+);
+$throwingMailRecipients = new MtUniCreditAud012ThrowingMarkSentMailRecipients(
+    new MtUniCreditProcessTwoMailRecipientRepository($stackThrow['db'], $stackThrow['clock'])
+);
+$throwingMailRecipients->throwOnMarkSent = true;
+$process2Throw = MtUniCreditProcessTwoServiceFactory::coordinator(
+    $stackThrow['db'],
+    $stackThrow['client'],
+    $mailerThrow,
+    $stackThrow['clock'],
+    Phase4TestHarness::testSecretInput()
+);
+$refThrow = new ReflectionClass($process2Throw);
+$mailRecipientsProp = $refThrow->getProperty('mailRecipients');
+$mailRecipientsProp->setAccessible(true);
+$mailRecipientsProp->setValue($process2Throw, $throwingMailRecipients);
+$refLifeThrow = new ReflectionClass($stackThrow['lifecycle']);
+$p2PropThrow = $refLifeThrow->getProperty('process2');
+$p2PropThrow->setAccessible(true);
+$p2PropThrow->setValue($stackThrow['lifecycle'], $process2Throw);
+$stackThrow['process2'] = $process2Throw;
+$stackThrow['process2Mailer'] = $mailerThrow;
+
+$orderThrow = 20108;
+Phase9TestHarness::seedBankOrder($stackThrow['memoryDb'], $orderThrow, $stackThrow['storeId']);
+$resultThrow = $stackThrow['submission']->submit(
+    Phase9TestHarness::submitInputProcess2($orderThrow, $stackThrow['storeId'])
+);
+mtucAud012_assert(!empty($resultThrow['success']), 'F03 markSent throw: prepared still success');
+$attemptThrow = mtucAud012_attemptId($stackThrow, $orderThrow);
+$mailRepoThrow = new MtUniCreditProcessTwoMailRecipientRepository($stackThrow['db'], $stackThrow['clock']);
+$throwRows = $mailRepoThrow->listByAttempt($attemptThrow);
+$throwAdminState = null;
+$anyFailed = false;
+foreach ($throwRows as $row) {
+    if ((string) $row['recipient_key'] === 'throw-admin@example.test') {
+        $throwAdminState = (string) $row['state'];
+    }
+    if ((string) $row['state'] === MtUniCreditProcessTwoMailRecipientStates::FAILED) {
+        $anyFailed = true;
+    }
+}
+mtucAud012_assert(
+    $throwAdminState === MtUniCreditProcessTwoMailRecipientStates::UNCERTAIN
+    || $throwAdminState === MtUniCreditProcessTwoMailRecipientStates::SENDING,
+    'F03 markSent throw: recipient uncertain (or sending pending stale→uncertain), not failed'
+);
+mtucAud012_assert($anyFailed === false, 'F03 markSent throw: no recipient downgraded to retryable failed');
+mtucAud012_assert(
+    $throwAdminState !== MtUniCreditProcessTwoMailRecipientStates::FAILED,
+    'F03 markSent throw: admin recipient is not retryable failed'
+);
+
+// Disable throw so replay cannot accidentally "fix" markers; uncertain must still block resend.
+$throwingMailRecipients->throwOnMarkSent = false;
+$sentBeforeThrowReplay = 0;
+foreach ($mailerThrow->sent as $item) {
+    if (strtolower((string) $item['to']) === 'throw-admin@example.test') {
+        $sentBeforeThrowReplay++;
+    }
+}
+mtucAud012_assert($sentBeforeThrowReplay >= 1, 'F03 markSent throw: external admin send occurred once');
+$resultThrowReplay = $stackThrow['submission']->submit(
+    Phase9TestHarness::submitInputProcess2($orderThrow, $stackThrow['storeId'])
+);
+mtucAud012_assert(!empty($resultThrowReplay['success']), 'F03 markSent throw replay: success');
+$sentAfterThrowReplay = 0;
+foreach ($mailerThrow->sent as $item) {
+    if (strtolower((string) $item['to']) === 'throw-admin@example.test') {
+        $sentAfterThrowReplay++;
+    }
+}
+mtucAud012_assert(
+    $sentAfterThrowReplay === $sentBeforeThrowReplay,
+    'F03 markSent throw: automatic replay sends 0 additional messages to that recipient'
+);
+mtucAud012_assert(Phase7TestHarness::countOrderPosts($transportThrow) === 1, 'F03 markSent throw: no CP recreate');
+mtucAud012_assert(Phase9TestHarness::smartUcfCallCount($stackThrow['smartUcfProbe']) === 0, 'F03 markSent throw: SmartUCF = 0');
 
 // ---------------------------------------------------------------------------
 // F03 — replay after all recipients complete sends zero mail
