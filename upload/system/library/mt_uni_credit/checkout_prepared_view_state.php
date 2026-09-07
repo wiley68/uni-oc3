@@ -13,6 +13,8 @@ final class MtUniCreditCheckoutPreparedViewState
 
     const MODE_AMBIGUOUS = 'ambiguous';
 
+    const MODE_CONFLICT = 'conflict';
+
     const MODE_IN_PROGRESS = 'in_progress';
 
     /**
@@ -56,6 +58,16 @@ final class MtUniCreditCheckoutPreparedViewState
                 'ambiguous' => true,
                 'can_submit' => false,
                 'message_key' => 'text_prepared_ambiguous',
+            );
+        }
+
+        if ($state === MtUniCreditFinancingAttemptState::CP_EXISTING_CONFLICT) {
+            return array(
+                'mode' => self::MODE_CONFLICT,
+                'success' => false,
+                'ambiguous' => false,
+                'can_submit' => false,
+                'message_key' => 'text_prepared_conflict',
             );
         }
 

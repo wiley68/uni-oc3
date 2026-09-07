@@ -375,6 +375,7 @@ final class MtUniCreditApplicationSnapshot
         if (
             $state === MtUniCreditFinancingAttemptState::CP_CREATED
             || $state === MtUniCreditFinancingAttemptState::CP_OUTCOME_UNKNOWN
+            || $state === MtUniCreditFinancingAttemptState::CP_EXISTING_CONFLICT
             || $state === MtUniCreditFinancingAttemptState::CP_SUBMITTING
         ) {
             return false;

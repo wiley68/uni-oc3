@@ -14,6 +14,8 @@ final class MtUniCreditControlPanelOrderLifecycleService
 
     const CUSTOMER_AMBIGUOUS_MESSAGE = 'Поръчката е създадена локално, но резултатът от изпращането към системата за финансиране не е потвърден. Моля, не изпращайте отново — свържете се с магазина.';
 
+    const CUSTOMER_CONFLICT_MESSAGE = 'Поръчката вече съществува в системата за финансиране, но данните не съвпадат. Моля, не изпращайте отново — свържете се с магазина.';
+
     /** @var MtUniCreditFinancingAttemptRepository */
     private $attempts;
 
@@ -182,6 +184,16 @@ final class MtUniCreditControlPanelOrderLifecycleService
             );
         }
 
+        if ($row['state'] === MtUniCreditFinancingAttemptState::CP_EXISTING_CONFLICT) {
+            return MtUniCreditControlPanelOrderSubmissionResult::fail(
+                MtUniCreditControlPanelErrorClass::CONFLICT,
+                false,
+                409,
+                false,
+                self::CUSTOMER_CONFLICT_MESSAGE
+            );
+        }
+
         if ($row['state'] === MtUniCreditFinancingAttemptState::CP_SUBMITTING && $existingCpId <= 0) {
             // Crash window after possible send — treat as ambiguous, do not re-POST.
             $this->attempts->persistFailure(
@@ -267,6 +279,15 @@ final class MtUniCreditControlPanelOrderLifecycleService
                     false,
                     null,
                     true
+                );
+            }
+            if ($fresh !== null && $fresh['state'] === MtUniCreditFinancingAttemptState::CP_EXISTING_CONFLICT) {
+                return MtUniCreditControlPanelOrderSubmissionResult::fail(
+                    MtUniCreditControlPanelErrorClass::CONFLICT,
+                    false,
+                    409,
+                    false,
+                    self::CUSTOMER_CONFLICT_MESSAGE
                 );
             }
 
@@ -408,16 +429,28 @@ final class MtUniCreditControlPanelOrderLifecycleService
         } catch (MtUniCreditCpHttpException $exception) {
             $status = $exception->getStatusCode();
             if ($status === 409) {
+                // CP idempotency: an order already exists for (shop_id, order_id) with a
+                // conflicting semantic payload — not "no CP order".
                 $this->attempts->persistFailure(
                     $attemptId,
                     MtUniCreditControlPanelErrorClass::CONFLICT,
-                    MtUniCreditFinancingAttemptState::CP_FAILED_RETRYABLE
+                    MtUniCreditFinancingAttemptState::CP_EXISTING_CONFLICT
+                );
+                $this->recordCpCreateDiagnostic(
+                    $storeId,
+                    $orderId,
+                    $entryPoint,
+                    MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_REJECTED,
+                    409,
+                    array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::CONFLICT)
                 );
 
                 return MtUniCreditControlPanelOrderSubmissionResult::fail(
                     MtUniCreditControlPanelErrorClass::CONFLICT,
                     false,
-                    409
+                    409,
+                    false,
+                    self::CUSTOMER_CONFLICT_MESSAGE
                 );
             }
             if ($status >= 400 && $status < 500) {
@@ -985,6 +1018,9 @@ final class MtUniCreditControlPanelOrderLifecycleService
             return false;
         }
         if ($currentState === MtUniCreditFinancingAttemptState::CP_OUTCOME_UNKNOWN) {
+            return false;
+        }
+        if ($currentState === MtUniCreditFinancingAttemptState::CP_EXISTING_CONFLICT) {
             return false;
         }
 

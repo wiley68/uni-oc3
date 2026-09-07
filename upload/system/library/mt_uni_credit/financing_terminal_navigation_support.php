@@ -69,6 +69,17 @@ final class MtUniCreditFinancingTerminalNavigationSupport
         if (self::isDefinitiveRemoteRejectTerminal($result)) {
             return false;
         }
+
+        $attempt = isset($result['attempt']) && is_array($result['attempt']) ? $result['attempt'] : null;
+        if (
+            is_array($attempt)
+            && (string) (isset($attempt['state']) ? $attempt['state'] : '')
+            === MtUniCreditFinancingAttemptState::CP_EXISTING_CONFLICT
+        ) {
+            // CP proved an order already exists — not "no CP order".
+            return false;
+        }
+
         $cpId = (int) (isset($result['control_panel_order_id']) ? $result['control_panel_order_id'] : 0);
         if ($cpId > 0) {
             return false;
@@ -79,7 +90,6 @@ final class MtUniCreditFinancingTerminalNavigationSupport
             return true;
         }
 
-        $attempt = isset($result['attempt']) && is_array($result['attempt']) ? $result['attempt'] : null;
         if (
             is_array($attempt)
             && (string) (isset($attempt['state']) ? $attempt['state'] : '')
@@ -93,7 +103,8 @@ final class MtUniCreditFinancingTerminalNavigationSupport
             MtUniCreditControlPanelErrorClass::REJECTED,
             MtUniCreditControlPanelErrorClass::AUTH_FAILED,
             MtUniCreditControlPanelErrorClass::INVALID_RESPONSE,
-            MtUniCreditControlPanelErrorClass::CONFLICT,
+            // Local pre-send CONFLICT still reaches Thank You via CP_FAILED_RETRYABLE state.
+            // HTTP 409 uses CP_EXISTING_CONFLICT and is excluded above.
             MtUniCreditControlPanelErrorClass::VALIDATION_FAILED,
         );
 
@@ -278,7 +289,13 @@ final class MtUniCreditFinancingTerminalNavigationSupport
             if (!empty($payload['ambiguous_blocked'])) {
                 $payload['message'] = MtUniCreditControlPanelOrderLifecycleService::CUSTOMER_AMBIGUOUS_MESSAGE;
             } else {
-                $payload['message'] = MtUniCreditControlPanelOrderLifecycleService::CUSTOMER_FAILURE_MESSAGE;
+                $attempt = isset($payload['attempt']) && is_array($payload['attempt']) ? $payload['attempt'] : null;
+                $conflict = is_array($attempt)
+                    && (string) (isset($attempt['state']) ? $attempt['state'] : '')
+                    === MtUniCreditFinancingAttemptState::CP_EXISTING_CONFLICT;
+                $payload['message'] = $conflict
+                    ? MtUniCreditControlPanelOrderLifecycleService::CUSTOMER_CONFLICT_MESSAGE
+                    : MtUniCreditControlPanelOrderLifecycleService::CUSTOMER_FAILURE_MESSAGE;
             }
         }
 

@@ -16,6 +16,12 @@ final class MtUniCreditFinancingAttemptState
     const CP_OUTCOME_UNKNOWN = 'cp_outcome_unknown';
 
     /**
+     * CP proven an order already exists for this shop/order identity, but the
+     * frozen local payload conflicts — automatic create retry is not permitted.
+     */
+    const CP_EXISTING_CONFLICT = 'cp_existing_conflict';
+
+    /**
      * @return array<int, string>
      */
     public static function all()
@@ -26,6 +32,7 @@ final class MtUniCreditFinancingAttemptState
             self::CP_CREATED,
             self::CP_FAILED_RETRYABLE,
             self::CP_OUTCOME_UNKNOWN,
+            self::CP_EXISTING_CONFLICT,
         );
     }
 

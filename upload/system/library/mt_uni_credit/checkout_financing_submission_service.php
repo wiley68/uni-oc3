@@ -301,7 +301,11 @@ final class MtUniCreditCheckoutFinancingSubmissionService
         $orderStatusId = (int) (isset($order['order_status_id']) ? $order['order_status_id'] : -1);
         if ($orderStatusId !== 0) {
             if ($existing === null || (int) $existing['control_panel_order_id'] <= 0) {
-                if ($existing === null || $existing['state'] !== MtUniCreditFinancingAttemptState::CP_OUTCOME_UNKNOWN) {
+                $durableBlock = $existing !== null && (
+                    $existing['state'] === MtUniCreditFinancingAttemptState::CP_OUTCOME_UNKNOWN
+                    || $existing['state'] === MtUniCreditFinancingAttemptState::CP_EXISTING_CONFLICT
+                );
+                if (!$durableBlock) {
                     return array('error' => 'order_already_processed');
                 }
             }

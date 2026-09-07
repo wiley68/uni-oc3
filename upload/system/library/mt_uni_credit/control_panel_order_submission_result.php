@@ -116,9 +116,21 @@ final class MtUniCreditControlPanelOrderSubmissionResult
      * @param bool $ambiguousBlocked
      * @return self
      */
-    public static function fail($errorClass, $recoverable, $httpStatus = null, $ambiguousBlocked = false)
+    public static function fail($errorClass, $recoverable, $httpStatus = null, $ambiguousBlocked = false, $customerMessage = null)
     {
-        return new self(false, 0, false, $errorClass, $recoverable, $httpStatus, $ambiguousBlocked, '', false, null, false);
+        return new self(
+            false,
+            0,
+            false,
+            $errorClass,
+            $recoverable,
+            $httpStatus,
+            $ambiguousBlocked,
+            '',
+            false,
+            $customerMessage,
+            false
+        );
     }
 
     /**
