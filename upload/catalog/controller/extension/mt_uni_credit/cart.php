@@ -538,7 +538,7 @@ class ControllerExtensionMtUniCreditCart extends Controller
         $process2 = ((int) (isset($shopData['uni_proces']) ? $shopData['uni_proces'] : 0)) === 1;
         $normalized = (new MtUniCreditStorefrontPopupFormNormalizer())->normalize(
             $this->request->post,
-            $this->storeAddressDefaults()
+            array()
         );
 
         $firstname = trim((string) (isset($normalized['firstname']) ? $normalized['firstname'] : ''));
@@ -555,12 +555,13 @@ class ControllerExtensionMtUniCreditCart extends Controller
             'email' => $email,
             'telephone' => $telephone,
             'address_1' => $address1,
-            'city' => trim((string) (isset($normalized['city']) ? $normalized['city'] : '')),
-            'postcode' => trim((string) (isset($normalized['postcode']) ? $normalized['postcode'] : '')),
-            'country_id' => (int) (isset($normalized['country_id']) ? $normalized['country_id'] : 0),
-            'zone_id' => (int) (isset($normalized['zone_id']) ? $normalized['zone_id'] : 0),
-            'country' => trim((string) (isset($normalized['country']) ? $normalized['country'] : '')),
-            'zone' => trim((string) (isset($normalized['zone']) ? $normalized['zone'] : '')),
+            // Popup collects free-text address only — do not invent locality components.
+            'city' => '',
+            'postcode' => '',
+            'country_id' => 0,
+            'zone_id' => 0,
+            'country' => '',
+            'zone' => '',
         );
 
         if ($process2) {
@@ -627,40 +628,6 @@ class ControllerExtensionMtUniCreditCart extends Controller
     }
 
     /**
-     * @return array<string, mixed>
-     */
-    private function storeAddressDefaults()
-    {
-        $countryId = (int) $this->config->get('config_country_id');
-        $zoneId = (int) $this->config->get('config_zone_id');
-        $country = '';
-        $zone = '';
-        $this->load->model('localisation/country');
-        $this->load->model('localisation/zone');
-        if (isset($this->model_localisation_country) && method_exists($this->model_localisation_country, 'getCountry')) {
-            $row = $this->model_localisation_country->getCountry($countryId);
-            if (is_array($row) && isset($row['name'])) {
-                $country = (string) $row['name'];
-            }
-        }
-        if (isset($this->model_localisation_zone) && method_exists($this->model_localisation_zone, 'getZone')) {
-            $row = $this->model_localisation_zone->getZone($zoneId);
-            if (is_array($row) && isset($row['name'])) {
-                $zone = (string) $row['name'];
-            }
-        }
-
-        return array(
-            'country_id' => $countryId > 0 ? $countryId : 33,
-            'zone_id' => $zoneId > 0 ? $zoneId : 0,
-            'country' => $country !== '' ? $country : 'Bulgaria',
-            'zone' => $zone,
-            'city' => $zone !== '' ? $zone : 'Sofia',
-            'postcode' => '1000',
-        );
-    }
-
-    /**
      * @param array<string, mixed>|null $shop
      * @return array{ok:bool,message:string,errors:array<string,string>}
      */
@@ -670,7 +637,7 @@ class ControllerExtensionMtUniCreditCart extends Controller
         $process2 = ((int) (isset($shopData['uni_proces']) ? $shopData['uni_proces'] : 0)) === 1;
         $normalized = (new MtUniCreditStorefrontPopupFormNormalizer())->normalize(
             $this->request->post,
-            $this->storeAddressDefaults()
+            array()
         );
         $errors = array();
         $firstname = trim((string) (isset($normalized['firstname']) ? $normalized['firstname'] : ''));

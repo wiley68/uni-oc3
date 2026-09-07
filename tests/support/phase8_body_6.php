@@ -271,7 +271,10 @@ $norm = (new MtUniCreditStorefrontPopupFormNormalizer())->normalize(
 );
 mtuc8_assert($norm['telephone'] === '0888', 'normalizer maps phone→telephone');
 mtuc8_assert($norm['address_1'] === 'Line 1', 'normalizer maps address→address_1');
-mtuc8_assert($norm['city'] === 'Sofia', 'normalizer fills city from store defaults');
+mtuc8_assert(
+    !isset($norm['city']) || trim((string) $norm['city']) === '',
+    'normalizer does not invent city from store defaults'
+);
 
 // Process 2 validator
 $p2v = new MtUniCreditStorefrontProcessTwoFieldValidator();

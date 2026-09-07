@@ -2,15 +2,18 @@
 
 /**
  * Maps Product/Cart Step 2 POST fields to OC3 order draft shape (OC4 ProductPopupFormNormalizer).
+ *
+ * The popup collects a single free-text address. Structured locality components
+ * (city/postcode/country/zone) are not invented from merchant/store defaults.
  */
 final class MtUniCreditStorefrontPopupFormNormalizer
 {
     /**
      * @param array<string, mixed> $posted
-     * @param array<string, mixed> $storeDefaults country_id, zone_id, country, zone, city, postcode
+     * @param array<string, mixed> $storeDefaults Unused for applicant locality (kept for call-site BC)
      * @return array<string, mixed>
      */
-    public function normalize(array $posted, array $storeDefaults)
+    public function normalize(array $posted, array $storeDefaults = array())
     {
         $normalized = $posted;
 
@@ -29,12 +32,9 @@ final class MtUniCreditStorefrontPopupFormNormalizer
             $normalized['address_1'] = $addressLine;
         }
 
-        foreach (array('city', 'postcode', 'country_id', 'zone_id', 'country', 'zone') as $field) {
-            $current = trim((string) (isset($normalized[$field]) ? $normalized[$field] : ''));
-            if ($current === '' && isset($storeDefaults[$field])) {
-                $normalized[$field] = $storeDefaults[$field];
-            }
-        }
+        // Intentionally do not copy city/postcode/country/zone from $storeDefaults.
+        // Unknown structured components remain absent/empty for order-draft neutrality.
+        unset($storeDefaults);
 
         return $normalized;
     }
