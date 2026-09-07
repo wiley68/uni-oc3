@@ -5,6 +5,8 @@
  *
  * Authority: OpenCart 3 checkout guest/register/payment_address utf8_strlen rules
  * (reference-oc3-core catalog/controller/checkout/*.php) + oc_order column widths.
+ *
+ * Fail-closed: values must be valid UTF-8 before character-length is trusted.
  */
 final class MtUniCreditStorefrontApplicantFieldValidator
 {
@@ -25,6 +27,7 @@ final class MtUniCreditStorefrontApplicantFieldValidator
     const MSG_PHONE_INVALID = 'Въведете валиден телефонен номер.';
     const MSG_EMAIL_INVALID = 'Въведете валиден e-mail адрес.';
     const MSG_EMAIL_LENGTH = 'Полето трябва да бъде максимум 96 символа.';
+    const MSG_INVALID_ENCODING = 'Невалидни символи.';
 
     /**
      * @param array<string, mixed> $normalized Output of StorefrontPopupFormNormalizer
@@ -40,57 +43,98 @@ final class MtUniCreditStorefrontApplicantFieldValidator
         $telephone = trim((string) (isset($normalized['telephone']) ? $normalized['telephone'] : ''));
         $address1 = trim((string) (isset($normalized['address_1']) ? $normalized['address_1'] : ''));
 
-        $firstLen = $this->characterLength($firstname);
         if ($firstname === '') {
             $errors['firstname'] = self::MSG_REQUIRED;
-        } elseif ($firstLen < self::FIRSTNAME_MIN || $firstLen > self::FIRSTNAME_MAX) {
-            $errors['firstname'] = self::MSG_NAME_LENGTH;
+        } elseif (!$this->isValidUtf8($firstname)) {
+            $errors['firstname'] = self::MSG_INVALID_ENCODING;
+        } else {
+            $firstLen = $this->characterLength($firstname);
+            if ($firstLen < self::FIRSTNAME_MIN || $firstLen > self::FIRSTNAME_MAX) {
+                $errors['firstname'] = self::MSG_NAME_LENGTH;
+            }
         }
 
-        $lastLen = $this->characterLength($lastname);
         if ($lastname === '') {
             $errors['lastname'] = self::MSG_REQUIRED;
-        } elseif ($lastLen < self::LASTNAME_MIN || $lastLen > self::LASTNAME_MAX) {
-            $errors['lastname'] = self::MSG_NAME_LENGTH;
+        } elseif (!$this->isValidUtf8($lastname)) {
+            $errors['lastname'] = self::MSG_INVALID_ENCODING;
+        } else {
+            $lastLen = $this->characterLength($lastname);
+            if ($lastLen < self::LASTNAME_MIN || $lastLen > self::LASTNAME_MAX) {
+                $errors['lastname'] = self::MSG_NAME_LENGTH;
+            }
         }
 
-        $addressLen = $this->characterLength($address1);
         if ($address1 === '') {
             $errors['address'] = self::MSG_REQUIRED;
-        } elseif ($addressLen < self::ADDRESS_MIN || $addressLen > self::ADDRESS_MAX) {
-            $errors['address'] = self::MSG_ADDRESS_LENGTH;
+        } elseif (!$this->isValidUtf8($address1)) {
+            $errors['address'] = self::MSG_INVALID_ENCODING;
+        } else {
+            $addressLen = $this->characterLength($address1);
+            if ($addressLen < self::ADDRESS_MIN || $addressLen > self::ADDRESS_MAX) {
+                $errors['address'] = self::MSG_ADDRESS_LENGTH;
+            }
         }
 
-        $phoneLen = $this->characterLength($telephone);
         if ($telephone === '') {
             $errors['phone'] = self::MSG_REQUIRED;
-        } elseif (!(new MtUniCreditStorefrontProcessTwoFieldValidator())->isValidPhone($telephone)) {
-            $errors['phone'] = self::MSG_PHONE_INVALID;
-        } elseif ($phoneLen < self::TELEPHONE_MIN || $phoneLen > self::TELEPHONE_MAX) {
-            $errors['phone'] = self::MSG_PHONE_LENGTH;
+        } elseif (!$this->isValidUtf8($telephone)) {
+            $errors['phone'] = self::MSG_INVALID_ENCODING;
+        } else {
+            $phoneLen = $this->characterLength($telephone);
+            if ($phoneLen < self::TELEPHONE_MIN || $phoneLen > self::TELEPHONE_MAX) {
+                $errors['phone'] = self::MSG_PHONE_LENGTH;
+            } elseif (!(new MtUniCreditStorefrontProcessTwoFieldValidator())->isValidPhone($telephone)) {
+                $errors['phone'] = self::MSG_PHONE_INVALID;
+            }
         }
 
-        $emailLen = $this->characterLength($email);
         if ($email === '') {
             $errors['email'] = self::MSG_EMAIL_INVALID;
-        } elseif ($emailLen > self::EMAIL_MAX) {
-            $errors['email'] = self::MSG_EMAIL_LENGTH;
-        } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            $errors['email'] = self::MSG_EMAIL_INVALID;
+        } elseif (!$this->isValidUtf8($email)) {
+            $errors['email'] = self::MSG_INVALID_ENCODING;
+        } else {
+            $emailLen = $this->characterLength($email);
+            if ($emailLen > self::EMAIL_MAX) {
+                $errors['email'] = self::MSG_EMAIL_LENGTH;
+            } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $errors['email'] = self::MSG_EMAIL_INVALID;
+            }
         }
 
         return $errors;
     }
 
     /**
-     * UTF-8 character length (OC3 utf8_strlen semantics via mbstring/iconv).
+     * True only for well-formed UTF-8 (ASCII and Bulgarian included).
      *
      * @param string $value
-     * @return int
+     * @return bool
+     */
+    public function isValidUtf8($value)
+    {
+        $value = (string) $value;
+        if (function_exists('mb_check_encoding')) {
+            return (bool) mb_check_encoding($value, 'UTF-8');
+        }
+
+        // No mbstring: //u succeeds iff the subject is valid UTF-8.
+        return preg_match('//u', $value) === 1;
+    }
+
+    /**
+     * UTF-8 character length after validity is established.
+     * Malformed UTF-8 must not be treated as a bounded acceptable string.
+     *
+     * @param string $value
+     * @return int|null Character length, or null when value is not valid UTF-8
      */
     public function characterLength($value)
     {
         $value = (string) $value;
+        if (!$this->isValidUtf8($value)) {
+            return null;
+        }
         if (function_exists('mb_strlen')) {
             return (int) mb_strlen($value, 'UTF-8');
         }
