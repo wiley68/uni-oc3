@@ -205,7 +205,9 @@ mtuc115c3p_assert(
 );
 mtuc115c3p_assert(
     strpos($controller, 'shouldApplyHistory') !== false
-        || strpos($controller, 'readOrderStatusId') !== false,
+        || strpos($controller, 'readOrderStatusId') !== false
+        || strpos($controller, 'NativeOrderFinalizationApplicator') !== false
+        || strpos($controller, 'durable_once_complete') !== false,
     'idempotent skip when native status already applied'
 );
 mtuc115c3p_assert(strpos($controller, 'addOrder(') === false || preg_match(

@@ -406,7 +406,7 @@ class ControllerExtensionMtUniCreditCart extends Controller
         if (empty($result['apply_native_order_status']) || empty($result['order_id'])) {
             return;
         }
-        $statusId = (int) $this->config->get(MtUniCreditConstants::PAYMENT_SETTING_ORDER_STATUS_ID);
+        $statusId = MtUniCreditNativeOrderStatusSupport::resolveExistingConfiguredStatusId($this->config, $this->db);
         if ($statusId <= 0) {
             return;
         }

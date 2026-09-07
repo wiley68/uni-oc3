@@ -5,13 +5,52 @@
  *
  * Reads order_status_id via direct SQL so Missing Orders (status 0) are visible even
  * if a storefront getOrder() wrapper filters them. Does not invent a second setting key.
+ *
+ * AUD-014: configured status is strictly parsed and must exist in order_status;
+ * Checkout once-idempotency uses UniCredit durable finalization state, not mutable status.
  */
 final class MtUniCreditNativeOrderStatusSupport
 {
     const DIAG_EVENT = 'checkout.native_order_status';
 
     /**
-     * Configured payment order status id (same key Product/Cart use).
+     * Strict positive integer parse for payment_mt_uni_credit_order_status_id.
+     * Rejects null/empty/zero/negative/non-numeric/numeric-prefix garbage ("5x").
+     *
+     * @param mixed $raw
+     * @return int 0 when invalid
+     */
+    public static function parseConfiguredStatusIdStrict($raw)
+    {
+        if ($raw === null) {
+            return 0;
+        }
+        if (is_bool($raw)) {
+            return 0;
+        }
+        if (is_int($raw)) {
+            return $raw > 0 ? $raw : 0;
+        }
+        if (is_float($raw)) {
+            if ($raw <= 0 || floor($raw) !== $raw) {
+                return 0;
+            }
+
+            return (int) $raw;
+        }
+        if (!is_string($raw) && !is_numeric($raw)) {
+            return 0;
+        }
+        $s = trim((string) $raw);
+        if ($s === '' || !preg_match('/^[1-9][0-9]*$/', $s)) {
+            return 0;
+        }
+
+        return (int) $s;
+    }
+
+    /**
+     * Configured payment order status id (strict parse only — no existence check).
      *
      * @param object $config OpenCart config with get()
      * @return int
@@ -22,7 +61,63 @@ final class MtUniCreditNativeOrderStatusSupport
             return 0;
         }
 
-        return (int) $config->get(MtUniCreditConstants::PAYMENT_SETTING_ORDER_STATUS_ID);
+        return self::parseConfiguredStatusIdStrict(
+            $config->get(MtUniCreditConstants::PAYMENT_SETTING_ORDER_STATUS_ID)
+        );
+    }
+
+    /**
+     * Resolve a strictly valid configured status that exists in native order_status.
+     * No fallback to config_order_status_id / Processing / invented IDs.
+     *
+     * Validation path:
+     *   SELECT `order_status_id` FROM `{prefix}order_status`
+     *   WHERE `order_status_id` = N LIMIT 1
+     *
+     * @param object $config
+     * @param object $db OpenCart DB or MtUniCreditDbAdapter
+     * @return int 0 when missing/invalid/non-existent
+     */
+    public static function resolveExistingConfiguredStatusId($config, $db)
+    {
+        $statusId = self::configuredStatusId($config);
+        if ($statusId <= 0) {
+            return 0;
+        }
+        if (!self::orderStatusExists($db, $statusId)) {
+            return 0;
+        }
+
+        return $statusId;
+    }
+
+    /**
+     * Language-independent existence of a native order_status row.
+     *
+     * @param object $db
+     * @param int $statusId
+     * @return bool
+     */
+    public static function orderStatusExists($db, $statusId)
+    {
+        $statusId = (int) $statusId;
+        if ($statusId <= 0 || !is_object($db) || !method_exists($db, 'query')) {
+            return false;
+        }
+
+        $prefix = '';
+        if ($db instanceof MtUniCreditDbAdapter) {
+            $prefix = $db->getPrefix();
+        } elseif (defined('DB_PREFIX')) {
+            $prefix = DB_PREFIX;
+        }
+
+        $result = $db->query(
+            "SELECT `order_status_id` FROM `" . $prefix . "order_status`"
+                . " WHERE `order_status_id` = '" . $statusId . "' LIMIT 1"
+        );
+
+        return is_object($result) && !empty($result->num_rows);
     }
 
     /**
@@ -59,7 +154,8 @@ final class MtUniCreditNativeOrderStatusSupport
     }
 
     /**
-     * Whether addOrderHistory should run for this order/status pair.
+     * Whether addOrderHistory should run for this order/status pair (Product/Cart legacy gate).
+     * Checkout uses durable native finalization claim instead (AUD-014).
      *
      * @param int $currentStatusId -1 means order missing
      * @param int $configuredStatusId
@@ -74,6 +170,35 @@ final class MtUniCreditNativeOrderStatusSupport
         }
 
         return $currentStatusId !== $configuredStatusId;
+    }
+
+    /**
+     * Outcome identity bound into the durable finalization claim.
+     *
+     * @param array<string, mixed> $submit
+     * @return string
+     */
+    public static function resolveFinalizationOutcome(array $submit)
+    {
+        if (!empty($submit['success'])) {
+            $bank = isset($submit['bank_status']) ? (string) $submit['bank_status'] : '';
+            if ($bank === MtUniCreditBankStatus::SENT_PROCESS2) {
+                return 'success_p2';
+            }
+
+            return 'success_p1';
+        }
+        if (MtUniCreditFinancingTerminalNavigationSupport::isDefinitiveRemoteRejectTerminal($submit)) {
+            return 'smartucf_remote_reject';
+        }
+        if (
+            isset($submit['bank_status'])
+            && (string) $submit['bank_status'] === MtUniCreditBankStatus::SEND_FAILED_CP
+        ) {
+            return 'cp_terminal_failed';
+        }
+
+        return 'native_terminal';
     }
 
     /**
@@ -131,6 +256,9 @@ final class MtUniCreditNativeOrderStatusSupport
             'applied',
             'skipped_reason',
             'history_called',
+            'attempt_id',
+            'finalize_state',
+            'claim_acquired',
         );
         $out = array();
         foreach ($allowed as $key) {

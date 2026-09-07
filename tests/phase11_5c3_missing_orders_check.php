@@ -254,12 +254,19 @@ mtuc115c3mo_assert(
 );
 mtuc115c3mo_assert(
     strpos($controller, 'PAYMENT_SETTING_ORDER_STATUS_ID') !== false
-        || strpos($controller, 'configuredStatusId') !== false,
+        || strpos($controller, 'configuredStatusId') !== false
+        || strpos($controller, 'resolveExistingConfiguredStatusId') !== false,
     'Checkout uses shared payment order-status setting'
 );
 mtuc115c3mo_assert(
-    strpos($productSrc, 'PAYMENT_SETTING_ORDER_STATUS_ID') !== false
-        && strpos($cartSrc, 'PAYMENT_SETTING_ORDER_STATUS_ID') !== false,
+    (
+        strpos($productSrc, 'PAYMENT_SETTING_ORDER_STATUS_ID') !== false
+        || strpos($productSrc, 'resolveExistingConfiguredStatusId') !== false
+    )
+        && (
+            strpos($cartSrc, 'PAYMENT_SETTING_ORDER_STATUS_ID') !== false
+            || strpos($cartSrc, 'resolveExistingConfiguredStatusId') !== false
+        ),
     'Product/Cart use the same payment order-status setting key'
 );
 

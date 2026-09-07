@@ -765,7 +765,8 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
      * Apply configured payment order status after durable Checkout bank handoff.
      *
      * Same setting key / addOrderHistory path as Product/Cart. Idempotency uses a
-     * direct SQL status read so status-0 Missing Orders are never skipped.
+     * UniCredit durable native-finalization claim (AUD-014), not mutable order_status_id.
+     * Direct SQL status read preserves status-0 Missing Orders visibility.
      *
      * @param int $orderId
      * @param array<string, mixed> $submit
@@ -834,7 +835,7 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
     private function applyPreparedOrderStatus($orderId, array $submit = array())
     {
         $orderId = (int) $orderId;
-        $statusId = MtUniCreditNativeOrderStatusSupport::configuredStatusId($this->config);
+        $statusId = MtUniCreditNativeOrderStatusSupport::resolveExistingConfiguredStatusId($this->config, $this->db);
         $diag = array(
             'order_id' => $orderId,
             'handoff' => true,
@@ -843,6 +844,7 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
             'configured_status_id' => $statusId,
             'applied' => false,
             'history_called' => false,
+            'claim_acquired' => false,
         );
 
         if ($orderId <= 0) {
@@ -860,20 +862,35 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
 
         $current = MtUniCreditNativeOrderStatusSupport::readOrderStatusId($this->db, $orderId);
         $diag['current_status_id'] = $current;
-        if (!MtUniCreditNativeOrderStatusSupport::shouldApplyHistory($current, $statusId)) {
-            $diag['skipped_reason'] = $current < 0 ? 'order_missing' : 'already_applied';
+        if ($current < 0) {
+            $diag['skipped_reason'] = 'order_missing';
             $this->recordNativeOrderStatusDiagnostic($diag);
 
             return;
         }
 
-        // Product/Cart parity: call addOrderHistory directly (no getOrder / method_exists gate).
-        $this->load->model('checkout/order');
-        $this->model_checkout_order->addOrderHistory($orderId, $statusId);
-        $diag['history_called'] = true;
-        $diag['applied'] = true;
-        $diag['current_status_id'] = MtUniCreditNativeOrderStatusSupport::readOrderStatusId($this->db, $orderId);
-        $this->recordNativeOrderStatusDiagnostic($diag);
+        try {
+            $db = MtUniCreditBootstrap::dbFromRegistry($this->db);
+            $controller = $this;
+            $result = MtUniCreditNativeOrderFinalizationApplicator::apply(
+                $db,
+                $orderId,
+                $statusId,
+                $submit,
+                function ($oid, $sid) use ($controller) {
+                    $controller->load->model('checkout/order');
+                    $controller->model_checkout_order->addOrderHistory((int) $oid, (int) $sid);
+                }
+            );
+            $diag = array_merge($diag, $result);
+            if (!empty($result['history_called'])) {
+                $diag['current_status_id'] = MtUniCreditNativeOrderStatusSupport::readOrderStatusId($this->db, $orderId);
+            }
+            $this->recordNativeOrderStatusDiagnostic($diag);
+        } catch (Exception $exception) {
+            $diag['skipped_reason'] = 'finalization_error';
+            $this->recordNativeOrderStatusDiagnostic($diag);
+        }
     }
 
     /**

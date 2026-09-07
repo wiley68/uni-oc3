@@ -7,9 +7,10 @@
  * Current OC4 stay-on-Checkout is known parity debt — NOT used as authority.
  * Product/Cart stay-page error modal must remain unchanged.
  *
- * Deterministic definitive mechanisms (local):
- *   - Option A: POST /auth/login → HTTP 401 → cp_auth_failed (no order POST)
- *   - Option B: login OK + POST /orders → HTTP 422 → cp_rejected
+ * Deterministic mechanisms (local):
+ *   - Option A: POST /auth/login → HTTP 401 → cp_auth_failed / cp_failed_retryable
+ *     (AUD-014 F02: recoverable/non-terminal — no native Thank You)
+ *   - Option B: login OK + POST /orders → HTTP 422 → cp_rejected (definitive terminal)
  *
  * Ambiguous CP outcome (separate safety case — NOT a definitive broken-CP test):
  *   - transport timeout / outcome_unknown / ambiguous_blocked
@@ -405,7 +406,7 @@ mtuc115c3cp_runCase('P2 guest', 0, true);
 
 // ---------------------------------------------------------------------------
 // Option A — invalid authentication (login 401, zero order POSTs)
-// Preferred remote definitive mechanism when CP returns stable 401 JSON.
+// AUD-014 F02: cp_failed_retryable / AUTH_FAILED remains recoverable (non-terminal).
 // ---------------------------------------------------------------------------
 $transportAuth = new Phase4FakeCpHttpTransport();
 $transportAuth->enqueueJson(401, array('success' => false, 'error' => 'invalid_credentials'));
@@ -423,6 +424,7 @@ mtuc115c3cp_assert(
         && (string) $authSubmit['attempt']['state'] === MtUniCreditFinancingAttemptState::CP_FAILED_RETRYABLE,
     'Option A auth: attempt_state=cp_failed_retryable'
 );
+mtuc115c3cp_assert(!empty($authSubmit['recoverable']), 'Option A auth: recoverable');
 mtuc115c3cp_assert(empty($authSubmit['ambiguous_blocked']), 'Option A auth: not ambiguous');
 mtuc115c3cp_assert(
     (int) (isset($authSubmit['control_panel_order_id']) ? $authSubmit['control_panel_order_id'] : 0) === 0,
@@ -433,22 +435,29 @@ mtuc115c3cp_assert(
     'Option A auth: CP POST /orders count = 0 (fail before create)'
 );
 mtuc115c3cp_assert(
-    (string) $authSubmit['bank_status'] === MtUniCreditBankStatus::SEND_FAILED_CP,
-    'Option A auth: bank_send_failed_cp'
+    (string) (isset($authSubmit['bank_status']) ? $authSubmit['bank_status'] : '')
+        !== MtUniCreditBankStatus::SEND_FAILED_CP,
+    'Option A auth: NOT bank_send_failed_cp'
 );
 mtuc115c3cp_assert(
-    MtUniCreditFinancingTerminalNavigationSupport::isDefinitiveCheckoutCpFailureTerminal($authSubmit),
-    'Option A auth: definitive Checkout CP terminal detector'
+    empty($authSubmit['apply_native_order_status']),
+    'Option A auth: apply_native NOT authorised'
+);
+mtuc115c3cp_assert(
+    !MtUniCreditFinancingTerminalNavigationSupport::isCheckoutCpFailureNativeFinalizationCandidate($authSubmit),
+    'Option A auth: NOT native-finalization candidate'
+);
+mtuc115c3cp_assert(
+    !MtUniCreditFinancingTerminalNavigationSupport::isDefinitiveCheckoutCpFailureTerminal($authSubmit),
+    'Option A auth: NOT definitive Checkout CP terminal'
 );
 $sessionAuth = array('order_id' => $authOrder);
 $jsonAuth = mtuc115c3cp_confirmJson($authSubmit, $authOrder, $sessionAuth);
+mtuc115c3cp_assert(empty($jsonAuth['redirect']), 'Option A auth: stay Checkout (no Thank You redirect)');
 mtuc115c3cp_assert(
-    !empty($jsonAuth['redirect']) && strpos((string) $jsonAuth['redirect'], 'checkout/success') !== false,
-    'Option A auth: redirect checkout/success'
-);
-mtuc115c3cp_assert(
-    (string) $jsonAuth['step'] === MtUniCreditFinancingTerminalNavigationSupport::STEP_CP_TERMINAL_FAILED,
-    'Option A auth: step cp_terminal_failed'
+    !isset($jsonAuth['step'])
+        || (string) $jsonAuth['step'] !== MtUniCreditFinancingTerminalNavigationSupport::STEP_CP_TERMINAL_FAILED,
+    'Option A auth: step NOT cp_terminal_failed'
 );
 
 // ---------------------------------------------------------------------------

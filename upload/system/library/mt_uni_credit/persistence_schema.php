@@ -50,6 +50,7 @@ final class MtUniCreditPersistenceSchema
         $this->ensurePhase10Columns();
         $this->ensureAud007F02Columns();
         $this->ensureAud012Columns();
+        $this->ensureAud014Columns();
     }
 
     /**
@@ -96,6 +97,16 @@ final class MtUniCreditPersistenceSchema
             } catch (Exception $ignored) {
             }
         }
+    }
+
+    /**
+     * AUD-014 native order finalization once-claim columns.
+     *
+     * @return void
+     */
+    public function ensureAud014Columns()
+    {
+        $this->ensureAlterColumns(self::createAud014AlterStatements($this->db->getPrefix()));
     }
 
     /**
@@ -236,6 +247,27 @@ final class MtUniCreditPersistenceSchema
         return array(
             "ALTER TABLE `{$financingAttempt}` ADD COLUMN `process2_claimed_at` DATETIME NULL",
             "ALTER TABLE `{$financingAttempt}` ADD COLUMN `process2_claim_owner` CHAR(32) NULL",
+        );
+    }
+
+    /**
+     * Idempotent AUD-014 column upgrades for financing_attempt native finalization.
+     *
+     * @param string $prefix
+     * @return array<int, string>
+     */
+    public static function createAud014AlterStatements($prefix)
+    {
+        $financingAttempt = $prefix . MtUniCreditPersistenceTableNames::FINANCING_ATTEMPT;
+
+        return array(
+            "ALTER TABLE `{$financingAttempt}` ADD COLUMN `native_finalize_state` VARCHAR(32) NOT NULL DEFAULT 'not_started'",
+            "ALTER TABLE `{$financingAttempt}` ADD COLUMN `native_finalize_claim_owner` CHAR(32) NULL",
+            "ALTER TABLE `{$financingAttempt}` ADD COLUMN `native_finalize_claimed_at` DATETIME NULL",
+            "ALTER TABLE `{$financingAttempt}` ADD COLUMN `native_finalize_applied_at` DATETIME NULL",
+            "ALTER TABLE `{$financingAttempt}` ADD COLUMN `native_finalize_target_status` INT UNSIGNED NULL",
+            "ALTER TABLE `{$financingAttempt}` ADD COLUMN `native_finalize_outcome` VARCHAR(64) NULL",
+            "ALTER TABLE `{$financingAttempt}` ADD KEY `idx_mt_uni_credit_attempt_native_finalize` (`native_finalize_state`, `native_finalize_claimed_at`)",
         );
     }
 

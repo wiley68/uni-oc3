@@ -49,10 +49,61 @@ final class MtUniCreditFinancingTerminalNavigationSupport
      * Woo/PS Thank You authority — NOT Product/Cart stay-page modal.
      * Current OC4 stay-on-Checkout is known parity debt and is not authority.
      *
+     * AUD-014 F02/F03: terminal only after durable bank_send_failed_cp is proven.
+     * cp_failed_retryable alone is never terminal.
+     *
      * @param array<string, mixed> $result
      * @return bool
      */
     public static function isDefinitiveCheckoutCpFailureTerminal(array $result)
+    {
+        if (!self::passesCheckoutCpFailureCommonGates($result)) {
+            return false;
+        }
+
+        $bankStatus = isset($result['bank_status']) ? (string) $result['bank_status'] : '';
+
+        return $bankStatus === MtUniCreditBankStatus::SEND_FAILED_CP;
+    }
+
+    /**
+     * Candidate for persisting bank_send_failed_cp before native finalization (AUD-014 F03).
+     * Does not itself authorize native status or Thank You.
+     *
+     * @param array<string, mixed> $result
+     * @return bool
+     */
+    public static function isCheckoutCpFailureNativeFinalizationCandidate(array $result)
+    {
+        if (!self::passesCheckoutCpFailureCommonGates($result)) {
+            return false;
+        }
+
+        $bankStatus = isset($result['bank_status']) ? (string) $result['bank_status'] : '';
+        if ($bankStatus === MtUniCreditBankStatus::SEND_FAILED_CP) {
+            return true;
+        }
+
+        $error = (string) (isset($result['error']) ? $result['error'] : '');
+        // F02: AUTH_FAILED / cp_failed_retryable alone are not definitive.
+        // REJECTED / VALIDATION_FAILED / INVALID_RESPONSE may authorize persist+terminal
+        // even when attempt.state remains CP_FAILED_RETRYABLE (CP create 4xx shapes).
+        $definitive = array(
+            MtUniCreditControlPanelErrorClass::REJECTED,
+            MtUniCreditControlPanelErrorClass::INVALID_RESPONSE,
+            MtUniCreditControlPanelErrorClass::VALIDATION_FAILED,
+        );
+
+        return in_array($error, $definitive, true);
+    }
+
+    /**
+     * Shared Checkout CP-failure gates (no Thank You / native authority by themselves).
+     *
+     * @param array<string, mixed> $result
+     * @return bool
+     */
+    private static function passesCheckoutCpFailureCommonGates(array $result)
     {
         if (!empty($result['success'])) {
             return false;
@@ -85,30 +136,7 @@ final class MtUniCreditFinancingTerminalNavigationSupport
             return false;
         }
 
-        $bankStatus = isset($result['bank_status']) ? (string) $result['bank_status'] : '';
-        if ($bankStatus === MtUniCreditBankStatus::SEND_FAILED_CP) {
-            return true;
-        }
-
-        if (
-            is_array($attempt)
-            && (string) (isset($attempt['state']) ? $attempt['state'] : '')
-            === MtUniCreditFinancingAttemptState::CP_FAILED_RETRYABLE
-        ) {
-            return true;
-        }
-
-        $error = (string) (isset($result['error']) ? $result['error'] : '');
-        $definitive = array(
-            MtUniCreditControlPanelErrorClass::REJECTED,
-            MtUniCreditControlPanelErrorClass::AUTH_FAILED,
-            MtUniCreditControlPanelErrorClass::INVALID_RESPONSE,
-            // Local pre-send CONFLICT still reaches Thank You via CP_FAILED_RETRYABLE state.
-            // HTTP 409 uses CP_EXISTING_CONFLICT and is excluded above.
-            MtUniCreditControlPanelErrorClass::VALIDATION_FAILED,
-        );
-
-        return in_array($error, $definitive, true);
+        return true;
     }
 
     /**

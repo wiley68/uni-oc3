@@ -50,6 +50,9 @@ final class Phase2MemoryDb
     /** @var array<int, array<string, mixed>> */
     private $financingAttempts = array();
 
+    /** @var array<int, bool> order_status_id => true (AUD-014 F04 existence) */
+    public $orderStatuses = array();
+
     /** @var array<string, array<string, mixed>> attemptId|recipientKey => row */
     private $process2MailRecipients = array();
 
@@ -73,6 +76,9 @@ final class Phase2MemoryDb
 
     /** @var string Unique connection id for advisory-lock ownership simulation. */
     private $connectionId;
+
+    /** @var bool When true, INSERT into order_bank_status throws (AUD-014 F03 tests). */
+    public $throwOnBankStatusInsert = false;
 
     /**
      * @var array<string, string> lock name => connectionId
@@ -231,6 +237,14 @@ final class Phase2MemoryDb
         $this->affected = 0;
         $sql = trim($sql);
 
+        if (
+            $this->throwOnBankStatusInsert
+            && stripos($sql, 'INSERT') === 0
+            && strpos($sql, 'order_bank_status') !== false
+        ) {
+            throw new Exception('AUD-014 forced bank status persist failure');
+        }
+
         if (stripos($sql, 'INSERT INTO') === 0 && strpos($sql, 'api_nonce') !== false) {
             return $this->insertApiNonce($sql);
         }
@@ -315,12 +329,16 @@ final class Phase2MemoryDb
             return $this->selectShopCache($sql);
         }
 
-        if (stripos($sql, 'SELECT') === 0 && preg_match('/FROM `[^`]*order`/i', $sql)) {
-            return $this->selectOrder($sql);
-        }
-
         if (stripos($sql, 'SELECT') === 0 && strpos($sql, 'order_bank_status') !== false) {
             return $this->selectOrderBankStatus($sql);
+        }
+
+        if (stripos($sql, 'SELECT') === 0 && preg_match('/FROM\s+`[^`]*order_status`/i', $sql)) {
+            return $this->selectOrderStatus($sql);
+        }
+
+        if (stripos($sql, 'SELECT') === 0 && preg_match('/FROM `[^`]*order`/i', $sql)) {
+            return $this->selectOrder($sql);
         }
 
         if (stripos($sql, 'SELECT') === 0 && strpos($sql, 'diagnostic_debug_log') !== false) {
@@ -899,6 +917,9 @@ final class Phase2MemoryDb
         if (preg_match('/`' . preg_quote($column, '/') . '`\s*=\s*(\d+)/', $sql, $matches)) {
             return (int) $matches[1];
         }
+        if (preg_match('/`' . preg_quote($column, '/') . '`\s*=\s*\'(\d+)\'/', $sql, $matches)) {
+            return (int) $matches[1];
+        }
         if (preg_match('/(?:^|\\s)' . preg_quote($column, '/') . '\\s*=\\s*\'(\\d+)\'/', $sql, $matches)) {
             return (int) $matches[1];
         }
@@ -1143,6 +1164,23 @@ final class Phase2MemoryDb
      * @param string $sql
      * @return object
      */
+    private function selectOrderStatus($sql)
+    {
+        if (!preg_match('/`order_status_id`\\s*=\\s*\'?(\\d+)\'?/', $sql, $match)) {
+            return $this->emptyResult();
+        }
+        $id = (int) $match[1];
+        if ($id <= 0 || empty($this->orderStatuses[$id])) {
+            return $this->emptyResult();
+        }
+
+        return $this->singleRow(array('order_status_id' => $id));
+    }
+
+    /**
+     * @param string $sql
+     * @return object
+     */
     private function selectOrder($sql)
     {
         $orderId = (int) $this->extractWhereInt($sql, 'order_id');
@@ -1318,6 +1356,12 @@ final class Phase2MemoryDb
             'leasing_presentation_json' => null,
             'application_snapshot_json' => null,
             'application_snapshot_hash' => null,
+            'native_finalize_state' => MtUniCreditNativeOrderFinalizationStates::NOT_STARTED,
+            'native_finalize_claim_owner' => null,
+            'native_finalize_claimed_at' => null,
+            'native_finalize_applied_at' => null,
+            'native_finalize_target_status' => null,
+            'native_finalize_outcome' => null,
             'created_at' => (string) $fields['created_at'],
             'updated_at' => (string) $fields['updated_at'],
         );
@@ -1402,6 +1446,39 @@ final class Phase2MemoryDb
             }
         }
 
+        // AUD-014: native finalization claim / applied / uncertain predicates.
+        if (preg_match("/AND `native_finalize_state` = '([^']+)'/", $sql, $nfStateMatch)) {
+            $currentNf = (string) (isset($row['native_finalize_state'])
+                ? $row['native_finalize_state']
+                : MtUniCreditNativeOrderFinalizationStates::NOT_STARTED);
+            if ($currentNf !== $nfStateMatch[1]) {
+                return $this->emptyResult();
+            }
+        }
+        if (preg_match("/AND `native_finalize_claim_owner` = '([^']+)'/", $sql, $nfOwnerMatch)) {
+            if (
+                (string) (isset($row['native_finalize_claim_owner']) ? $row['native_finalize_claim_owner'] : '')
+                !== $nfOwnerMatch[1]
+            ) {
+                return $this->emptyResult();
+            }
+        }
+        if (
+            strpos($sql, '`native_finalize_state`') !== false
+            && strpos($sql, "SET `native_finalize_state` = '" . MtUniCreditNativeOrderFinalizationStates::UNCERTAIN . "'") !== false
+            && strpos($sql, 'OR `native_finalize_claimed_at`') !== false
+        ) {
+            $cutoff = '';
+            if (preg_match("/`native_finalize_claimed_at`\\s*<=\\s*'([^']*)'/", $sql, $cutoffMatch)) {
+                $cutoff = (string) $cutoffMatch[1];
+            }
+            $claimedAt = isset($row['native_finalize_claimed_at']) ? $row['native_finalize_claimed_at'] : null;
+            $staleOk = ($claimedAt === null || $claimedAt === '' || ($cutoff !== '' && (string) $claimedAt <= $cutoff));
+            if (!$staleOk) {
+                return $this->emptyResult();
+            }
+        }
+
         if (
             strpos($sql, "`smartucf_state` = '" . MtUniCreditSmartUcfLifecycleStates::NOT_STARTED . "'") !== false
             || strpos($sql, 'smartucf_retryable` = 1') !== false
@@ -1469,6 +1546,11 @@ final class Phase2MemoryDb
             'leasing_presentation_json',
             'application_snapshot_json',
             'application_snapshot_hash',
+            'native_finalize_state',
+            'native_finalize_claim_owner',
+            'native_finalize_claimed_at',
+            'native_finalize_applied_at',
+            'native_finalize_outcome',
         );
         foreach ($stringColumns as $column) {
             if (stripos($sql, '`' . $column . '` = NULL') !== false) {
@@ -1495,6 +1577,12 @@ final class Phase2MemoryDb
         }
         if (preg_match('/`process2_mail_sent`\\s*=\\s*(\\d+)/', $sql, $mailMatch)) {
             $row['process2_mail_sent'] = (int) $mailMatch[1];
+        }
+        if (preg_match('/`native_finalize_target_status`\\s*=\\s*(\\d+)/', $sql, $nfTargetMatch)) {
+            $row['native_finalize_target_status'] = (int) $nfTargetMatch[1];
+        }
+        if (stripos($sql, '`native_finalize_target_status` = NULL') !== false) {
+            $row['native_finalize_target_status'] = null;
         }
 
         $this->financingAttempts[$attemptId] = $row;
