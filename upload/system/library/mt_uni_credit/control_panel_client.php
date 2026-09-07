@@ -215,29 +215,25 @@ final class MtUniCreditControlPanelClient
         }
 
         try {
-            try {
-                $response = $this->send('POST', '/orders', $order, $token, true);
-            } catch (MtUniCreditCpAuthenticationException $exception) {
-                $this->tokens->invalidate();
-                $this->login();
-                $retryToken = $this->tokens->getAccessToken();
-                if ($retryToken === null) {
-                    throw new MtUniCreditCpAuthenticationException(
-                        'Control Panel re-authentication did not provide a token.'
-                    );
-                }
-
-                try {
-                    $response = $this->send('POST', '/orders', $order, $retryToken, true);
-                } catch (MtUniCreditCpAuthenticationException $retryException) {
-                    $this->tokens->invalidate();
-                    throw $retryException;
-                }
+            $response = $this->sendOrderCreate($order, $token);
+        } catch (MtUniCreditCpAuthenticationException $exception) {
+            // First order POST was rejected by auth middleware before persistence.
+            // Re-login is bootstrap — must NOT enter order-response uncertainty conversion.
+            $this->tokens->invalidate();
+            $this->reloginForOrderRetry();
+            $retryToken = $this->tokens->getAccessToken();
+            if ($retryToken === null) {
+                throw new MtUniCreditCpAuthenticationException(
+                    'Control Panel re-authentication did not provide a token.'
+                );
             }
-        } catch (MtUniCreditCpInvalidPayloadException $exception) {
-            // Transport already returned a body (or size-aborted after receive). Persistence
-            // at CP cannot be ruled out — elevate to uncertain response.
-            throw new MtUniCreditCpUncertainResponseException($exception->getMessage(), 0, $exception);
+
+            try {
+                $response = $this->sendOrderCreate($order, $retryToken);
+            } catch (MtUniCreditCpAuthenticationException $retryException) {
+                $this->tokens->invalidate();
+                throw $retryException;
+            }
         }
 
         if (!isset($response['data']) || !is_array($response['data'])) {
@@ -247,6 +243,49 @@ final class MtUniCreditControlPanelClient
         }
 
         return $response;
+    }
+
+    /**
+     * POST /orders once and classify post-send InvalidPayload as persistence-uncertain.
+     *
+     * @param array<string, mixed> $order
+     * @param string $token
+     * @return array<string, mixed>
+     */
+    private function sendOrderCreate(array $order, $token)
+    {
+        try {
+            return $this->send('POST', '/orders', $order, $token, true);
+        } catch (MtUniCreditCpInvalidPayloadException $exception) {
+            // Body received / size-aborted after this order POST may already have reached CP.
+            throw new MtUniCreditCpUncertainResponseException($exception->getMessage(), 0, $exception);
+        }
+    }
+
+    /**
+     * Re-authenticate after a definitive order 401. Failures stay non-ambiguous.
+     *
+     * @return void
+     */
+    private function reloginForOrderRetry()
+    {
+        try {
+            $this->login();
+        } catch (MtUniCreditCpMalformedJsonException $exception) {
+            throw new MtUniCreditCpInvalidPayloadException($exception->getMessage(), 0, $exception);
+        } catch (MtUniCreditCpTimeoutException $exception) {
+            throw new MtUniCreditCpAuthenticationException(
+                'Control Panel re-authentication timed out.',
+                0,
+                $exception
+            );
+        } catch (MtUniCreditCpConnectionException $exception) {
+            throw new MtUniCreditCpAuthenticationException(
+                'Control Panel re-authentication failed to connect.',
+                0,
+                $exception
+            );
+        }
     }
 
     /**
