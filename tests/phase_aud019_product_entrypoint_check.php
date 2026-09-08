@@ -724,8 +724,47 @@ if (!class_exists('MtucAud019Loader', false)) {
         public function model($route)
         {
             if ($route === 'tool/upload') {
-                // Native OC3 Loader registers model_* on the Registry.
-                $this->registry->set('model_tool_upload', $this->uploadModel);
+                // Native OC3 Loader registers a Proxy with method closures, not the
+                // concrete model instance. Keep AUD-019 evidence Proxy-compatible (AUD-023-F03).
+                $proxy = new class($this->uploadModel) extends stdClass {
+                    /** @var MtucAud019UploadModel */
+                    private $concrete;
+
+                    /**
+                     * @param MtucAud019UploadModel $concrete
+                     */
+                    public function __construct($concrete)
+                    {
+                        $this->concrete = $concrete;
+                        $self = $this;
+                        $this->getUploadByCode = function ($code) use ($self) {
+                            return $self->dispatchGetUploadByCode($code);
+                        };
+                    }
+
+                    /**
+                     * @param mixed $code
+                     * @return array<string, mixed>
+                     */
+                    public function dispatchGetUploadByCode($code)
+                    {
+                        return $this->concrete->getUploadByCode($code);
+                    }
+
+                    /**
+                     * @param string $key
+                     * @param array<int, mixed> $args
+                     * @return mixed
+                     */
+                    public function __call($key, $args)
+                    {
+                        if (isset($this->{$key})) {
+                            return call_user_func_array($this->{$key}, $args);
+                        }
+                        throw new Exception('Undefined Proxy method: ' . $key);
+                    }
+                };
+                $this->registry->set('model_tool_upload', $proxy);
             }
         }
     }
@@ -793,6 +832,12 @@ mtucAud019_assert(
 mtucAud019_assert(
     !isset($uploadHost->model_tool_upload) && is_object($uploadHost->model_tool_upload),
     'R4B: model available via __get while isset remains false'
+);
+// AUD-023-F03: Loader must expose Proxy-style model (method_exists false, dispatch works).
+mtucAud019_assert(
+    method_exists($uploadHost->model_tool_upload, 'getUploadByCode') === false
+        && is_callable(array($uploadHost->model_tool_upload, 'getUploadByCode')) === true,
+    'R4B Proxy: method_exists false while is_callable/dispatch works'
 );
 $fabricatedUpload = MtUniCreditStorefrontRuntime::lookupNativeUploadByCode($uploadHost, 'fabricated-token');
 mtucAud019_assert(
@@ -879,6 +924,9 @@ if (!class_exists('Controller', false)) {
         /** @var MtucAud019Registry */
         protected $registry;
 
+        /**
+         * @param MtucAud019Registry $registry
+         */
         public function __construct($registry)
         {
             $this->registry = $registry;

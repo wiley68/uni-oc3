@@ -186,9 +186,12 @@ mtuc115c2p1_assert(
     strpos($runtimeSrc, 'isset($controller->model_extension_mt_uni_credit_product)') !== false,
     'recovery: storefront_runtime isset model guard restored'
 );
+// AUD-023-F02: OC3 Controller has no __isset — ownership must resolve $this->customer
+// directly. isset($this->customer) falsely skips logged-in ownership validation.
 mtuc115c2p1_assert(
-    strpos($successCtrl, 'isset($this->customer)') !== false,
-    'recovery: checkout_success isset customer guard restored'
+    strpos($successCtrl, 'isset($this->customer)') === false
+        && preg_match('/ownershipChecks\([\s\S]*?\$customer\s*=\s*\$this->customer/s', $successCtrl) === 1,
+    'recovery: checkout_success ownership uses direct customer resolve (no isset gate)'
 );
 
 // ---------------------------------------------------------------------------

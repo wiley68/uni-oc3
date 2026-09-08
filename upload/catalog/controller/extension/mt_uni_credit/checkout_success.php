@@ -190,13 +190,16 @@ class ControllerExtensionMtUniCreditCheckoutSuccess extends Controller
      */
     private function ownershipChecks($storeId, $orderId)
     {
-        if (!isset($this->customer) || !is_object($this->customer) || !method_exists($this->customer, 'isLogged')) {
+        // OC3 Controller::__get resolves Registry customer; isset() on magic customer is
+        // unreliable (no Controller::__isset) and previously skip-authorized logged-in checks.
+        $customer = $this->customer;
+        if (!is_object($customer) || !method_exists($customer, 'isLogged') || !method_exists($customer, 'getId')) {
+            return array('ok' => false, 'order_exists' => false, 'store_match' => false);
+        }
+        if (!$customer->isLogged()) {
             return array('ok' => true, 'order_exists' => true, 'store_match' => true);
         }
-        if (!$this->customer->isLogged()) {
-            return array('ok' => true, 'order_exists' => true, 'store_match' => true);
-        }
-        $customerId = (int) $this->customer->getId();
+        $customerId = (int) $customer->getId();
         if ($customerId <= 0) {
             return array('ok' => false, 'order_exists' => false, 'store_match' => false);
         }

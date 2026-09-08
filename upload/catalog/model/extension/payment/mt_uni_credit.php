@@ -313,8 +313,11 @@ class ModelExtensionPaymentMtUniCredit extends Model
         $model = $this;
 
         return function ($price, $taxClassId) use ($model) {
-            if (isset($model->tax) && is_object($model->tax) && method_exists($model->tax, 'calculate')) {
-                return (float) $model->tax->calculate(
+            // OC3 Model::__get resolves Registry services; isset() on magic tax is unreliable
+            // because Model has no __isset and returns false for Registry-backed tax.
+            $tax = $model->tax;
+            if (is_object($tax) && method_exists($tax, 'calculate')) {
+                return (float) $tax->calculate(
                     (float) $price,
                     (int) $taxClassId,
                     $model->config->get('config_tax')

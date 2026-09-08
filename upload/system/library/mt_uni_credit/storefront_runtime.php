@@ -344,9 +344,10 @@ final class MtUniCreditStorefrontRuntime
         }
         try {
             $controller->load->model('tool/upload');
-            // OC3: model is exposed via Controller::__get → Registry::get after load->model.
+            // OC3: Loader registers a Proxy; methods are dynamic callables via Proxy::__call.
+            // method_exists($proxy, 'getUploadByCode') is false even when dispatch works.
             $model = $controller->model_tool_upload;
-            if (!is_object($model) || !method_exists($model, 'getUploadByCode')) {
+            if (!is_object($model) || !is_callable(array($model, 'getUploadByCode'))) {
                 return null;
             }
             $row = $model->getUploadByCode($code);
