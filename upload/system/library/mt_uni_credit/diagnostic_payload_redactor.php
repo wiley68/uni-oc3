@@ -7,6 +7,9 @@
  * except sucfOnlineSessionID which remains visible for bank/support log correlation
  * (OC4 + CP parity — bank-side session reference, not a credential).
  * Additional credential/token keys keep the broader OC3/OC4 safety net.
+ *
+ * AUD-028: recursively redacts valid nested JSON strings (bounded depth) and
+ * normalizes camelCase / kebab-case / snake_case sensitive key aliases.
  */
 final class MtUniCreditDiagnosticPayloadRedactor
 {
@@ -18,6 +21,13 @@ final class MtUniCreditDiagnosticPayloadRedactor
 
     /** @var string */
     const NON_JSON_RESPONSE_MARKER = '[NON_JSON_RESPONSE_REDACTED]';
+
+    /**
+     * Max nested JSON-string decode depth (outer document = 0).
+     *
+     * @var int
+     */
+    const MAX_NESTED_JSON_DEPTH = 4;
 
     /**
      * Exact SmartUCF request PII keys (case-sensitive).
@@ -36,7 +46,7 @@ final class MtUniCreditDiagnosticPayloadRedactor
     );
 
     /**
-     * Broader credential / PII keys (case-insensitive).
+     * Broader credential / PII keys (canonical snake_case, matched after normalizeKey).
      *
      * @var array<int, string>
      */
@@ -61,6 +71,7 @@ final class MtUniCreditDiagnosticPayloadRedactor
         'authorization',
         'access_token',
         'refresh_token',
+        'api_token',
         'secret',
         'secret_key',
         'cp_secret',
@@ -75,6 +86,8 @@ final class MtUniCreditDiagnosticPayloadRedactor
         'certificate_password',
         'bearer',
         'token',
+        'credential',
+        'credentials',
         'user',
         'uni_password',
         'uni_user',
@@ -82,12 +95,18 @@ final class MtUniCreditDiagnosticPayloadRedactor
 
     /**
      * @param mixed $value
+     * @param int $depth nested JSON-string decode depth
      * @return mixed
      */
-    public static function redact($value)
+    public static function redact($value, $depth = 0)
     {
+        $depth = (int) $depth;
         if (!is_array($value)) {
-            return is_string($value) ? self::redactString($value) : $value;
+            if (is_string($value)) {
+                return self::redactStringMaybeJson($value, $depth);
+            }
+
+            return $value;
         }
 
         $redacted = array();
@@ -96,7 +115,7 @@ final class MtUniCreditDiagnosticPayloadRedactor
                 $redacted[$key] = self::REDACTED_VALUE;
                 continue;
             }
-            $redacted[$key] = self::redact($item);
+            $redacted[$key] = self::redact($item, $depth);
         }
 
         return $redacted;
@@ -122,7 +141,7 @@ final class MtUniCreditDiagnosticPayloadRedactor
             if ($trimmed[0] === '{' || $trimmed[0] === '[') {
                 $decoded = json_decode($value, true);
                 if (is_array($decoded) && json_last_error() === JSON_ERROR_NONE) {
-                    return self::redact($decoded);
+                    return self::redact($decoded, 0);
                 }
 
                 return array(
@@ -139,7 +158,7 @@ final class MtUniCreditDiagnosticPayloadRedactor
         }
 
         if (is_array($value)) {
-            return self::redact($value);
+            return self::redact($value, 0);
         }
 
         return $value;
@@ -155,7 +174,7 @@ final class MtUniCreditDiagnosticPayloadRedactor
             return true;
         }
 
-        $normalized = strtolower($key);
+        $normalized = self::normalizeKey($key);
         foreach (self::$forbiddenKeys as $forbidden) {
             if ($normalized === $forbidden) {
                 return true;
@@ -163,6 +182,52 @@ final class MtUniCreditDiagnosticPayloadRedactor
         }
 
         return false;
+    }
+
+    /**
+     * Normalize camelCase / kebab-case / snake_case / CASE variants to snake_case tokens.
+     *
+     * Does NOT use broad substring matching (e.g. "session", "id", "key").
+     *
+     * @param string $key
+     * @return string
+     */
+    private static function normalizeKey($key)
+    {
+        $key = (string) $key;
+        $withSeparators = preg_replace('/([a-z0-9])([A-Z])/', '$1_$2', $key);
+        if (!is_string($withSeparators)) {
+            $withSeparators = $key;
+        }
+        $lower = strtolower(str_replace(array('-', ' '), '_', $withSeparators));
+        $collapsed = preg_replace('/_+/', '_', $lower);
+
+        return is_string($collapsed) ? trim($collapsed, '_') : strtolower($key);
+    }
+
+    /**
+     * @param string $value
+     * @param int $depth
+     * @return mixed
+     */
+    private static function redactStringMaybeJson($value, $depth)
+    {
+        $trimmed = trim($value);
+        if (
+            $depth < self::MAX_NESTED_JSON_DEPTH
+            && $trimmed !== ''
+            && ($trimmed[0] === '{' || $trimmed[0] === '[')
+        ) {
+            $decoded = json_decode($value, true);
+            if (is_array($decoded) && json_last_error() === JSON_ERROR_NONE) {
+                $redacted = self::redact($decoded, $depth + 1);
+                $encoded = json_encode($redacted, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+                return is_string($encoded) ? $encoded : self::REDACTED_VALUE;
+            }
+        }
+
+        return self::redactString($value);
     }
 
     /**
@@ -181,7 +246,7 @@ final class MtUniCreditDiagnosticPayloadRedactor
         }
 
         $redacted = preg_replace(
-            '/\b(secret|token|password|pass|private[_ -]?key)\b\s*[:=]\s*[^\s,;]+/i',
+            '/\b(secret|token|password|pass|private[_ -]?key|api[_ -]?token|access[_ -]?token)\b\s*[:=]\s*[^\s,;]+/i',
             '$1=[REDACTED]',
             $value
         );
