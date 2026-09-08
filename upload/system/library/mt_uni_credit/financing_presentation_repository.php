@@ -140,15 +140,79 @@ final class MtUniCreditFinancingPresentationRepository
     }
 
     /**
-     * Resolve bank-status labels for admin list rows using each row's own store_id.
+     * Batch-resolve native OC3 order store_id values (store 0 is valid).
+     *
+     * Real admin order-list rows do not include store_id; authority is oc_order.
+     *
+     * @param array<int, int> $orderIds
+     * @return array<int, int> order_id => store_id (may be 0)
+     */
+    public function batchNativeOrderStoreIds(array $orderIds)
+    {
+        $ids = array();
+        foreach ($orderIds as $orderId) {
+            $id = (int) $orderId;
+            if ($id > 0) {
+                $ids[$id] = $id;
+            }
+        }
+        if ($ids === array()) {
+            return array();
+        }
+
+        $table = $this->db->getPrefix() . 'order';
+        $sql = "SELECT `order_id`, `store_id` FROM `{$table}`"
+            . " WHERE `order_id` IN (" . implode(',', $ids) . ")";
+        $result = $this->db->query($sql);
+        $map = array();
+        if (is_object($result) && !empty($result->rows) && is_array($result->rows)) {
+            foreach ($result->rows as $row) {
+                if (!is_array($row) || !isset($row['order_id'])) {
+                    continue;
+                }
+                $orderId = (int) $row['order_id'];
+                if ($orderId <= 0 || !array_key_exists('store_id', $row)) {
+                    continue;
+                }
+                // array_key_exists: store_id=0 is a valid native store.
+                $map[$orderId] = (int) $row['store_id'];
+            }
+        }
+
+        return $map;
+    }
+
+    /**
+     * Resolve bank-status labels for admin list rows.
+     *
+     * Prefer each row's explicit store_id when present (repository fixtures).
+     * Otherwise resolve store_id from native OC3 order rows — never from admin
+     * config_store_id fallback (real OC3 list rows omit store_id).
      *
      * @param array<int, array<string, mixed>> $orders
-     * @param int $fallbackStoreId
+     * @param int $fallbackStoreId retained for signature compatibility; not used as row authority
      * @return array<int, string> labels aligned with $orders indexes
      */
     public function bankStatusLabelsForOrders(array $orders, $fallbackStoreId)
     {
         $labels = array_fill(0, count($orders), '');
+        $needNative = array();
+        foreach ($orders as $index => $order) {
+            if (!is_array($order)) {
+                continue;
+            }
+            $orderId = (int) (isset($order['order_id']) ? $order['order_id'] : 0);
+            if ($orderId <= 0) {
+                continue;
+            }
+            if (!array_key_exists('store_id', $order)) {
+                $needNative[$orderId] = $orderId;
+            }
+        }
+        $nativeStores = $needNative !== array()
+            ? $this->batchNativeOrderStoreIds(array_values($needNative))
+            : array();
+
         $grouped = array();
         foreach ($orders as $index => $order) {
             if (!is_array($order)) {
@@ -158,9 +222,14 @@ final class MtUniCreditFinancingPresentationRepository
             if ($orderId <= 0) {
                 continue;
             }
-            $storeId = array_key_exists('store_id', $order)
-                ? (int) $order['store_id']
-                : (int) $fallbackStoreId;
+            if (array_key_exists('store_id', $order)) {
+                $storeId = (int) $order['store_id'];
+            } elseif (array_key_exists($orderId, $nativeStores)) {
+                $storeId = (int) $nativeStores[$orderId];
+            } else {
+                // No authoritative store identity — leave blank (do not use config_store_id).
+                continue;
+            }
             $grouped[$storeId][$index] = $orderId;
         }
         foreach ($grouped as $storeId => $indexToOrderId) {

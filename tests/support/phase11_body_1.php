@@ -276,6 +276,46 @@ mtuc11_assert(
     'bank labels: same order_id differs by store_id'
 );
 
+// AUD-024-F01: real OC3 list rows omit store_id — resolve via native oc_order.
+$memoryDb->seedOrder(12001, 0, MtUniCreditConstants::EXTENSION_CODE);
+$memoryDb->seedOrder(12002, Phase5TestHarness::STORE_B, MtUniCreditConstants::EXTENSION_CODE);
+$bankRepo->updateByOrderIdentifier(
+    0,
+    '12001',
+    MtUniCreditBankStatus::SENT_PROCESS1,
+    MtUniCreditBankStatus::LABEL_SENT_PROCESS1
+);
+$bankRepo->updateByOrderIdentifier(
+    Phase5TestHarness::STORE_B,
+    '12002',
+    MtUniCreditBankStatus::SEND_FAILED_CP,
+    MtUniCreditBankStatus::LABEL_SEND_FAILED_CP
+);
+$realShapeOrders = array(
+    array('order_id' => 12001),
+    array('order_id' => 12002),
+);
+foreach ($realShapeOrders as $row) {
+    mtuc11_assert(
+        isset($row['order_id']) && !array_key_exists('store_id', $row),
+        'bank labels AUD-024: real OC3 row omits store_id'
+    );
+}
+$wrongFallback = Phase5TestHarness::STORE_A;
+$realLabels = $presentationRepo->bankStatusLabelsForOrders($realShapeOrders, $wrongFallback);
+mtuc11_assert(
+    $realLabels[0] === MtUniCreditBankStatus::LABEL_SENT_PROCESS1,
+    'bank labels AUD-024: store 0 via native order (not config fallback)'
+);
+mtuc11_assert(
+    $realLabels[1] === MtUniCreditBankStatus::LABEL_SEND_FAILED_CP,
+    'bank labels AUD-024: non-default store via native order'
+);
+mtuc11_assert(
+    method_exists('MtUniCreditFinancingPresentationRepository', 'batchNativeOrderStoreIds'),
+    'bank labels AUD-024: batchNativeOrderStoreIds present'
+);
+
 // ---------------------------------------------------------------------------
 // 4) htmlForOrder ADMIN_PANEL includes EGN; CUSTOMER never
 // ---------------------------------------------------------------------------

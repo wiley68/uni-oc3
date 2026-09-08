@@ -36,6 +36,8 @@ class ControllerExtensionMtUniCreditAdminOrder extends Controller
             $repo = new MtUniCreditFinancingPresentationRepository(
                 new MtUniCreditDbAdapter($this->db, defined('DB_PREFIX') ? DB_PREFIX : 'oc_')
             );
+            // Real OC3 list rows omit store_id; repository resolves native oc_order.store_id.
+            // config_store_id is not row authority (AUD-024-F01); retained only for signature BC.
             $fallbackStoreId = (int) $this->config->get('config_store_id');
             $labels = $repo->bankStatusLabelsForOrders($data['orders'], $fallbackStoreId);
             foreach ($data['orders'] as $index => $order) {

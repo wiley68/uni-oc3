@@ -1255,6 +1255,23 @@ final class Phase2MemoryDb
      */
     private function selectOrder($sql)
     {
+        if (preg_match('/`order_id`\s+IN\s*\(([^)]+)\)/i', $sql, $inMatch)) {
+            $rows = array();
+            foreach (preg_split('/\s*,\s*/', $inMatch[1]) as $part) {
+                $orderId = (int) trim($part);
+                if ($orderId <= 0 || !isset($this->orders[$orderId])) {
+                    continue;
+                }
+                $rows[] = $this->orders[$orderId];
+            }
+
+            return (object) array(
+                'num_rows' => count($rows),
+                'row' => $rows ? $rows[0] : array(),
+                'rows' => $rows,
+            );
+        }
+
         $orderId = (int) $this->extractWhereInt($sql, 'order_id');
         if (!isset($this->orders[$orderId])) {
             return $this->emptyResult();
