@@ -441,11 +441,20 @@ final class MtucAud021Registry
     /** @var array<string, mixed> */
     private $data = array();
 
+    /**
+     * @param string $key
+     * @param mixed $value
+     * @return void
+     */
     public function set($key, $value)
     {
         $this->data[$key] = $value;
     }
 
+    /**
+     * @param string $key
+     * @return mixed|null
+     */
     public function get($key)
     {
         return array_key_exists($key, $this->data) ? $this->data[$key] : null;
@@ -638,6 +647,8 @@ final class MtucAud021PaymentModelProbe
     private $process2;
     /** @var array<string, mixed>|null */
     public $lastSelection;
+    /** @var array<string, mixed>|null */
+    public $lastResult;
     /** @var int */
     public $submitCalls = 0;
     /** @var int */
@@ -675,7 +686,9 @@ final class MtucAud021PaymentModelProbe
             $input['process2'] = $process2;
         }
 
-        return $this->stack['submission']->submit($input);
+        $this->lastResult = $this->stack['submission']->submit($input);
+
+        return $this->lastResult;
     }
 
     public function addOrder($data)
@@ -830,28 +843,47 @@ mtucAud021F01_assert(
 
 // ---------------------------------------------------------------------------
 // R2. Controller prepared submit P1 → trusted bank redirect (mutation item 7)
+// Gap closure: bound first_installment=50.0 must reach model via real Controller::submit().
 // ---------------------------------------------------------------------------
 $transportCtrlP1 = new Phase4FakeCpHttpTransport();
 Phase9TestHarness::enqueueCpCreateSuccess($transportCtrlP1);
-$stackCtrlP1 = Phase9TestHarness::stack($transportCtrlP1);
+$stackCtrlP1 = Phase9TestHarness::stack(
+    $transportCtrlP1,
+    null,
+    null,
+    $storeId,
+    array('uni_first_vnoska' => 1)
+);
 $orderCtrlP1 = 22301;
 Phase9TestHarness::seedBankOrder($stackCtrlP1['memoryDb'], $orderCtrlP1, $storeId);
 $harnessP1 = mtucAud021F01_preparedSubmitController(
     $stackCtrlP1,
     $orderCtrlP1,
-    array('scheme_key' => $schemeS1, 'first_installment' => $firstF1),
+    array('scheme_key' => $schemeS1, 'first_installment' => $firstExact50),
     array(
         'scheme_key' => $schemeS2,
-        'first_installment' => '99.0',
+        'first_installment' => '999.0',
     )
 );
 $harnessP1['controller']->submit();
 mtucAud021F01_assert($harnessP1['paymentModel']->submitCalls === 1, 'CTRL-P1: model submitCheckoutFinancing once');
 mtucAud021F01_assert(
     is_array($harnessP1['paymentModel']->lastSelection)
-        && (string) $harnessP1['paymentModel']->lastSelection['scheme_key'] === $schemeS1
-        && (float) $harnessP1['paymentModel']->lastSelection['first_installment'] === $firstF1,
-    'CTRL-P1: server-bound selection reaches model despite tampered POST'
+        && (string) $harnessP1['paymentModel']->lastSelection['scheme_key'] === $schemeS1,
+    'CTRL-P1: server-bound scheme_key reaches model despite tampered POST'
+);
+$ctrlP1ReceivedFirst = is_array($harnessP1['paymentModel']->lastSelection)
+    && array_key_exists('first_installment', $harnessP1['paymentModel']->lastSelection)
+    ? (float) $harnessP1['paymentModel']->lastSelection['first_installment']
+    : -1.0;
+mtucAud021F01_assert(
+    abs($ctrlP1ReceivedFirst - $firstExact50) < 1e-9,
+    'CTRL-P1: model/service receives authoritative first_installment=50.0 (not 0.0, not posted 999.0)'
+);
+mtucAud021F01_assert(
+    is_array($harnessP1['paymentModel']->lastResult)
+        && (string) $harnessP1['paymentModel']->lastResult['bank_status'] === MtUniCreditBankStatus::SENT_PROCESS1,
+    'CTRL-P1: bank_status = bank_sent_process1'
 );
 $expectedBank = 'https://onlinetest.ucfin.bg/sucf-online/Request/Start/sess-phase9-ok';
 mtucAud021F01_assert(
@@ -957,12 +989,13 @@ $mutation = array(
     '3 submit does not drop/reset first_installment' => (
         strpos($focusedSrc, 'service-bound input first_installment remains 50.0') !== false
         && strpos($focusedSrc, 'prepared view data transports scheme_key + first_installment=50.0') !== false
+        && strpos($focusedSrc, 'model/service receives authoritative first_installment=50.0') !== false
         && strpos($selSrc, 'first_installment') !== false
     ),
     '4 posted arbitrary scheme not authority' => (
         strpos($selSrc, 'resolveForSubmit') !== false
         && strpos($focusedSrc, 'cannot become authority') !== false
-        && strpos($focusedSrc, 'CTRL-P1: server-bound selection reaches model despite tampered POST') !== false
+        && strpos($focusedSrc, 'CTRL-P1: server-bound scheme_key reaches model despite tampered POST') !== false
     ),
     '5 stale order cannot reuse selection' => (
         strpos($focusedSrc, 'selection for A not reusable on order B') !== false
