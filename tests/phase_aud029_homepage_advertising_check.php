@@ -227,13 +227,19 @@ $ctaBad = array(
 foreach ($ctaBad as $url) {
     mtucAud029_assert($presenter->httpUrl($url) === '', 'CTA reject: ' . substr($url, 0, 40));
 }
-// Quote characters inside an otherwise https URL remain subject to FILTER_VALIDATE_URL
-// (Twig escaping owns href attribute safety; do not broaden scheme checks).
+// Raw quote breakout must be rejected at the URL sanitizer boundary (empty — no alternate https:// path).
 $quoteBreakout = 'https://example.com/"onclick="alert(1)';
-$quoteResult = $presenter->httpUrl($quoteBreakout);
+mtucAud029_assert($presenter->httpUrl($quoteBreakout) === '', 'CTA raw quote-breakout → empty URL');
 mtucAud029_assert(
-    $quoteResult === '' || (strpos($quoteResult, 'https://') === 0 && $presenter->httpUrl('javascript:x') === ''),
-    'CTA quote-breakout: no scheme weakening (filter_var parity)'
+    $presenter->present(array_merge(mtucAud029_validShop(), array('uni_backurl' => $quoteBreakout)), false, $logo) === null,
+    'CTA raw quote-breakout → no advertising block'
+);
+// Distinct: safely percent-encoded quotes in path may remain valid under current contract.
+$encodedSafe = 'https://example.com/path%22quoted%22ok';
+$encodedResult = $presenter->httpUrl($encodedSafe);
+mtucAud029_assert(
+    $encodedResult === $encodedSafe,
+    'CTA encoded-safe HTTPS path remains valid when filter_var accepts it'
 );
 mtucAud029_assert($presenter->httpUrl('https://ok.example/a') === 'https://ok.example/a', 'CTA accept https');
 mtucAud029_assert($presenter->httpUrl('http://ok.example/a') === 'http://ok.example/a', 'CTA accept http');
@@ -318,11 +324,101 @@ final class MtucAud029EventFakeDb
 
             return true;
         }
-        if (stripos($sql, 'DELETE') === 0 && preg_match('/WHERE `event_id` = (\d+)/', $sql, $mId)) {
-            $id = (int) $mId[1];
-            $this->rows = array_values(array_filter($this->rows, function ($row) use ($id) {
-                return (int) $row['event_id'] !== $id;
-            }));
+        if (stripos($sql, 'DELETE') === 0) {
+            if (preg_match('/WHERE `event_id` = (\d+)/', $sql, $mId)) {
+                $id = (int) $mId[1];
+                $this->rows = array_values(array_filter($this->rows, function ($row) use ($id) {
+                    return (int) $row['event_id'] !== $id;
+                }));
+
+                return true;
+            }
+
+            // Managed-family / predicate DELETE (ensureCatalogEvents obsolete cleanup).
+            // Apply LIKE / NOT IN realistically so a broadened production predicate
+            // that matches unrelated_extension_event would remove that row.
+            $likePatterns = array();
+            if (preg_match_all("/`code` LIKE '([^']+)'/", $sql, $mLikes)) {
+                foreach ($mLikes[1] as $pat) {
+                    $likePatterns[] = stripslashes($pat);
+                }
+            }
+            $keepIn = array();
+            $hasNotIn = false;
+            if (preg_match('/NOT IN \(([^)]+)\)/', $sql, $mIn)) {
+                $hasNotIn = true;
+                if (preg_match_all("/'([^']+)'/", $mIn[1], $mCodes)) {
+                    foreach ($mCodes[1] as $code) {
+                        $keepIn[stripslashes($code)] = true;
+                    }
+                }
+            }
+
+            if ($likePatterns !== array() || $hasNotIn) {
+                $this->rows = array_values(array_filter(
+                    $this->rows,
+                    function ($row) use ($likePatterns, $keepIn, $hasNotIn, $sql) {
+                        $code = (string) $row['code'];
+
+                        // Broad LIKE '%' (or equivalent) — delete unless NOT IN keeps the code.
+                        foreach ($likePatterns as $pat) {
+                            if ($pat === '%' || $pat === '%%') {
+                                if ($hasNotIn) {
+                                    return isset($keepIn[$code]);
+                                }
+
+                                return false;
+                            }
+                        }
+
+                        $matchesPrefix = false;
+                        foreach ($likePatterns as $pat) {
+                            if (substr($pat, -1) === '%') {
+                                $prefix = substr($pat, 0, -1);
+                                if ($prefix !== '' && strpos($code, $prefix) === 0) {
+                                    $matchesPrefix = true;
+                                    break;
+                                }
+                            } elseif ($pat === $code) {
+                                $matchesPrefix = true;
+                                break;
+                            }
+                        }
+
+                        // Family cleanup without any LIKE: NOT IN alone → delete non-listed.
+                        if ($likePatterns === array() && $hasNotIn) {
+                            return isset($keepIn[$code]);
+                        }
+
+                        if (!$matchesPrefix) {
+                            return true;
+                        }
+
+                        // Mirror production AND (family OR …) when those tokens are present.
+                        $hasFamilyOr = (stripos($sql, 'mt_uni_credit_checkout_success') !== false)
+                            || (stripos($sql, 'mt_uni_credit_mail_order') !== false)
+                            || (stripos($sql, 'mt_uni_credit_admin_order') !== false)
+                            || (stripos($sql, 'mt_uni_credit_home') !== false)
+                            || (stripos($sql, 'mt_uni_credit_buy_guard') !== false);
+                        if ($hasFamilyOr) {
+                            $isManaged = (strpos($code, 'mt_uni_credit_checkout_success') === 0)
+                                || (strpos($code, 'mt_uni_credit_mail_order') === 0)
+                                || (strpos($code, 'mt_uni_credit_admin_order') === 0)
+                                || (strpos($code, 'mt_uni_credit_home') === 0)
+                                || (strpos($code, 'mt_uni_credit_buy_guard') === 0);
+                            if (!$isManaged) {
+                                return true;
+                            }
+                        }
+
+                        if ($hasNotIn) {
+                            return isset($keepIn[$code]);
+                        }
+
+                        return false;
+                    }
+                ));
+            }
 
             return true;
         }
@@ -411,22 +507,54 @@ $footerAfterDup = array_values(array_filter($evDb->rows, function ($row) {
 mtucAud029_assert(count($footerAfterDup) === 1, 'events: duplicate same-code collapsed to one');
 mtucAud029_assert((int) $repairDup['deleted_duplicates'] >= 1, 'events: deleted_duplicates counted');
 
-// Unrelated preserved during ensure
-$evDb->rows[] = array(
+// Unrelated preserved during ensure + obsolete managed removed (DELETE applied).
+$unrelatedFixture = array(
     'event_id' => 90002,
     'code' => 'unrelated_extension_event',
     'trigger' => 'catalog/controller/foo',
     'action' => 'extension/other/bar',
     'status' => 1,
+    'sort_order' => 5,
+);
+$evDb->rows[] = $unrelatedFixture;
+$evDb->rows[] = array(
+    'event_id' => 90003,
+    'code' => 'mt_uni_credit_home_legacy_obsolete',
+    'trigger' => 'catalog/controller/common/home/before',
+    'action' => 'extension/mt_uni_credit/home/legacy',
+    'status' => 1,
     'sort_order' => 0,
 );
-$beforeUnrelated = count($evDb->rows);
+$unrelatedBefore = $unrelatedFixture;
 MtUniCreditInstaller::ensureCatalogEvents($evDb);
 $unrelated = array_values(array_filter($evDb->rows, function ($row) {
     return $row['code'] === 'unrelated_extension_event';
 }));
-mtucAud029_assert(count($unrelated) === 1, 'mutation-14 YES: unrelated event preserved');
-mtucAud029_assert(count($evDb->rows) >= $beforeUnrelated, 'events: ensure did not shrink unrelated');
+$obsoleteLeft = array_values(array_filter($evDb->rows, function ($row) {
+    return $row['code'] === 'mt_uni_credit_home_legacy_obsolete';
+}));
+mtucAud029_assert(count($unrelated) === 1, 'events: unrelated_extension_event still exists');
+mtucAud029_assert(
+    count($unrelated) === 1
+        && (string) $unrelated[0]['code'] === (string) $unrelatedBefore['code']
+        && (string) $unrelated[0]['trigger'] === (string) $unrelatedBefore['trigger']
+        && (string) $unrelated[0]['action'] === (string) $unrelatedBefore['action']
+        && (int) $unrelated[0]['status'] === (int) $unrelatedBefore['status']
+        && (int) $unrelated[0]['sort_order'] === (int) $unrelatedBefore['sort_order']
+        && (int) $unrelated[0]['event_id'] === (int) $unrelatedBefore['event_id'],
+    'events: unrelated full row unchanged after ensureCatalogEvents'
+);
+mtucAud029_assert(count($obsoleteLeft) === 0, 'events: obsolete managed home code removed by family DELETE');
+
+// Mutation-14 sensitivity: broadened DELETE predicate on the same fake removes unrelated.
+$probeDb = new MtucAud029EventFakeDb();
+$probeDb->rows = array($unrelatedFixture);
+$probeDb->query("DELETE FROM `" . DB_PREFIX . "event` WHERE `code` LIKE '%'");
+$probeUnrelated = array_values(array_filter($probeDb->rows, function ($row) {
+    return $row['code'] === 'unrelated_extension_event';
+}));
+mtucAud029_assert(count($probeUnrelated) === 0, 'mutation-14 YES: broadened DELETE would remove unrelated (fake detects)');
+mtucAud029_assert(count($unrelated) === 1, 'mutation-14 YES: production ensure leaves unrelated intact');
 
 // Repeated ensure
 $countBeforeRepeat = count($evDb->rows);
