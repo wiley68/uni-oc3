@@ -64,6 +64,9 @@ final class MtUniCreditStorefrontCalculatorPresenter
     /**
      * Strict 3-part parser. Legacy 4-part keys (…|filterId) are not authoritative.
      *
+     * AUD-016 F02-R1: months must be canonical positive digits only (no leading zeros,
+     * signs, decimals, whitespace, or suffix/prefix text). Producers emit (string)(int)$months.
+     *
      * @param string $schemeKey
      * @return array{type:string,kop_code:string,months:int}|null
      */
@@ -76,7 +79,12 @@ final class MtUniCreditStorefrontCalculatorPresenter
 
         $type = trim((string) $parts[0]);
         $kopCode = rawurldecode((string) $parts[1]);
-        $months = (int) $parts[2];
+        $rawMonths = (string) $parts[2];
+        // Exact digit identity — reject (int)"12abc" → 12 aliasing.
+        if ($rawMonths === '' || preg_match('/^[1-9][0-9]*$/', $rawMonths) !== 1) {
+            return null;
+        }
+        $months = (int) $rawMonths;
         if ($type === '' || $kopCode === '' || $months <= 0) {
             return null;
         }

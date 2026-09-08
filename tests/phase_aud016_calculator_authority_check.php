@@ -9,6 +9,7 @@
  * - must fail if filterId returns to public scheme keys
  * - must fail if Checkout preferred fallback for invalid selection is restored
  * - must fail if CoefficientResolver returns first conflicting duplicate
+ * - must fail if parseSchemeKey reverts to bare (int)$parts[2] (F02-R1: 12abc→12)
  */
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/support/phase2_memory_db.php';
@@ -92,6 +93,11 @@ mtucAud016_assert(
         && strpos($checkoutSrc, 'preferred') !== false
         && strpos($checkoutSrc, 'never replace with preferred') !== false,
     'F02 static: preferred fallback removed / documented'
+);
+mtucAud016_assert(
+    strpos($presenterSrc, 'AUD-016 F02-R1') !== false
+        && strpos($presenterSrc, '/^[1-9][0-9]*$/') !== false,
+    'F02-R1 static: canonical month digit syntax required before (int) cast'
 );
 mtucAud016_assert(
     strpos($coeffSrc, 'AUD-016 F03') !== false
@@ -308,6 +314,82 @@ mtucAud016_assert(
     'F02 invalid identity not replaced by preferred standard/24'
 );
 mtucAud016_assert(Phase7TestHarness::countOrderPosts($transportPref) === 0, 'F02 preferred rescue blocked: no CP');
+
+// ---------------------------------------------------------------------------
+// F02-R1 — month segment must be canonical positive digits (no (int) aliasing)
+// ---------------------------------------------------------------------------
+$acceptedMonths = array('6', '12', '24', '36');
+foreach ($acceptedMonths as $monthText) {
+    $parsedOk = MtUniCreditStorefrontCalculatorPresenter::parseSchemeKey('standard|STD|' . $monthText);
+    mtucAud016_assert(
+        is_array($parsedOk) && (int) $parsedOk['months'] === (int) $monthText,
+        'F02-R1 accept canonical month ' . $monthText
+    );
+}
+
+$rejectedMonths = array(
+    '12abc',
+    'abc12',
+    '12.0',
+    '12.5',
+    '+12',
+    '-12',
+    '0',
+    '-1',
+    ' 12',
+    '12 ',
+    '',
+    '012',
+);
+foreach ($rejectedMonths as $monthText) {
+    $key = 'standard|STD|' . $monthText;
+    mtucAud016_assert(
+        MtUniCreditStorefrontCalculatorPresenter::parseSchemeKey($key) === null,
+        'F02-R1 reject malformed month [' . $monthText . ']'
+    );
+}
+
+// No aliasing: malformed forms must not resolve to month 12
+$aliasForms = array('12abc', '012', '12.0', '+12');
+foreach ($aliasForms as $monthText) {
+    $parsedAlias = MtUniCreditStorefrontCalculatorPresenter::parseSchemeKey('standard|STD|' . $monthText);
+    mtucAud016_assert(
+        $parsedAlias === null
+            || (is_array($parsedAlias) && (int) $parsedAlias['months'] !== 12),
+        'F02-R1 no alias to 12 from [' . $monthText . ']'
+    );
+}
+
+// E2E: exact STD/12 offer exists, submitted 12abc must block with CP create = 0
+$transportAlias = new Phase4FakeCpHttpTransport();
+Phase9TestHarness::enqueueCpCreateSuccess($transportAlias);
+$stackAlias = Phase9TestHarness::stack($transportAlias);
+$orderAlias = 16300;
+Phase9TestHarness::seedBankOrder($stackAlias['memoryDb'], $orderAlias, $stackAlias['storeId']);
+$inputAlias = Phase9TestHarness::submitInput($orderAlias, $stackAlias['storeId']);
+$inputAlias['scheme_key'] = 'standard|STD|12abc';
+$resultAlias = $stackAlias['submission']->submit($inputAlias);
+mtucAud016_assert(
+    MtUniCreditStorefrontCalculatorPresenter::parseSchemeKey('standard|STD|12abc') === null,
+    'F02-R1 parser null for standard|STD|12abc'
+);
+mtucAud016_assert(
+    isset($resultAlias['error']) && $resultAlias['error'] === 'unavailable',
+    'F02-R1 Checkout 12abc → unavailable (exact 12 offer must not be aliased)'
+);
+mtucAud016_assert(
+    Phase7TestHarness::countOrderPosts($transportAlias) === 0,
+    'F02-R1 Checkout 12abc: CP create = 0'
+);
+$attemptAlias = $stackAlias['attempts']->findByStoreOrder($stackAlias['storeId'], $orderAlias);
+mtucAud016_assert(
+    $attemptAlias === null
+        || (
+            empty($attemptAlias['application_snapshot_json'])
+            && (int) (isset($attemptAlias['control_panel_order_id']) ? $attemptAlias['control_panel_order_id'] : 0) === 0
+        ),
+    'F02-R1 Checkout 12abc: no snapshot/CP agreement'
+);
 
 echo PHP_EOL;
 if ($failures === array()) {
