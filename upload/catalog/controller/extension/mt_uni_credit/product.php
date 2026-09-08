@@ -243,8 +243,10 @@ class ControllerExtensionMtUniCreditProduct extends Controller
             }
 
             $productId = (int) $this->posted('product_id', 0);
-            $quantity = max(1, (int) $this->posted('quantity', 1));
             try {
+                $quantity = MtUniCreditOc3ProductLineResolver::parseStrictPostedQuantity(
+                    isset($this->request->post['quantity']) ? $this->request->post['quantity'] : null
+                );
                 $line = MtUniCreditStorefrontRuntime::resolveProductLine(
                     $this,
                     $productId,
@@ -259,6 +261,8 @@ class ControllerExtensionMtUniCreditProduct extends Controller
                     $json['message'] = $this->language->get('error_quantity_minimum');
                 } elseif ($code === MtUniCreditProductLineValidationException::CODE_MISSING_REQUIRED_OPTION) {
                     $json['message'] = $this->language->get('error_required_options');
+                } elseif ($code === MtUniCreditProductLineValidationException::CODE_PRODUCT_OPTIONS_UNAVAILABLE) {
+                    $json['message'] = $this->language->get('error_invalid_option');
                 } else {
                     $json['message'] = $this->language->get('error_invalid_option');
                 }

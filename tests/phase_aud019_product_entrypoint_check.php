@@ -66,9 +66,10 @@ function mtucAud019_read($path)
 }
 
 /**
+ * @param array<string, string> $uploads code => name
  * @return MtUniCreditOc3ProductLineResolver
  */
-function mtucAud019_resolver()
+function mtucAud019_resolver(array $uploads = array())
 {
     return new MtUniCreditOc3ProductLineResolver(
         function ($price, $taxClassId) {
@@ -83,7 +84,6 @@ function mtucAud019_resolver()
         function ($productOptionId, $value) {
             $productOptionId = (int) $productOptionId;
             $value = (int) $value;
-            // PO 10: values 100, 200
             if ($productOptionId === 10 && ($value === 100 || $value === 200)) {
                 return array(
                     'product_option_value_id' => $value,
@@ -94,7 +94,6 @@ function mtucAud019_resolver()
                     'option_name' => 'Color',
                 );
             }
-            // PO 11 radio: value 300
             if ($productOptionId === 11 && $value === 300) {
                 return array(
                     'product_option_value_id' => 300,
@@ -105,7 +104,6 @@ function mtucAud019_resolver()
                     'option_name' => 'Size',
                 );
             }
-            // PO 12 checkbox: 400, 401
             if ($productOptionId === 12 && ($value === 400 || $value === 401)) {
                 return array(
                     'product_option_value_id' => $value,
@@ -118,6 +116,18 @@ function mtucAud019_resolver()
             }
 
             return null;
+        },
+        function ($code) use ($uploads) {
+            $code = (string) $code;
+            if (!isset($uploads[$code])) {
+                return null;
+            }
+
+            return array(
+                'code' => $code,
+                'name' => $uploads[$code],
+                'filename' => $uploads[$code] . '.bin',
+            );
         }
     );
 }
@@ -180,10 +190,62 @@ function mtucAud019_productOptions()
             'required' => 0,
             'product_option_value' => array(),
         ),
+        array(
+            'product_option_id' => 14,
+            'name' => 'Note',
+            'type' => 'text',
+            'required' => 1,
+            'product_option_value' => array(),
+        ),
+        array(
+            'product_option_id' => 15,
+            'name' => 'Attachment',
+            'type' => 'file',
+            'required' => 1,
+            'product_option_value' => array(),
+        ),
+        array(
+            'product_option_id' => 16,
+            'name' => 'Weird',
+            'type' => 'custom_unknown',
+            'required' => 0,
+            'product_option_value' => array(),
+        ),
     );
 }
 
-$resolver = mtucAud019_resolver();
+/**
+ * Production Apply quantity gate used by Product submit (no clamp).
+ *
+ * @param mixed $postedQty
+ * @param int $minimum
+ * @param int $submissionCalls
+ * @return string PASS|BLOCK
+ */
+function mtucAud019_strictApplyQuantityGate($postedQty, $minimum, &$submissionCalls)
+{
+    $resolver = mtucAud019_resolver();
+    try {
+        $quantity = MtUniCreditOc3ProductLineResolver::parseStrictPostedQuantity($postedQty);
+        $resolver->resolve(
+            mtucAud019_productRow($minimum),
+            $quantity,
+            array(),
+            'BGN',
+            'BGN',
+            null,
+            array(),
+            true
+        );
+        $submissionCalls++;
+
+        return 'PASS';
+    } catch (MtUniCreditProductLineValidationException $exception) {
+        return 'BLOCK';
+    }
+}
+
+$resolver = mtucAud019_resolver(array('valid-upload-token' => 'photo.jpg'));
 $defs = mtucAud019_productOptions();
 $product = mtucAud019_productRow(1);
 
@@ -191,12 +253,23 @@ $product = mtucAud019_productRow(1);
 // F01 — option matrix (production resolver)
 // ---------------------------------------------------------------------------
 $blocked = array(
-    'required select missing' => array(11 => 300, 12 => array(400)),
-    'required radio missing' => array(10 => 100, 12 => array(400)),
-    'required checkbox missing' => array(10 => 100, 11 => 300),
-    'invalid option value ID' => array(10 => 999, 11 => 300, 12 => array(400)),
-    'foreign value under another option' => array(10 => 300, 11 => 300, 12 => array(400)),
-    'numeric invalid must not become text' => array(10 => 12345, 11 => 300, 12 => array(400)),
+    'required select missing' => array(11 => 300, 12 => array(400), 14 => 'note', 15 => 'valid-upload-token'),
+    'required radio missing' => array(10 => 100, 12 => array(400), 14 => 'note', 15 => 'valid-upload-token'),
+    'required checkbox missing' => array(10 => 100, 11 => 300, 14 => 'note', 15 => 'valid-upload-token'),
+    'required text missing' => array(10 => 100, 11 => 300, 12 => array(400), 15 => 'valid-upload-token'),
+    'required file missing' => array(10 => 100, 11 => 300, 12 => array(400), 14 => 'note'),
+    'invalid option value ID' => array(10 => 999, 11 => 300, 12 => array(400), 14 => 'note', 15 => 'valid-upload-token'),
+    'foreign value under another option' => array(10 => 300, 11 => 300, 12 => array(400), 14 => 'note', 15 => 'valid-upload-token'),
+    'numeric invalid must not become text' => array(10 => 12345, 11 => 300, 12 => array(400), 14 => 'note', 15 => 'valid-upload-token'),
+    'file fabricated token' => array(10 => 100, 11 => 300, 12 => array(400), 14 => 'note', 15 => 'fabricated-token'),
+    'unknown option type' => array(
+        10 => 100,
+        11 => 300,
+        12 => array(400),
+        14 => 'note',
+        15 => 'valid-upload-token',
+        16 => 'anything',
+    ),
 );
 
 foreach ($blocked as $label => $options) {
@@ -235,11 +308,29 @@ foreach ($legacy->options as $opt) {
 }
 mtucAud019_assert(!$legacyText, 'F01 legacy: invalid numeric POV is not free-text');
 
-$validOpts = array(10 => 100, 11 => 300, 12 => array(400), 13 => 'Hello');
+$validOpts = array(
+    10 => 100,
+    11 => 300,
+    12 => array(400),
+    13 => 'Hello',
+    14 => 'Required note',
+    15 => 'valid-upload-token',
+);
 $validLine = $resolver->resolve($product, 1, $validOpts, 'BGN', 'BGN', null, $defs, true);
 mtucAud019_assert(
     is_object($validLine) && abs($validLine->financingPrice - 110.0) < 0.0001,
-    'F01 PASS: valid select/radio/checkbox + free-text'
+    'F01 PASS: valid select/radio/checkbox + free-text + native file token'
+);
+
+$fileTypes = array();
+foreach ($validLine->options as $opt) {
+    if (isset($opt['type']) && $opt['type'] === 'file') {
+        $fileTypes[] = (string) $opt['value'];
+    }
+}
+mtucAud019_assert(
+    in_array('valid-upload-token', $fileTypes, true),
+    'R2 PASS: valid native upload token retained as file type'
 );
 
 $radioOnly = array(
@@ -257,9 +348,10 @@ $radioOk = $resolver->resolve($product, 1, array(11 => 300), 'BGN', 'BGN', null,
 mtucAud019_assert(is_object($radioOk), 'F01 PASS: valid radio');
 
 // ---------------------------------------------------------------------------
-// F02 — minimum matrix
+// F02 / R1 — minimum + raw qty=0 matrix (production Apply gate, no clamp)
 // ---------------------------------------------------------------------------
 $minMatrix = array(
+    array(1, 0, false),
     array(1, 1, true),
     array(2, 1, false),
     array(2, 2, true),
@@ -269,36 +361,42 @@ $minMatrix = array(
 );
 foreach ($minMatrix as $row) {
     list($minimum, $qty, $expectPass) = $row;
-    $caught = null;
-    $line = null;
-    try {
-        $line = $resolver->resolve(
-            mtucAud019_productRow($minimum),
-            $qty,
-            array(),
-            'BGN',
-            'BGN',
-            null,
-            array(),
-            true
-        );
-    } catch (MtUniCreditProductLineValidationException $e) {
-        $caught = $e;
-    }
+    $submissionCalls = 0;
+    $outcome = mtucAud019_strictApplyQuantityGate($qty, $minimum, $submissionCalls);
     if ($expectPass) {
         mtucAud019_assert(
-            $caught === null && is_object($line) && (int) $line->quantity === (int) $qty,
-            'F02 PASS: minimum=' . $minimum . ' qty=' . $qty
+            $outcome === 'PASS' && $submissionCalls === 1,
+            'R1/F02 PASS: minimum=' . $minimum . ' qty=' . $qty
         );
     } else {
         mtucAud019_assert(
-            $caught instanceof MtUniCreditProductLineValidationException
-                && $caught->errorCode()
-                === MtUniCreditProductLineValidationException::CODE_QUANTITY_BELOW_MINIMUM,
-            'F02 BLOCK: minimum=' . $minimum . ' qty=' . $qty
+            $outcome === 'BLOCK' && $submissionCalls === 0,
+            'R1/F02 BLOCK: minimum=' . $minimum . ' qty=' . $qty . ' (submissionCalls=0)'
         );
     }
 }
+
+// Controller bypass sensitivity: qty=0/minimum=1 must BLOCK via production parse path.
+$submitCallsZero = 0;
+mtucAud019_assert(
+    mtucAud019_strictApplyQuantityGate(0, 1, $submitCallsZero) === 'BLOCK'
+        && $submitCallsZero === 0,
+    'R1 controller-path: posted qty=0 minimum=1 BLOCK before submission'
+);
+mtucAud019_assert(
+    MtUniCreditOc3ProductLineResolver::parseStrictPostedQuantity(1) === 1,
+    'R1 parseStrictPostedQuantity(1)=1'
+);
+$caughtZero = null;
+try {
+    MtUniCreditOc3ProductLineResolver::parseStrictPostedQuantity(0);
+} catch (MtUniCreditProductLineValidationException $e) {
+    $caughtZero = $e;
+}
+mtucAud019_assert(
+    $caughtZero instanceof MtUniCreditProductLineValidationException,
+    'R1 parseStrictPostedQuantity(0) throws'
+);
 
 // ---------------------------------------------------------------------------
 // Static F01/F02 wiring on Product submit
@@ -317,8 +415,24 @@ $twig = mtucAud019_read(
 mtucAud019_assert(
     strpos($productCtrl, 'resolveProductLine(') !== false
         && strpos($productCtrl, 'MtUniCreditProductLineValidationException') !== false
-        && strpos($productCtrl, 'true') !== false,
-    'F01/F02 static: submit uses strict resolveProductLine'
+        && strpos($productCtrl, 'parseStrictPostedQuantity') !== false,
+    'F01/F02/R1 static: submit uses parseStrictPostedQuantity + strict resolveProductLine'
+);
+
+// R1 residual: submit must not clamp quantity with max(1, ...) before validation.
+if (!preg_match(
+    '/public function submit\(\)\s*\{(?P<body>.*?)\n    private function buildProductSubmitInput/s',
+    $productCtrl,
+    $submitMatch
+)) {
+    $submitMatch = array('body' => '');
+}
+$submitBody = isset($submitMatch['body']) ? $submitMatch['body'] : '';
+mtucAud019_assert(
+    $submitBody !== ''
+        && strpos($submitBody, 'parseStrictPostedQuantity') !== false
+        && strpos($submitBody, 'max(1,') === false,
+    'R1 residual: submit has no max(1, posted quantity) clamp bypass'
 );
 mtucAud019_assert(
     strpos($productCtrl, 'clearBuyPreference') !== false,
@@ -334,6 +448,36 @@ mtucAud019_assert(
     strpos($runtimeSrc, 'getProductOptions') !== false,
     'F01 static: runtime loads getProductOptions'
 );
+mtucAud019_assert(
+    strpos($runtimeSrc, 'CODE_PRODUCT_OPTIONS_UNAVAILABLE') !== false
+        || strpos($runtimeSrc, 'product_options_unavailable') !== false,
+    'R3 static: strict definitions-load failure maps to product_options_unavailable'
+);
+mtucAud019_assert(
+    preg_match(
+        '/catch \(Exception \$exception\) \{\s*if \(\$strict\) \{\s*throw new MtUniCreditProductLineValidationException/s',
+        $runtimeSrc
+    ) === 1,
+    'R3 residual: getProductOptions exception fail-closed in strict (no empty legacy fallback)'
+);
+
+// R3 functional: strict + unavailable definitions → BLOCK (no legacy).
+$defsFail = null;
+try {
+    $resolver->resolve($product, 1, array(), 'BGN', 'BGN', null, null, true);
+} catch (MtUniCreditProductLineValidationException $e) {
+    $defsFail = $e;
+}
+mtucAud019_assert(
+    $defsFail instanceof MtUniCreditProductLineValidationException
+        && $defsFail->errorCode()
+        === MtUniCreditProductLineValidationException::CODE_PRODUCT_OPTIONS_UNAVAILABLE,
+    'R3 BLOCK: strict definitions unavailable'
+);
+
+// Non-strict may still use legacy when definitions are null.
+$legacyOk = $resolver->resolve($product, 1, array(), 'BGN', 'BGN', null, null, false);
+mtucAud019_assert(is_object($legacyOk), 'R3 legacy: non-strict null definitions still resolve');
 
 // ---------------------------------------------------------------------------
 // F03/F04 — Buy JS behavior
@@ -369,6 +513,20 @@ mtucAud019_assert(
     preg_match('/buySubmitInFlight\s*=\s*true/', $js) === 1
         && preg_match('/isBuySubmitLocked\(\)/', $js) === 1,
     'F04 residual: second Buy while in flight is ignored'
+);
+mtucAud019_assert(
+    preg_match(
+        '/action === ["\']buy["\'][\s\S]{0,200}?buySubmitInFlight\s*=\s*true[\s\S]{0,200}?postJson\s*\(\s*\$root\.attr\(\s*["\']data-route-stash["\']\s*\)/s',
+        $js
+    ) === 1,
+    'R4 residual: buySubmitInFlight=true before stash postJson'
+);
+mtucAud019_assert(
+    preg_match(
+        '/action === ["\']buy["\'][\s\S]{0,200}?postJson\s*\(\s*\$root\.attr\(\s*["\']data-route-stash["\']\s*\)[\s\S]{0,200}?buySubmitInFlight\s*=\s*true/s',
+        $js
+    ) !== 1,
+    'R4 residual: stash postJson must not precede buySubmitInFlight lock'
 );
 mtucAud019_assert(
     strpos($js, 'missing_required_option') !== false

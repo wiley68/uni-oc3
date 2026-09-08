@@ -19,23 +19,62 @@ final class MtUniCreditOc3ProductLineResolver
     /** @var callable|null */
     private $optionValueLoader;
 
+    /** @var callable|null */
+    private $uploadCodeLoader;
+
     /**
      * @param callable $taxCalculator callable(float $unitExTax, int $taxClassId): float unit with tax (base currency)
      * @param callable $currencyConverter callable(float $amount, string $from, string $to): float
      * @param callable|null $categoryLoader callable(int $productId): int[]
      * @param callable|null $optionValueLoader callable(int $productOptionId, int|string|array $value): array|null
      *        Returns option value row with keys: name, price, price_prefix, product_option_value_id, type?, option_id?
+     * @param callable|null $uploadCodeLoader callable(string $code): array|null Native model_tool_upload::getUploadByCode row
      */
     public function __construct(
         $taxCalculator,
         $currencyConverter,
         $categoryLoader = null,
-        $optionValueLoader = null
+        $optionValueLoader = null,
+        $uploadCodeLoader = null
     ) {
         $this->taxCalculator = $taxCalculator;
         $this->currencyConverter = $currencyConverter;
         $this->categoryLoader = is_callable($categoryLoader) ? $categoryLoader : null;
         $this->optionValueLoader = is_callable($optionValueLoader) ? $optionValueLoader : null;
+        $this->uploadCodeLoader = is_callable($uploadCodeLoader) ? $uploadCodeLoader : null;
+    }
+
+    /**
+     * Strict Product Apply quantity: no clamp/normalization before validation.
+     *
+     * @param mixed $raw Posted quantity (must be canonical non-negative integer string/int)
+     * @return int Validated quantity >= 1
+     * @throws MtUniCreditProductLineValidationException
+     */
+    public static function parseStrictPostedQuantity($raw)
+    {
+        if ($raw === null || is_array($raw) || is_bool($raw)) {
+            throw new MtUniCreditProductLineValidationException(
+                MtUniCreditProductLineValidationException::CODE_QUANTITY_BELOW_MINIMUM,
+                'quantity_below_minimum'
+            );
+        }
+        $s = trim((string) $raw);
+        if ($s === '' || preg_match('/^(0|[1-9][0-9]*)$/', $s) !== 1) {
+            throw new MtUniCreditProductLineValidationException(
+                MtUniCreditProductLineValidationException::CODE_QUANTITY_BELOW_MINIMUM,
+                'quantity_below_minimum'
+            );
+        }
+        $quantity = (int) $s;
+        if ($quantity < 1) {
+            throw new MtUniCreditProductLineValidationException(
+                MtUniCreditProductLineValidationException::CODE_QUANTITY_BELOW_MINIMUM,
+                'quantity_below_minimum'
+            );
+        }
+
+        return $quantity;
     }
 
     /**
@@ -61,26 +100,42 @@ final class MtUniCreditOc3ProductLineResolver
         $strict = false
     ) {
         $productId = (int) (isset($productRow['product_id']) ? $productRow['product_id'] : 0);
-        $quantity = (int) $quantity;
+        $strict = (bool) $strict;
         $minimum = max(1, (int) (isset($productRow['minimum']) ? $productRow['minimum'] : 1));
-        if ($strict && $quantity < $minimum) {
-            throw new MtUniCreditProductLineValidationException(
-                MtUniCreditProductLineValidationException::CODE_QUANTITY_BELOW_MINIMUM,
-                'quantity_below_minimum'
-            );
-        }
-        $quantity = max(1, $quantity);
-        $taxClassId = (int) (isset($productRow['tax_class_id']) ? $productRow['tax_class_id'] : 0);
 
-        if (is_array($productOptions) && $productOptions !== array()) {
+        if ($strict) {
+            // Exact validated quantity only — never clamp/normalize upward.
+            $quantity = (int) $quantity;
+            if ($quantity < 1 || $quantity < $minimum) {
+                throw new MtUniCreditProductLineValidationException(
+                    MtUniCreditProductLineValidationException::CODE_QUANTITY_BELOW_MINIMUM,
+                    'quantity_below_minimum'
+                );
+            }
+            if ($productOptions === null) {
+                throw new MtUniCreditProductLineValidationException(
+                    MtUniCreditProductLineValidationException::CODE_PRODUCT_OPTIONS_UNAVAILABLE,
+                    'product_options_unavailable'
+                );
+            }
             $optionData = $this->resolveOptionsAgainstDefinitions(
                 $requestedOptions,
                 $productOptions,
-                (bool) $strict
+                true
             );
         } else {
-            $optionData = $this->resolveOptionsLegacy($requestedOptions, (bool) $strict);
+            $quantity = max(1, (int) $quantity);
+            if (is_array($productOptions)) {
+                $optionData = $this->resolveOptionsAgainstDefinitions(
+                    $requestedOptions,
+                    $productOptions,
+                    false
+                );
+            } else {
+                $optionData = $this->resolveOptionsLegacy($requestedOptions, false);
+            }
         }
+        $taxClassId = (int) (isset($productRow['tax_class_id']) ? $productRow['tax_class_id'] : 0);
         $baseUnit = (float) (
             !empty($productRow['special'])
             ? $productRow['special']
@@ -237,34 +292,91 @@ final class MtUniCreditOc3ProductLineResolver
                 continue;
             }
 
-            // text / textarea / date / datetime / time / file (and unknown scalar types)
-            if (is_array($value)) {
-                if ($strict) {
-                    throw new MtUniCreditProductLineValidationException(
-                        MtUniCreditProductLineValidationException::CODE_INVALID_OPTION,
-                        'invalid_option'
-                    );
+            if ($type === 'file') {
+                if (is_array($value)) {
+                    if ($strict) {
+                        throw new MtUniCreditProductLineValidationException(
+                            MtUniCreditProductLineValidationException::CODE_INVALID_OPTION,
+                            'invalid_option'
+                        );
+                    }
+                    continue;
                 }
+                $code = trim((string) $value);
+                if ($code === '') {
+                    if ($strict && $isRequired) {
+                        throw new MtUniCreditProductLineValidationException(
+                            MtUniCreditProductLineValidationException::CODE_MISSING_REQUIRED_OPTION,
+                            'missing_required_option'
+                        );
+                    }
+                    continue;
+                }
+                $upload = $this->loadUploadByCode($code);
+                if ($upload === null) {
+                    if ($strict) {
+                        throw new MtUniCreditProductLineValidationException(
+                            MtUniCreditProductLineValidationException::CODE_INVALID_OPTION,
+                            'invalid_option'
+                        );
+                    }
+                    continue;
+                }
+                $orderOptions[] = array(
+                    'product_option_id' => $productOptionId,
+                    'product_option_value_id' => '',
+                    'name' => $optionName,
+                    'value' => $code,
+                    'type' => 'file',
+                );
+                $normalized[$productOptionId] = $code;
                 continue;
             }
-            $scalar = trim((string) $value);
-            if ($scalar === '') {
-                if ($strict && $isRequired) {
-                    throw new MtUniCreditProductLineValidationException(
-                        MtUniCreditProductLineValidationException::CODE_MISSING_REQUIRED_OPTION,
-                        'missing_required_option'
-                    );
+
+            if (
+                $type === 'text'
+                || $type === 'textarea'
+                || $type === 'date'
+                || $type === 'datetime'
+                || $type === 'time'
+            ) {
+                if (is_array($value)) {
+                    if ($strict) {
+                        throw new MtUniCreditProductLineValidationException(
+                            MtUniCreditProductLineValidationException::CODE_INVALID_OPTION,
+                            'invalid_option'
+                        );
+                    }
+                    continue;
                 }
+                $scalar = trim((string) $value);
+                if ($scalar === '') {
+                    if ($strict && $isRequired) {
+                        throw new MtUniCreditProductLineValidationException(
+                            MtUniCreditProductLineValidationException::CODE_MISSING_REQUIRED_OPTION,
+                            'missing_required_option'
+                        );
+                    }
+                    continue;
+                }
+                $orderOptions[] = array(
+                    'product_option_id' => $productOptionId,
+                    'product_option_value_id' => '',
+                    'name' => $optionName,
+                    'value' => $scalar,
+                    'type' => $type,
+                );
+                $normalized[$productOptionId] = $scalar;
                 continue;
             }
-            $orderOptions[] = array(
-                'product_option_id' => $productOptionId,
-                'product_option_value_id' => '',
-                'name' => $optionName,
-                'value' => $scalar,
-                'type' => $type !== '' ? $type : 'text',
-            );
-            $normalized[$productOptionId] = $scalar;
+
+            // Unknown option types: fail closed (never free-text fallback).
+            if ($strict) {
+                throw new MtUniCreditProductLineValidationException(
+                    MtUniCreditProductLineValidationException::CODE_INVALID_OPTION,
+                    'invalid_option'
+                );
+            }
         }
 
         ksort($normalized);
@@ -469,6 +581,22 @@ final class MtUniCreditOc3ProductLineResolver
         $row = call_user_func($this->optionValueLoader, $productOptionId, $value);
 
         return is_array($row) ? $row : null;
+    }
+
+    /**
+     * Native OC3 file-option authority: model_tool_upload::getUploadByCode.
+     *
+     * @param string $code
+     * @return array<string, mixed>|null
+     */
+    private function loadUploadByCode($code)
+    {
+        if ($this->uploadCodeLoader === null) {
+            return null;
+        }
+        $row = call_user_func($this->uploadCodeLoader, (string) $code);
+
+        return is_array($row) && $row !== array() ? $row : null;
     }
 
     /**

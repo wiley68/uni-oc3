@@ -260,14 +260,50 @@ final class MtUniCreditStorefrontRuntime
             return $query->row;
         };
 
-        $productOptions = array();
+        $uploadLoader = function ($code) use ($self) {
+            $code = trim((string) $code);
+            if ($code === '') {
+                return null;
+            }
+            try {
+                $self->load->model('tool/upload');
+                if (!isset($self->model_tool_upload) || !is_object($self->model_tool_upload)) {
+                    return null;
+                }
+                $row = $self->model_tool_upload->getUploadByCode($code);
+
+                return is_array($row) && $row !== array() ? $row : null;
+            } catch (Exception $exception) {
+                return null;
+            }
+        };
+
+        $productOptions = null;
+        $definitionsAvailable = false;
         try {
             $loadedOptions = $controller->model_catalog_product->getProductOptions((int) $productId);
-            if (is_array($loadedOptions)) {
+            if (!is_array($loadedOptions)) {
+                if ($strict) {
+                    throw new MtUniCreditProductLineValidationException(
+                        MtUniCreditProductLineValidationException::CODE_PRODUCT_OPTIONS_UNAVAILABLE,
+                        'product_options_unavailable'
+                    );
+                }
+            } else {
                 $productOptions = $loadedOptions;
+                $definitionsAvailable = true;
             }
+        } catch (MtUniCreditProductLineValidationException $exception) {
+            throw $exception;
         } catch (Exception $exception) {
-            $productOptions = array();
+            if ($strict) {
+                throw new MtUniCreditProductLineValidationException(
+                    MtUniCreditProductLineValidationException::CODE_PRODUCT_OPTIONS_UNAVAILABLE,
+                    'product_options_unavailable'
+                );
+            }
+            $productOptions = null;
+            $definitionsAvailable = false;
         }
 
         $resolver = new MtUniCreditOc3ProductLineResolver(
@@ -276,7 +312,8 @@ final class MtUniCreditStorefrontRuntime
             function ($pid) use ($controller) {
                 return MtUniCreditStorefrontRuntime::productCategories($controller, $pid);
             },
-            $optionLoader
+            $optionLoader,
+            $uploadLoader
         );
 
         try {
@@ -287,7 +324,7 @@ final class MtUniCreditStorefrontRuntime
                 $baseCurrency,
                 $displayCurrency,
                 null,
-                $productOptions,
+                $definitionsAvailable ? $productOptions : null,
                 (bool) $strict
             );
         } catch (MtUniCreditProductLineValidationException $exception) {
