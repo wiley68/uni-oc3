@@ -182,6 +182,32 @@ class ControllerExtensionMtUniCreditProduct extends Controller
         }
     }
 
+    /**
+     * AUD-019 F03: clear pending/active Product Buy preference after failed cart/add handoff.
+     *
+     * @return void
+     */
+    public function clearBuyPreference()
+    {
+        $this->load->language('extension/mt_uni_credit/product');
+        $json = array('success' => false);
+
+        try {
+            if (!$this->isPost() || !MtUniCreditStorefrontCsrf::verify($this->session->data, $this->posted('csrf'))) {
+                MtUniCreditStorefrontRuntime::respondJson($this, $json);
+                return;
+            }
+
+            if (isset($this->session->data) && is_array($this->session->data)) {
+                MtUniCreditProductBuyPreference::clear($this->session->data);
+            }
+
+            MtUniCreditStorefrontRuntime::respondJson($this, array('success' => true));
+        } catch (Exception $exception) {
+            MtUniCreditStorefrontRuntime::respondJson($this, $json);
+        }
+    }
+
     public function submit()
     {
         $this->load->language('extension/mt_uni_credit/product');
@@ -218,12 +244,27 @@ class ControllerExtensionMtUniCreditProduct extends Controller
 
             $productId = (int) $this->posted('product_id', 0);
             $quantity = max(1, (int) $this->posted('quantity', 1));
-            $line = MtUniCreditStorefrontRuntime::resolveProductLine(
-                $this,
-                $productId,
-                $quantity,
-                $this->postedOptions()
-            );
+            try {
+                $line = MtUniCreditStorefrontRuntime::resolveProductLine(
+                    $this,
+                    $productId,
+                    $quantity,
+                    $this->postedOptions(),
+                    true
+                );
+            } catch (MtUniCreditProductLineValidationException $exception) {
+                $code = $exception->errorCode();
+                $json['error'] = $code;
+                if ($code === MtUniCreditProductLineValidationException::CODE_QUANTITY_BELOW_MINIMUM) {
+                    $json['message'] = $this->language->get('error_quantity_minimum');
+                } elseif ($code === MtUniCreditProductLineValidationException::CODE_MISSING_REQUIRED_OPTION) {
+                    $json['message'] = $this->language->get('error_required_options');
+                } else {
+                    $json['message'] = $this->language->get('error_invalid_option');
+                }
+                MtUniCreditStorefrontRuntime::respondJson($this, $json);
+                return;
+            }
             if ($line === null) {
                 $json['error'] = 'unavailable';
                 MtUniCreditStorefrontRuntime::respondJson($this, $json);
@@ -537,6 +578,7 @@ class ControllerExtensionMtUniCreditProduct extends Controller
         $data['route_recalculate'] = $this->url->link(MtUniCreditConstants::PRODUCT_ROUTE . '/recalculate', '', true);
         $data['route_submit'] = $this->url->link(MtUniCreditConstants::PRODUCT_ROUTE . '/submit', '', true);
         $data['route_stash'] = $this->url->link(MtUniCreditConstants::PRODUCT_ROUTE . '/stashBuyPreference', '', true);
+        $data['route_clear'] = $this->url->link(MtUniCreditConstants::PRODUCT_ROUTE . '/clearBuyPreference', '', true);
         $data['checkout_url'] = $this->url->link('checkout/checkout', '', true);
         $data['hide_secondary'] = false;
         $data['entry_point'] = 'product';

@@ -280,8 +280,8 @@ foreach (array('logged' => 42, 'guest' => 0) as $actor => $customerId) {
     $attempt = $stack['attempts']->findByStoreOrder($stack['storeId'], $orderId);
     mtuc115c1cp_assert(
         $attempt !== null
-            && $attempt['state'] === MtUniCreditFinancingAttemptState::CP_FAILED_RETRYABLE,
-        $actor . ': attempt state cp_failed_retryable'
+            && $attempt['state'] === MtUniCreditFinancingAttemptState::TERMINAL_FAILED,
+        $actor . ': attempt state terminal_failed (definitive CP 422)'
     );
     mtuc115c1cp_assert(
         empty($result['apply_native_order_status']),
@@ -353,7 +353,8 @@ mtuc115c1cp_assert(
 mtuc115c1cp_assert(empty($jsonAmb['redirect']), 'ambiguous: no redirect');
 
 // ---------------------------------------------------------------------------
-// Safe retry after definitive CP failure
+// Definitive CP failure is terminal — no safe CP retry / no second SmartUCF
+// (AUD-014: HTTP 422 → TERMINAL_FAILED; supersedes old cp_failed_retryable retry)
 // ---------------------------------------------------------------------------
 $transportRetry = new Phase4FakeCpHttpTransport();
 $payloadsRetry = Phase7TestHarness::loginAndOrderSuccessPayloads();
@@ -364,31 +365,40 @@ $orderRetry = 116320;
 $createsRetry = 0;
 $inputRetry = mtuc115c1cp_productInput($stackRetry, $orderRetry, 9, $createsRetry);
 $firstRetry = $stackRetry['storefront']->submit($inputRetry);
-mtuc115c1cp_assert(empty($firstRetry['success']), 'retry: first CP fail');
-mtuc115c1cp_assert($createsRetry === 1, 'retry: one OC order after first fail');
+mtuc115c1cp_assert(empty($firstRetry['success']), 'terminal: first CP fail');
+mtuc115c1cp_assert($createsRetry === 1, 'terminal: one OC order after first fail');
+$attemptRetry = $stackRetry['attempts']->findByStoreOrder($stackRetry['storeId'], $orderRetry);
+mtuc115c1cp_assert(
+    $attemptRetry !== null
+        && $attemptRetry['state'] === MtUniCreditFinancingAttemptState::TERMINAL_FAILED,
+    'terminal: attempt state terminal_failed'
+);
+$postsAfterFail = Phase7TestHarness::countOrderPosts($transportRetry);
+$smartAfterFail = count($stackRetry['smartUcfProbe']->calls);
 
-// Preserve application session bind so retry reuses the same local OC order.
+// Preserve application session bind — retry must still be blocked.
 if (isset($firstRetry['session']) && is_array($firstRetry['session'])) {
     $inputRetry['session'] = $firstRetry['session'];
 }
 
 Phase9TestHarness::enqueueCpOrderCreateSuccess($transportRetry);
 $secondRetry = $stackRetry['storefront']->submit($inputRetry);
-mtuc115c1cp_assert(!empty($secondRetry['success']), 'retry: second submit succeeds');
-mtuc115c1cp_assert($createsRetry === 1, 'retry: no duplicate local OC order');
+mtuc115c1cp_assert(empty($secondRetry['success']), 'terminal: second submit remains failed');
+mtuc115c1cp_assert($createsRetry === 1, 'terminal: no duplicate local OC order');
 mtuc115c1cp_assert(
-    Phase7TestHarness::countOrderPosts($transportRetry) === 2,
-    'retry: exactly two CP POSTs (fail then success)'
+    Phase7TestHarness::countOrderPosts($transportRetry) === $postsAfterFail,
+    'terminal: no second CP POST after definitive failure'
 );
 mtuc115c1cp_assert(
-    (int) $secondRetry['control_panel_order_id'] > 0,
-    'retry: one eventual CP order id'
+    count($stackRetry['smartUcfProbe']->calls) === $smartAfterFail,
+    'terminal: no SmartUCF after definitive CP failure'
 );
+$jsonRetry = mtuc115c1cp_controllerJson($firstRetry);
 mtuc115c1cp_assert(
-    count($stackRetry['smartUcfProbe']->calls) === 1,
-    'retry: one SmartUCF call after CP success'
+    (string) $jsonRetry['terminal_ui'] === MtUniCreditFinancingTerminalNavigationSupport::UI_ERROR_MODAL,
+    'terminal: controller JSON terminal_ui=error_modal'
 );
-mtuc115c1cp_assert(!empty($secondRetry['bank_redirect']), 'retry: trusted bank redirect');
+mtuc115c1cp_assert(empty($jsonRetry['redirect']), 'terminal: no redirect');
 
 // ---------------------------------------------------------------------------
 // SmartUCF failure + successful P1 + P2 regressions

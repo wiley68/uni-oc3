@@ -59,6 +59,10 @@ final class MtUniCreditStorefrontValidationCopy
             'error_request_failed' => (string) $language->get('error_request_failed'),
             'error_recalculate' => (string) $language->get('error_recalculate'),
             'error_validation' => (string) $language->get('error_validation'),
+            'error_required_options' => (string) $language->get('error_required_options'),
+            'error_invalid_option' => (string) $language->get('error_invalid_option'),
+            'error_quantity_minimum' => (string) $language->get('error_quantity_minimum'),
+            'error_buy_cart_failed' => (string) $language->get('error_buy_cart_failed'),
         );
     }
 }

@@ -167,13 +167,17 @@ mtuc115c2p1_assert(
     preg_match('/clearCartAfterSuccessfulHandoff\\s*\\(\\s*\\$result\\s*,\\s*\\$this->cart\\s*\\)/s', $cartCtrl) === 1,
     'recovery: Cart keeps $this->cart clear fix'
 );
+// AUD-010 F04 / AUD-019 F05: Product/Cart no longer load localisation models;
+// country_id/zone_id are authoritative zeros (see phase_aud010_f04).
 mtuc115c2p1_assert(
-    strpos($cartCtrl, 'isset($this->model_localisation_country)') !== false,
-    'recovery: Cart localisation isset guards restored'
+    strpos($cartCtrl, 'model_localisation_country') === false
+        && strpos($cartCtrl, "'country_id' => 0") !== false,
+    'recovery: Cart uses country_id=0 without localisation model'
 );
 mtuc115c2p1_assert(
-    strpos($productCtrl, 'isset($this->model_localisation_country)') !== false,
-    'recovery: Product localisation isset guards restored'
+    strpos($productCtrl, 'model_localisation_country') === false
+        && strpos($productCtrl, "'country_id' => 0") !== false,
+    'recovery: Product uses country_id=0 without localisation model'
 );
 mtuc115c2p1_assert(
     strpos($runtimeSrc, 'isset($controller->model_extension_mt_uni_credit_product)') !== false,

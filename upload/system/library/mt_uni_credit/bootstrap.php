@@ -63,6 +63,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'checkout_prepared_boundary.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'storefront_asset_urls.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'storefront_csrf.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'product_line.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'product_line_validation_exception.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'oc3_product_line_resolver.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'storefront_operation_identity.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'storefront_application_token.php';

@@ -195,9 +195,11 @@ final class MtUniCreditStorefrontRuntime
      * @param int $productId
      * @param int $quantity
      * @param array<int|string, mixed> $options
+     * @param bool $strict Product Apply: required options + minimum + no invalid ID→text
      * @return MtUniCreditProductLine|null
+     * @throws MtUniCreditProductLineValidationException
      */
-    public static function resolveProductLine($controller, $productId, $quantity, array $options)
+    public static function resolveProductLine($controller, $productId, $quantity, array $options, $strict = false)
     {
         $controller->load->model('catalog/product');
         $product = $controller->model_catalog_product->getProduct((int) $productId);
@@ -258,6 +260,16 @@ final class MtUniCreditStorefrontRuntime
             return $query->row;
         };
 
+        $productOptions = array();
+        try {
+            $loadedOptions = $controller->model_catalog_product->getProductOptions((int) $productId);
+            if (is_array($loadedOptions)) {
+                $productOptions = $loadedOptions;
+            }
+        } catch (Exception $exception) {
+            $productOptions = array();
+        }
+
         $resolver = new MtUniCreditOc3ProductLineResolver(
             $tax,
             $convert,
@@ -273,8 +285,13 @@ final class MtUniCreditStorefrontRuntime
                 $quantity,
                 $options,
                 $baseCurrency,
-                $displayCurrency
+                $displayCurrency,
+                null,
+                $productOptions,
+                (bool) $strict
             );
+        } catch (MtUniCreditProductLineValidationException $exception) {
+            throw $exception;
         } catch (Exception $exception) {
             return null;
         }

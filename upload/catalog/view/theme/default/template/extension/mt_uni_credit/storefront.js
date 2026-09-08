@@ -77,7 +77,10 @@
     $root.attr("data-mtuc-bound", "1");
 
     var bootstrap = parseBootstrap($root) || {};
-    var i18n = bootstrap.i18n && typeof bootstrap.i18n === "object" ? bootstrap.i18n : {};
+    var i18n =
+      bootstrap.i18n && typeof bootstrap.i18n === "object"
+        ? bootstrap.i18n
+        : {};
     var state = bootstrap.calculator || {};
     var entryPoint =
       $root.attr("data-entry-point") || bootstrap.entry_point || "product";
@@ -127,6 +130,8 @@
     var abortController = null;
     // Terminal financing submit (Process 1 bank redirect): keep locked until navigation.
     var terminalSubmitInFlight = false;
+    // AUD-019 F04: one Buy stash→cart/add sequence at a time.
+    var buySubmitInFlight = false;
     var width = $root.attr("data-mtuc-button-width");
     var height = $root.attr("data-mtuc-button-height");
     var topSpacing = $root.attr("data-mtuc-top-spacing");
@@ -210,6 +215,43 @@
 
     function isTerminalSubmitLocked() {
       return terminalSubmitInFlight === true;
+    }
+
+    function isBuySubmitLocked() {
+      return buySubmitInFlight === true;
+    }
+
+    function clearBuyPreference(done) {
+      var url = $root.attr("data-route-clear") || "";
+      if (!url) {
+        if (typeof done === "function") {
+          done();
+        }
+        return;
+      }
+      postJson(
+        url,
+        {
+          csrf: $root.attr("data-csrf"),
+        },
+        function () {
+          if (typeof done === "function") {
+            done();
+          }
+        },
+      );
+    }
+
+    function failBuyHandoff(message) {
+      buySubmitInFlight = false;
+      clearBuyPreference();
+      closeModal();
+      setEntryError(
+        message || t("error_buy_cart_failed", t("error_request_failed", "")),
+      );
+      showErrorModal(
+        message || t("error_buy_cart_failed", t("error_request_failed", "")),
+      );
     }
 
     function setProcessing(active) {
@@ -386,7 +428,10 @@
     function clearAllFieldErrors() {
       $modal.find("[data-mtuc-field-error]").text("");
       $modal.find("[data-mtuc-submit-error]").text("");
-      $modal.find("[data-mtuc-form] input, [data-mtuc-form] select, [data-mtuc-form] textarea")
+      $modal
+        .find(
+          "[data-mtuc-form] input, [data-mtuc-form] select, [data-mtuc-form] textarea",
+        )
         .attr("aria-invalid", "false");
     }
 
@@ -1026,10 +1071,16 @@
           }
           applyCalculator(response.calculator);
           if (response.application_token) {
-            $root.attr("data-application-token", String(response.application_token));
+            $root.attr(
+              "data-application-token",
+              String(response.application_token),
+            );
           }
           if (response.cart_fingerprint) {
-            $root.attr("data-cart-fingerprint", String(response.cart_fingerprint));
+            $root.attr(
+              "data-cart-fingerprint",
+              String(response.cart_fingerprint),
+            );
           }
           if (!$modal.attr("hidden")) {
             fillSchemes();
@@ -1154,11 +1205,12 @@
         scheduleRecalculate(false);
       },
       secondary: function () {
-        if (isTerminalSubmitLocked()) {
+        if (isTerminalSubmitLocked() || isBuySubmitLocked()) {
           return;
         }
         var action = $root.attr("data-button-action") || "add_to_cart";
         if (action === "buy") {
+          buySubmitInFlight = true;
           postJson(
             $root.attr("data-route-stash"),
             {
@@ -1167,24 +1219,47 @@
               scheme_key: selectedSchemeKey,
             },
             function (err, response) {
-              if (!err && response && response.success) {
-                var form = productFormData();
-                $.ajax({
-                  url: "index.php?route=checkout/cart/add",
-                  type: "POST",
-                  data: {
-                    product_id: $root.attr("data-product-id"),
-                    quantity: form.quantity,
-                    option: form.option,
-                  },
-                  dataType: "json",
-                }).always(function () {
-                  window.location =
-                    response.redirect ||
-                    $root.attr("data-checkout-url") ||
-                    "index.php?route=checkout/checkout";
-                });
+              if (err || !response || !response.success) {
+                buySubmitInFlight = false;
+                closeModal();
+                showErrorModal(t("error_request_failed", ""));
+                return;
               }
+              var redirectUrl =
+                response.redirect ||
+                $root.attr("data-checkout-url") ||
+                "index.php?route=checkout/checkout";
+              var form = productFormData();
+              $.ajax({
+                url: "index.php?route=checkout/cart/add",
+                type: "POST",
+                data: {
+                  product_id: $root.attr("data-product-id"),
+                  quantity: form.quantity,
+                  option: form.option,
+                },
+                dataType: "json",
+              })
+                .done(function (cartJson) {
+                  if (cartJson && cartJson.error) {
+                    failBuyHandoff(
+                      t("error_buy_cart_failed", t("error_request_failed", "")),
+                    );
+                    return;
+                  }
+                  if (cartJson && cartJson.success) {
+                    window.location = redirectUrl;
+                    return;
+                  }
+                  failBuyHandoff(
+                    t("error_buy_cart_failed", t("error_request_failed", "")),
+                  );
+                })
+                .fail(function () {
+                  failBuyHandoff(
+                    t("error_buy_cart_failed", t("error_request_failed", "")),
+                  );
+                });
             },
           );
           return;
@@ -1208,12 +1283,7 @@
           focusFirstInvalidField(clientErrors);
           $modal
             .find("[data-mtuc-submit-error]")
-            .text(
-              t(
-                "error_validation_incomplete",
-                t("error_validation", ""),
-              ),
-            );
+            .text(t("error_validation_incomplete", t("error_validation", "")));
           return;
         }
         terminalSubmitInFlight = true;
@@ -1267,9 +1337,7 @@
               terminalSubmitInFlight = false;
               setProcessing(false);
               closeModal();
-              showErrorModal(
-                t("error_request_failed", ""),
-              );
+              showErrorModal(t("error_request_failed", ""));
               return;
             }
             // Bank / terminal redirect: keep loader locked until navigation leaves the page.
@@ -1298,15 +1366,31 @@
               updateSubmitState();
               return;
             }
+            // AUD-019: Product option / minimum reconstruction failures stay on Product.
+            if (
+              response.error === "missing_required_option" ||
+              response.error === "invalid_option" ||
+              response.error === "quantity_below_minimum"
+            ) {
+              closeModal();
+              var optionMsg =
+                response.message ||
+                (response.error === "quantity_below_minimum"
+                  ? t("error_quantity_minimum", t("error_request_failed", ""))
+                  : response.error === "missing_required_option"
+                    ? t("error_required_options", t("error_request_failed", ""))
+                    : t("error_invalid_option", t("error_request_failed", "")));
+              setEntryError(optionMsg);
+              showErrorModal(optionMsg);
+              return;
+            }
             // CP-create failure (and similar stay-on-page results): close financing UI, show error dialog.
             if (
               response.terminal_ui === "error_modal" ||
               response.stay_on_page === true
             ) {
               closeModal();
-              showErrorModal(
-                response.message || t("error_request_failed", ""),
-              );
+              showErrorModal(response.message || t("error_request_failed", ""));
               return;
             }
             $modal
