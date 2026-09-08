@@ -401,19 +401,25 @@ class ModelExtensionPaymentMtUniCredit extends Model
     /**
      * Current checkout actor from OpenCart customer/session authority (never posted).
      *
+     * OC3 Model exposes registry services via __get only — never gate on isset() for customer.
+     *
      * @return array{customer_id: int, is_guest: bool, guest_email: string}
      */
     private function resolveCheckoutActor()
     {
         $customerId = 0;
-        if (
-            isset($this->customer)
-            && is_object($this->customer)
-            && method_exists($this->customer, 'isLogged')
-            && $this->customer->isLogged()
-            && method_exists($this->customer, 'getId')
-        ) {
-            $customerId = (int) $this->customer->getId();
+        try {
+            $customer = $this->customer;
+            if (
+                is_object($customer)
+                && method_exists($customer, 'isLogged')
+                && $customer->isLogged()
+                && method_exists($customer, 'getId')
+            ) {
+                $customerId = (int) $customer->getId();
+            }
+        } catch (Exception $exception) {
+            $customerId = 0;
         }
 
         if ($customerId > 0) {
@@ -439,23 +445,24 @@ class ModelExtensionPaymentMtUniCredit extends Model
     /**
      * Active session currency conversion value from OpenCart currency library.
      *
+     * OC3 Model exposes currency via __get only — never gate on isset() for currency.
+     *
      * @param string $currencyCode
      * @return float|null
      */
     private function resolveSessionCurrencyValue($currencyCode)
     {
         $currencyCode = trim((string) $currencyCode);
-        if (
-            $currencyCode === ''
-            || !isset($this->currency)
-            || !is_object($this->currency)
-            || !method_exists($this->currency, 'getValue')
-        ) {
+        if ($currencyCode === '') {
             return null;
         }
 
         try {
-            $value = $this->currency->getValue($currencyCode);
+            $currency = $this->currency;
+            if (!is_object($currency) || !method_exists($currency, 'getValue')) {
+                return null;
+            }
+            $value = $currency->getValue($currencyCode);
         } catch (Exception $exception) {
             return null;
         }
