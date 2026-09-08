@@ -1439,10 +1439,12 @@ final class Phase2MemoryDb
             'smartucf_completed_at' => null,
             'process2_state' => MtUniCreditProcessTwoLifecycleStates::NOT_STARTED,
             'process2_sensitive_enc' => null,
+            'process2_sensitive_created_at' => null,
             'process2_mail_sent' => 0,
             'process2_claimed_at' => null,
             'process2_claim_owner' => null,
             'leasing_presentation_json' => null,
+            'leasing_presentation_created_at' => null,
             'application_snapshot_json' => null,
             'application_snapshot_hash' => null,
             'native_finalize_state' => MtUniCreditNativeOrderFinalizationStates::NOT_STARTED,
@@ -1468,6 +1470,18 @@ final class Phase2MemoryDb
      */
     private function updateFinancingAttempt($sql)
     {
+        // AUD-027 bounded retention cleanup (no attempt_id; LIMIT + created_at clock).
+        if (
+            (int) $this->extractWhereInt($sql, 'attempt_id') <= 0
+            && preg_match('/LIMIT\s+(\d+)/i', $sql, $limitMatch)
+            && (
+                strpos($sql, '`process2_sensitive_created_at`') !== false
+                || strpos($sql, '`leasing_presentation_created_at`') !== false
+            )
+        ) {
+            return $this->batchRetentionCleanupFinancingAttempt($sql, (int) $limitMatch[1]);
+        }
+
         $attemptId = (int) $this->extractWhereInt($sql, 'attempt_id');
         if ($attemptId <= 0 || !isset($this->financingAttempts[$attemptId])) {
             return $this->emptyResult();
@@ -1643,9 +1657,11 @@ final class Phase2MemoryDb
             'smartucf_completed_at',
             'process2_state',
             'process2_sensitive_enc',
+            'process2_sensitive_created_at',
             'process2_claimed_at',
             'process2_claim_owner',
             'leasing_presentation_json',
+            'leasing_presentation_created_at',
             'application_snapshot_json',
             'application_snapshot_hash',
             'native_finalize_state',
@@ -1692,6 +1708,76 @@ final class Phase2MemoryDb
 
         $this->financingAttempts[$attemptId] = $row;
         $this->affected = 1;
+
+        return $this->emptyResult();
+    }
+
+    /**
+     * AUD-027: emulate MySQL UPDATE ... WHERE created_at < cutoff LIMIT N.
+     *
+     * @param string $sql
+     * @param int $limit
+     * @return object
+     */
+    private function batchRetentionCleanupFinancingAttempt($sql, $limit)
+    {
+        $limit = max(1, (int) $limit);
+        $affected = 0;
+        $isSensitive = strpos($sql, '`process2_sensitive_enc` = NULL') !== false
+            && strpos($sql, '`process2_sensitive_created_at`') !== false;
+        $isPresentation = strpos($sql, '`leasing_presentation_json` = NULL') !== false
+            && strpos($sql, '`leasing_presentation_created_at`') !== false;
+
+        $cutoff = '';
+        if (preg_match("/`process2_sensitive_created_at`\\s*<\\s*'([^']*)'/", $sql, $m)) {
+            $cutoff = (string) $m[1];
+        } elseif (preg_match("/`leasing_presentation_created_at`\\s*<\\s*'([^']*)'/", $sql, $m)) {
+            $cutoff = (string) $m[1];
+        }
+        $updatedAt = $this->extractSetValue($sql, 'updated_at');
+
+        foreach ($this->financingAttempts as $id => $row) {
+            if ($affected >= $limit) {
+                break;
+            }
+            if ($isSensitive) {
+                $enc = isset($row['process2_sensitive_enc']) ? $row['process2_sensitive_enc'] : null;
+                $created = isset($row['process2_sensitive_created_at']) ? $row['process2_sensitive_created_at'] : null;
+                if ($enc === null || $enc === '' || $created === null || $created === '' || $cutoff === '') {
+                    continue;
+                }
+                if ((string) $created >= $cutoff) {
+                    continue;
+                }
+                $row['process2_sensitive_enc'] = null;
+                $row['process2_sensitive_created_at'] = null;
+                if ($updatedAt !== '') {
+                    $row['updated_at'] = $updatedAt;
+                }
+                $this->financingAttempts[$id] = $row;
+                $affected++;
+                continue;
+            }
+            if ($isPresentation) {
+                $json = isset($row['leasing_presentation_json']) ? $row['leasing_presentation_json'] : null;
+                $created = isset($row['leasing_presentation_created_at']) ? $row['leasing_presentation_created_at'] : null;
+                if ($json === null || $json === '' || $created === null || $created === '' || $cutoff === '') {
+                    continue;
+                }
+                if ((string) $created >= $cutoff) {
+                    continue;
+                }
+                $row['leasing_presentation_json'] = null;
+                $row['leasing_presentation_created_at'] = null;
+                if ($updatedAt !== '') {
+                    $row['updated_at'] = $updatedAt;
+                }
+                $this->financingAttempts[$id] = $row;
+                $affected++;
+            }
+        }
+
+        $this->affected = $affected;
 
         return $this->emptyResult();
     }

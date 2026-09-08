@@ -8,6 +8,12 @@ final class MtUniCreditProcessTwoLifecycleRepository
     /** Active process2_preparing claims older than this are reclaimable. */
     const STALE_PREPARING_SECONDS = 45;
 
+    /** privacy_retention.json process2_ciphertext_days */
+    const SENSITIVE_RETENTION_DAYS = 180;
+
+    /** privacy_retention.json presentation_days */
+    const PRESENTATION_RETENTION_DAYS = 183;
+
     /** @var MtUniCreditDbAdapter */
     private $db;
 
@@ -39,10 +45,20 @@ final class MtUniCreditProcessTwoLifecycleRepository
             throw new MtUniCreditPersistenceValidationException('Process 2 sensitive payload could not be stored.');
         }
         $now = $this->now();
+        $row = $this->findByAttempt($attemptId);
+        $createdAtSql = '';
+        $existingCreated = is_array($row) && isset($row['process2_sensitive_created_at'])
+            ? $row['process2_sensitive_created_at']
+            : null;
+        if ($existingCreated === null || $existingCreated === '') {
+            // First successful ciphertext write — immutable retention clock (AUD-027-F01).
+            $createdAtSql = ", `process2_sensitive_created_at` = '" . $this->db->escape($now) . "'";
+        }
         $this->db->query(
             "UPDATE `" . $this->tableName() . "`
              SET `process2_sensitive_enc` = '" . $this->db->escape($encryptedPayload) . "',
-                 `updated_at` = '" . $this->db->escape($now) . "'
+                 `updated_at` = '" . $this->db->escape($now) . "'"
+                . $createdAtSql . "
              WHERE `attempt_id` = " . $attemptId
         );
         if ($this->db->countAffected() !== 1) {
@@ -63,9 +79,11 @@ final class MtUniCreditProcessTwoLifecycleRepository
             return;
         }
         $now = $this->now();
+        // Write-once snapshot + immutable presentation retention clock (AUD-027-F02).
         $this->db->query(
             "UPDATE `" . $this->tableName() . "`
              SET `leasing_presentation_json` = '" . $this->db->escape($json) . "',
+                 `leasing_presentation_created_at` = '" . $this->db->escape($now) . "',
                  `updated_at` = '" . $this->db->escape($now) . "'
              WHERE `attempt_id` = " . $attemptId
                 . " AND (`leasing_presentation_json` IS NULL OR `leasing_presentation_json` = '')"
@@ -85,8 +103,10 @@ final class MtUniCreditProcessTwoLifecycleRepository
         $result = $this->db->query(
             "SELECT `attempt_id`, `process2_state`, `process2_sensitive_enc`, `process2_mail_sent`,
                     `process2_claimed_at`, `process2_claim_owner`,
+                    `process2_sensitive_created_at`,
                     `leasing_presentation_json`,
-                    `store_id`, `order_id`, `control_panel_order_id`, `state`
+                    `leasing_presentation_created_at`,
+                    `store_id`, `order_id`, `control_panel_order_id`, `state`, `updated_at`
              FROM `" . $this->tableName() . "`
              WHERE `attempt_id` = " . $attemptId . ' LIMIT 1'
         );
@@ -238,21 +258,57 @@ final class MtUniCreditProcessTwoLifecycleRepository
     }
 
     /**
+     * Clear expired Process 2 ciphertext using immutable sensitive-created clock.
+     *
+     * Boundary: created_at < cutoff (strictly older than retentionDays). Exactly N days retained.
+     * Legacy rows with ciphertext but NULL created_at are skipped (dev reinstall / no updated_at fallback).
+     *
      * @param int $retentionDays
      * @param int $limit
      * @return int
      */
-    public function redactExpiredSensitiveBatch($retentionDays = 180, $limit = 100)
+    public function redactExpiredSensitiveBatch($retentionDays = self::SENSITIVE_RETENTION_DAYS, $limit = 100)
     {
         $retentionDays = max(1, (int) $retentionDays);
         $limit = max(1, min(500, (int) $limit));
-        $cutoff = gmdate('Y-m-d H:i:s', time() - ($retentionDays * 86400));
+        $cutoff = $this->clock->formatUtc($this->clock->now() - ($retentionDays * 86400));
+        $now = $this->now();
         $this->db->query(
             "UPDATE `" . $this->tableName() . "`
              SET `process2_sensitive_enc` = NULL,
-                 `updated_at` = '" . $this->db->escape($this->now()) . "'
+                 `process2_sensitive_created_at` = NULL,
+                 `updated_at` = '" . $this->db->escape($now) . "'
              WHERE `process2_sensitive_enc` IS NOT NULL
-               AND `updated_at` < '" . $this->db->escape($cutoff) . "'
+               AND `process2_sensitive_created_at` IS NOT NULL
+               AND `process2_sensitive_created_at` < '" . $this->db->escape($cutoff) . "'
+             LIMIT " . $limit
+        );
+
+        return $this->db->countAffected();
+    }
+
+    /**
+     * Clear expired leasing presentation snapshots using immutable presentation-created clock.
+     *
+     * @param int $retentionDays
+     * @param int $limit
+     * @return int
+     */
+    public function cleanupExpiredPresentationBatch($retentionDays = self::PRESENTATION_RETENTION_DAYS, $limit = 100)
+    {
+        $retentionDays = max(1, (int) $retentionDays);
+        $limit = max(1, min(500, (int) $limit));
+        $cutoff = $this->clock->formatUtc($this->clock->now() - ($retentionDays * 86400));
+        $now = $this->now();
+        $this->db->query(
+            "UPDATE `" . $this->tableName() . "`
+             SET `leasing_presentation_json` = NULL,
+                 `leasing_presentation_created_at` = NULL,
+                 `updated_at` = '" . $this->db->escape($now) . "'
+             WHERE `leasing_presentation_json` IS NOT NULL
+               AND `leasing_presentation_json` <> ''
+               AND `leasing_presentation_created_at` IS NOT NULL
+               AND `leasing_presentation_created_at` < '" . $this->db->escape($cutoff) . "'
              LIMIT " . $limit
         );
 

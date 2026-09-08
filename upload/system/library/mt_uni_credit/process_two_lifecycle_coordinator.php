@@ -154,6 +154,7 @@ final class MtUniCreditProcessTwoLifecycleCoordinator
             $this->lifecycle->markPrepared($attemptId);
             $this->trySendMail($attemptId, $row, $shop, $orderContext);
             $this->lifecycle->redactExpiredSensitiveBatch();
+            $this->lifecycle->cleanupExpiredPresentationBatch();
         } catch (Throwable $exception) {
             try {
                 $this->lifecycle->markFailed($attemptId);

@@ -48,6 +48,16 @@ mtuc10_assert(count($phase10Sql) >= 4, 'phase 10 schema alter statements present
 mtuc10_assert(strpos(implode("\n", $phase10Sql), 'process2_sensitive_enc') !== false, 'phase 10 adds process2_sensitive_enc');
 mtuc10_assert(strpos(implode("\n", $phase10Sql), 'process2_mail_sent') !== false, 'phase 10 adds process2_mail_sent');
 
+$aud027Sql = MtUniCreditPersistenceSchema::createAud027AlterStatements('oc_');
+mtuc10_assert(
+    strpos(implode("\n", $aud027Sql), 'process2_sensitive_created_at') !== false,
+    'AUD-027 adds process2_sensitive_created_at'
+);
+mtuc10_assert(
+    strpos(implode("\n", $aud027Sql), 'leasing_presentation_created_at') !== false,
+    'AUD-027 adds leasing_presentation_created_at'
+);
+
 $aud012Sql = MtUniCreditPersistenceSchema::createAud012AlterStatements('oc_');
 mtuc10_assert(strpos(implode("\n", $aud012Sql), 'process2_claimed_at') !== false, 'AUD-012 adds process2_claimed_at');
 $aud012Tables = MtUniCreditPersistenceSchema::createAud012TableStatements('oc_');

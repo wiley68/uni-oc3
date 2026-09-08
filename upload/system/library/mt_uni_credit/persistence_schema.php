@@ -52,6 +52,7 @@ final class MtUniCreditPersistenceSchema
         $this->ensureAud012Columns();
         $this->ensureAud014Columns();
         $this->ensureAud020Columns();
+        $this->ensureAud027Columns();
     }
 
     /**
@@ -118,6 +119,16 @@ final class MtUniCreditPersistenceSchema
     public function ensureAud020Columns()
     {
         $this->ensureAlterColumns(self::createAud020AlterStatements($this->db->getPrefix()));
+    }
+
+    /**
+     * AUD-027 immutable retention timestamps for P2 ciphertext + presentation.
+     *
+     * @return void
+     */
+    public function ensureAud027Columns()
+    {
+        $this->ensureAlterColumns(self::createAud027AlterStatements($this->db->getPrefix()));
     }
 
     /**
@@ -297,6 +308,24 @@ final class MtUniCreditPersistenceSchema
             "ALTER TABLE `{$financingAttempt}` ADD COLUMN `cart_clear_claimed_at` DATETIME NULL",
             "ALTER TABLE `{$financingAttempt}` ADD COLUMN `cart_clear_applied_at` DATETIME NULL",
             "ALTER TABLE `{$financingAttempt}` ADD KEY `idx_mt_uni_credit_attempt_cart_clear` (`cart_clear_state`, `cart_clear_claimed_at`)",
+        );
+    }
+
+    /**
+     * Idempotent AUD-027 retention timestamp upgrades for financing_attempt.
+     *
+     * @param string $prefix
+     * @return array<int, string>
+     */
+    public static function createAud027AlterStatements($prefix)
+    {
+        $financingAttempt = $prefix . MtUniCreditPersistenceTableNames::FINANCING_ATTEMPT;
+
+        return array(
+            "ALTER TABLE `{$financingAttempt}` ADD COLUMN `process2_sensitive_created_at` DATETIME NULL",
+            "ALTER TABLE `{$financingAttempt}` ADD COLUMN `leasing_presentation_created_at` DATETIME NULL",
+            "ALTER TABLE `{$financingAttempt}` ADD KEY `idx_mt_uni_credit_attempt_p2_sensitive_created` (`process2_sensitive_created_at`)",
+            "ALTER TABLE `{$financingAttempt}` ADD KEY `idx_mt_uni_credit_attempt_presentation_created` (`leasing_presentation_created_at`)",
         );
     }
 
