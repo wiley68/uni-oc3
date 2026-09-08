@@ -22,7 +22,12 @@ class ModelExtensionModuleMtUniCredit extends Model
             $this,
             MtUniCreditConstants::MODULE_SETTINGS_CODE
         );
-        MtUniCreditInstaller::ensureCatalogEvents($this->db);
+        $events = MtUniCreditInstaller::ensureCatalogEvents($this->db);
+        if (empty($events['healthy'])) {
+            throw new MtUniCreditInstallationException(
+                'Presentation event registration failed during module install.'
+            );
+        }
     }
 
     /**

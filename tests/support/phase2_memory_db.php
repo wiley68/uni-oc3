@@ -29,6 +29,9 @@ final class Phase2MemoryDb
     /** @var int */
     private $nextLockId = 1;
 
+    /** @var MtucSchemaDdlMemory|null */
+    private $schemaDdlHelper;
+
     /** @var int */
     private $nextOperationOrderClaimId = 1;
 
@@ -236,6 +239,10 @@ final class Phase2MemoryDb
     {
         $this->affected = 0;
         $sql = trim($sql);
+
+        if (preg_match('/^(CREATE\s+TABLE|SHOW\s+COLUMNS|SHOW\s+INDEX|ALTER\s+TABLE)/i', $sql)) {
+            return $this->schemaDdl()->query($sql);
+        }
 
         if (
             $this->throwOnBankStatusInsert
@@ -2000,6 +2007,21 @@ final class Phase2MemoryDb
         }
 
         return $this->singleRow(array('mtuc_lock' => null));
+    }
+
+    /**
+     * @return MtucSchemaDdlMemory
+     */
+    private function schemaDdl()
+    {
+        if (!isset($this->schemaDdlHelper)) {
+            if (!class_exists('MtucSchemaDdlMemory', false)) {
+                require_once dirname(__FILE__) . DIRECTORY_SEPARATOR . 'schema_ddl_memory.php';
+            }
+            $this->schemaDdlHelper = new MtucSchemaDdlMemory();
+        }
+
+        return $this->schemaDdlHelper;
     }
 
     private function emptyResult()

@@ -5,6 +5,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'local_settings.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'security_constants.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'persistence_table_names.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'persistence_exceptions.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'persistence_schema_inventory.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'store_scope.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'persistence_clock.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'hash_validator.php';

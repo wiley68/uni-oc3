@@ -7,6 +7,11 @@ class MtUniCreditPersistenceException extends Exception {}
 
 class MtUniCreditPersistenceValidationException extends MtUniCreditPersistenceException {}
 
+/**
+ * Visible OpenCart admin install / schema / event completion failure (sanitized).
+ */
+class MtUniCreditInstallationException extends MtUniCreditPersistenceException {}
+
 class MtUniCreditSecretPersistException extends MtUniCreditPersistenceException
 {
     /** @var string */

@@ -44,7 +44,15 @@ final class MtUniCreditPersistenceSchema
     public function installAllTables()
     {
         foreach (self::createAllTableStatements($this->db->getPrefix()) as $sql) {
-            $this->db->query($sql);
+            try {
+                $this->db->query($sql);
+            } catch (Exception $exception) {
+                throw new MtUniCreditInstallationException(
+                    'Persistence schema create failed.',
+                    0,
+                    $exception
+                );
+            }
         }
         $this->ensurePhase9Columns();
         $this->ensurePhase10Columns();
@@ -53,6 +61,274 @@ final class MtUniCreditPersistenceSchema
         $this->ensureAud014Columns();
         $this->ensureAud020Columns();
         $this->ensureAud027Columns();
+        $this->completeRequiredSchema();
+        $this->verifyRequiredSchema();
+    }
+
+    /**
+     * Canonical required schema inventory (logical table names, no prefix).
+     *
+     * @return array<string, array{columns: array<string, string>, indexes: array<int, array{name: string, unique: bool, columns: array<int, string>}>}>
+     */
+    public static function requiredTableInventory()
+    {
+        return MtUniCreditPersistenceSchemaInventory::tables();
+    }
+
+    /**
+     * Inspect → ADD missing columns/indexes for every owned table.
+     *
+     * @return void
+     */
+    public function completeRequiredSchema()
+    {
+        $prefix = $this->db->getPrefix();
+        foreach (self::requiredTableInventory() as $logical => $spec) {
+            $table = $prefix . $logical;
+            if (!$this->tableExists($table)) {
+                throw new MtUniCreditInstallationException(
+                    'Required persistence table missing after create: ' . $logical
+                );
+            }
+            $this->completeTableColumns($table, $spec['columns']);
+            $this->completeTableIndexes($table, $spec['indexes']);
+        }
+    }
+
+    /**
+     * Final verification pass — install must not succeed if incomplete.
+     *
+     * @return void
+     */
+    public function verifyRequiredSchema()
+    {
+        $prefix = $this->db->getPrefix();
+        foreach (self::requiredTableInventory() as $logical => $spec) {
+            $table = $prefix . $logical;
+            if (!$this->tableExists($table)) {
+                throw new MtUniCreditInstallationException(
+                    'Schema verification failed: missing table ' . $logical
+                );
+            }
+            $columns = $this->listColumnNames($table);
+            foreach (array_keys($spec['columns']) as $column) {
+                if (!isset($columns[$column])) {
+                    throw new MtUniCreditInstallationException(
+                        'Schema verification failed: missing column on ' . $logical
+                    );
+                }
+            }
+            $indexes = $this->listIndexes($table);
+            foreach ($spec['indexes'] as $expected) {
+                $match = $this->findMatchingIndex($indexes, $expected);
+                if ($match === null) {
+                    throw new MtUniCreditInstallationException(
+                        'Schema verification failed: missing or mismatched index on ' . $logical
+                    );
+                }
+            }
+        }
+    }
+
+    /**
+     * @param string $table
+     * @return bool
+     */
+    private function tableExists($table)
+    {
+        try {
+            $result = $this->db->query('SHOW COLUMNS FROM `' . $table . '`');
+        } catch (Exception $exception) {
+            return false;
+        }
+
+        return is_object($result)
+            && isset($result->rows)
+            && is_array($result->rows)
+            && $result->rows !== array();
+    }
+
+    /**
+     * @param string $table
+     * @return array<string, true>
+     */
+    private function listColumnNames($table)
+    {
+        $existing = array();
+        try {
+            $result = $this->db->query('SHOW COLUMNS FROM `' . $table . '`');
+        } catch (Exception $exception) {
+            throw new MtUniCreditInstallationException(
+                'Schema inspection failed (columns).',
+                0,
+                $exception
+            );
+        }
+        if (is_object($result) && isset($result->rows) && is_array($result->rows)) {
+            foreach ($result->rows as $row) {
+                if (isset($row['Field'])) {
+                    $existing[(string) $row['Field']] = true;
+                }
+            }
+        }
+
+        return $existing;
+    }
+
+    /**
+     * @param string $table
+     * @return array<string, array{unique: bool, columns: array<int, string>}>
+     */
+    private function listIndexes($table)
+    {
+        $grouped = array();
+        try {
+            $result = $this->db->query('SHOW INDEX FROM `' . $table . '`');
+        } catch (Exception $exception) {
+            throw new MtUniCreditInstallationException(
+                'Schema inspection failed (indexes).',
+                0,
+                $exception
+            );
+        }
+        if (!is_object($result) || !isset($result->rows) || !is_array($result->rows)) {
+            return $grouped;
+        }
+        foreach ($result->rows as $row) {
+            $name = isset($row['Key_name']) ? (string) $row['Key_name'] : '';
+            if ($name === '') {
+                continue;
+            }
+            if (!isset($grouped[$name])) {
+                $grouped[$name] = array(
+                    'unique' => !isset($row['Non_unique']) || (int) $row['Non_unique'] === 0,
+                    'columns' => array(),
+                );
+            }
+            $seq = isset($row['Seq_in_index']) ? (int) $row['Seq_in_index'] : (count($grouped[$name]['columns']) + 1);
+            $col = isset($row['Column_name']) ? (string) $row['Column_name'] : '';
+            $grouped[$name]['columns'][$seq] = $col;
+            if (isset($row['Non_unique'])) {
+                $grouped[$name]['unique'] = (int) $row['Non_unique'] === 0;
+            }
+        }
+        foreach ($grouped as $name => $meta) {
+            ksort($meta['columns']);
+            $grouped[$name]['columns'] = array_values($meta['columns']);
+        }
+
+        return $grouped;
+    }
+
+    /**
+     * @param array<string, array{unique: bool, columns: array<int, string>}> $indexes
+     * @param array{name: string, unique: bool, columns: array<int, string>} $expected
+     * @return array{unique: bool, columns: array<int, string>}|null
+     */
+    private function findMatchingIndex(array $indexes, array $expected)
+    {
+        $name = (string) $expected['name'];
+        if (!isset($indexes[$name])) {
+            return null;
+        }
+        $actual = $indexes[$name];
+        if ((bool) $actual['unique'] !== (bool) $expected['unique']) {
+            return null;
+        }
+        if ($actual['columns'] !== array_values($expected['columns'])) {
+            return null;
+        }
+
+        return $actual;
+    }
+
+    /**
+     * @param string $table
+     * @param array<string, string> $columns
+     * @return void
+     */
+    private function completeTableColumns($table, array $columns)
+    {
+        $existing = $this->listColumnNames($table);
+        foreach ($columns as $name => $definition) {
+            if (isset($existing[$name])) {
+                continue;
+            }
+            $sql = 'ALTER TABLE `' . $table . '` ADD COLUMN `' . $name . '` ' . $definition;
+            try {
+                $this->db->query($sql);
+            } catch (Exception $exception) {
+                $after = $this->listColumnNames($table);
+                if (isset($after[$name])) {
+                    continue;
+                }
+                throw new MtUniCreditInstallationException(
+                    'Required schema column could not be added.',
+                    0,
+                    $exception
+                );
+            }
+            $after = $this->listColumnNames($table);
+            if (!isset($after[$name])) {
+                throw new MtUniCreditInstallationException(
+                    'Required schema column missing after ALTER.'
+                );
+            }
+        }
+    }
+
+    /**
+     * @param string $table
+     * @param array<int, array{name: string, unique: bool, columns: array<int, string>}> $indexes
+     * @return void
+     */
+    private function completeTableIndexes($table, array $indexes)
+    {
+        $existing = $this->listIndexes($table);
+        foreach ($indexes as $expected) {
+            $name = (string) $expected['name'];
+            if ($name === 'PRIMARY') {
+                if ($this->findMatchingIndex($existing, $expected) === null) {
+                    throw new MtUniCreditInstallationException(
+                        'Required PRIMARY KEY missing or mismatched.'
+                    );
+                }
+                continue;
+            }
+            if (isset($existing[$name])) {
+                if ($this->findMatchingIndex($existing, $expected) === null) {
+                    throw new MtUniCreditInstallationException(
+                        'Required index exists with wrong definition.'
+                    );
+                }
+                continue;
+            }
+            $cols = array();
+            foreach ($expected['columns'] as $col) {
+                $cols[] = '`' . $col . '`';
+            }
+            $type = !empty($expected['unique']) ? 'UNIQUE KEY' : 'KEY';
+            $sql = 'ALTER TABLE `' . $table . '` ADD ' . $type . ' `' . $name . '` (' . implode(', ', $cols) . ')';
+            try {
+                $this->db->query($sql);
+            } catch (Exception $exception) {
+                $after = $this->listIndexes($table);
+                if ($this->findMatchingIndex($after, $expected) !== null) {
+                    continue;
+                }
+                throw new MtUniCreditInstallationException(
+                    'Required schema index could not be added.',
+                    0,
+                    $exception
+                );
+            }
+            $after = $this->listIndexes($table);
+            if ($this->findMatchingIndex($after, $expected) === null) {
+                throw new MtUniCreditInstallationException(
+                    'Required schema index missing after ALTER.'
+                );
+            }
+        }
     }
 
     /**
@@ -96,7 +372,18 @@ final class MtUniCreditPersistenceSchema
         foreach (self::createAud012TableStatements($this->db->getPrefix()) as $sql) {
             try {
                 $this->db->query($sql);
-            } catch (Exception $ignored) {
+            } catch (Exception $exception) {
+                // CREATE IF NOT EXISTS race: accept only when table is present.
+                $prefix = $this->db->getPrefix();
+                $table = $prefix . MtUniCreditPersistenceTableNames::PROCESS2_MAIL_RECIPIENT;
+                if ($this->tableExists($table)) {
+                    continue;
+                }
+                throw new MtUniCreditInstallationException(
+                    'Persistence schema create failed.',
+                    0,
+                    $exception
+                );
             }
         }
     }
@@ -137,33 +424,65 @@ final class MtUniCreditPersistenceSchema
      */
     private function ensureAlterColumns(array $statements)
     {
-        $table = $this->db->getPrefix() . MtUniCreditPersistenceTableNames::FINANCING_ATTEMPT;
-        $existing = array();
-        try {
-            $result = $this->db->query('SHOW COLUMNS FROM `' . $table . '`');
-            if (is_object($result) && isset($result->rows) && is_array($result->rows)) {
-                foreach ($result->rows as $row) {
-                    if (isset($row['Field'])) {
-                        $existing[(string) $row['Field']] = true;
-                    }
-                }
-            }
-        } catch (Exception $exception) {
-            $existing = array();
-        }
-
         foreach ($statements as $sql) {
+            if (!preg_match('/ALTER TABLE `([^`]+)`/i', $sql, $tableMatch)) {
+                continue;
+            }
+            $table = $tableMatch[1];
             if (preg_match("/ADD COLUMN `([^`]+)`/", $sql, $match)) {
+                $existing = $this->listColumnNames($table);
                 if (isset($existing[$match[1]])) {
                     continue;
                 }
+                try {
+                    $this->db->query($sql);
+                } catch (Exception $exception) {
+                    $after = $this->listColumnNames($table);
+                    if (isset($after[$match[1]])) {
+                        continue;
+                    }
+                    throw new MtUniCreditInstallationException(
+                        'Required schema column could not be added.',
+                        0,
+                        $exception
+                    );
+                }
+                $after = $this->listColumnNames($table);
+                if (!isset($after[$match[1]])) {
+                    throw new MtUniCreditInstallationException(
+                        'Required schema column missing after ALTER.'
+                    );
+                }
+                continue;
             }
-            try {
-                $this->db->query($sql);
-            } catch (Exception $ignored) {
+            if (preg_match("/ADD (?:UNIQUE )?KEY `([^`]+)`/i", $sql, $match)) {
+                $indexes = $this->listIndexes($table);
+                if (isset($indexes[$match[1]])) {
+                    continue;
+                }
+                try {
+                    $this->db->query($sql);
+                } catch (Exception $exception) {
+                    $after = $this->listIndexes($table);
+                    if (isset($after[$match[1]])) {
+                        continue;
+                    }
+                    throw new MtUniCreditInstallationException(
+                        'Required schema index could not be added.',
+                        0,
+                        $exception
+                    );
+                }
+                $after = $this->listIndexes($table);
+                if (!isset($after[$match[1]])) {
+                    throw new MtUniCreditInstallationException(
+                        'Required schema index missing after ALTER.'
+                    );
+                }
             }
         }
     }
+
 
     /**
      * @return void
