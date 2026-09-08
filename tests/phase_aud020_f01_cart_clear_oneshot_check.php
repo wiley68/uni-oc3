@@ -130,13 +130,39 @@ final class MtucAud020F01ProbeCart
 }
 
 /**
+ * Canonical CartContext matching Phase9 cartStorefrontInput default lines.
+ *
+ * @param float $total
+ * @return MtUniCreditCartContext
+ */
+function mtucAud020F01_sameCartContext($total = 500.0)
+{
+    return new MtUniCreditCartContext(
+        array(
+            new MtUniCreditCartLine(
+                new MtUniCreditProductContext(42, array(7), 500.0),
+                0,
+                1,
+                500.0
+            ),
+        ),
+        (float) $total
+    );
+}
+
+/**
  * @param array<string, mixed> $stack
  * @param int $orderId
+ * @param MtUniCreditCartContext|null $cart
  * @return array<string, mixed>
  */
-function mtucAud020F01_cartInput(array $stack, $orderId)
+function mtucAud020F01_cartInput(array $stack, $orderId, $cart = null)
 {
-    return Phase9TestHarness::cartStorefrontInput($stack, $orderId);
+    if (!$cart instanceof MtUniCreditCartContext) {
+        $cart = mtucAud020F01_sameCartContext();
+    }
+
+    return Phase9TestHarness::cartStorefrontInput($stack, $orderId, $cart);
 }
 
 /**
@@ -265,13 +291,39 @@ mtucAud020F01_assert($probeP1->clearCalls === 1, 'E applied replay: clear count 
 
 // ---------------------------------------------------------------------------
 // B. identical fresh cart after applied — MUST remain populated
+// Explicit equal canonical Cart fingerprint via production builder (R2).
 // ---------------------------------------------------------------------------
+$attemptCartFp = isset($inputP1['cart_fingerprint']) ? (string) $inputP1['cart_fingerprint'] : '';
+mtucAud020F01_assert($attemptCartFp !== '', 'B: attempt A cart_fingerprint captured from harness input');
+$freshCartContext = mtucAud020F01_sameCartContext(500.0);
+$freshCartFp = MtUniCreditStorefrontOperationIdentity::cartFingerprintFromContext(
+    $freshCartContext,
+    'BGN'
+);
+mtucAud020F01_assert(
+    hash_equals($attemptCartFp, $freshCartFp),
+    'B: old_attempt_fingerprint === fresh_cart_fingerprint (production builder)'
+);
+$freshInput = mtucAud020F01_cartInput($stackP1, 220198, $freshCartContext);
+mtucAud020F01_assert(
+    hash_equals($attemptCartFp, (string) $freshInput['cart_fingerprint']),
+    'B: rebuilt cartStorefrontInput fingerprint still equals attempt A'
+);
 $probeFresh = new MtucAud020F01ProbeCart(4);
 mtucAud020F01_assert($probeFresh->count === 4, 'B: fresh cart populated');
 $clearedFresh = mtucAud020F01_clearOnce($stackP1, $replayP1, $probeFresh);
-mtucAud020F01_assert($clearedFresh === false, 'B identical-fresh replay: clear skipped');
-mtucAud020F01_assert($probeFresh->count === 4, 'B identical-fresh replay: cart remains populated');
-mtucAud020F01_assert($probeFresh->clearCalls === 0, 'B identical-fresh replay: clear count unchanged');
+mtucAud020F01_assert($clearedFresh === false, 'B equal-fingerprint fresh replay: clear skipped');
+mtucAud020F01_assert($probeFresh->count === 4, 'B equal-fingerprint fresh replay: cart remains populated');
+mtucAud020F01_assert($probeFresh->clearCalls === 0, 'B equal-fingerprint fresh replay: clear count unchanged');
+mtucAud020F01_assert(
+    Phase7TestHarness::countOrderPosts($transportP1) === 1,
+    'B equal-fingerprint replay: CP new = 0'
+);
+mtucAud020F01_assert(
+    count($stackP1['smartUcfProbe']->calls) === 1,
+    'B equal-fingerprint replay: Smart new = 0'
+);
+mtucAud020F01_assert(!empty($replayP1['local_replay']), 'B equal-fingerprint replay: native new = 0 (local_replay)');
 mtucAud020F01_assert(
     mtucAud020F01_attemptId($resultP1) === mtucAud020F01_attemptId($replayP1)
         && mtucAud020F01_attemptId($resultP1) > 0,
@@ -311,26 +363,69 @@ $clearedLost2 = mtucAud020F01_clearOnce($stackLost, $retryLost, $probeLost);
 mtucAud020F01_assert($clearedLost2 === false && $probeLost->clearCalls === 1, 'lost: second retry no second clear');
 
 // ---------------------------------------------------------------------------
-// C. Crash state applying — never clear again
+// C1. Crash-before-clear: applying + still-populated cart — never clear again
 // ---------------------------------------------------------------------------
 $transportCrash = new Phase4FakeCpHttpTransport();
 Phase9TestHarness::enqueueCpCreateSuccess($transportCrash);
 $stackCrash = Phase9TestHarness::stack($transportCrash);
 $resultCrash = $stackCrash['storefront']->submit(mtucAud020F01_cartInput($stackCrash, 220105));
-mtucAud020F01_assert(!empty($resultCrash['success']), 'C crash: terminal success');
+mtucAud020F01_assert(!empty($resultCrash['success']), 'C1 crash-before: terminal success');
 $attemptCrash = mtucAud020F01_attemptId($resultCrash);
 $authCrash = new MtUniCreditCartClearAuthorizationRepository($stackCrash['db']);
 mtucAud020F01_assert(
     $authCrash->forceState($attemptCrash, MtUniCreditCartClearStates::APPLYING),
-    'C crash: force applying'
+    'C1 crash-before: force applying'
 );
 $probeCrash = new MtucAud020F01ProbeCart(6);
 $clearedCrash = mtucAud020F01_clearOnce($stackCrash, $resultCrash, $probeCrash);
-mtucAud020F01_assert($clearedCrash === false, 'C applying: clear skipped');
-mtucAud020F01_assert($probeCrash->count === 6 && $probeCrash->clearCalls === 0, 'C applying: cart preserved');
+mtucAud020F01_assert($clearedCrash === false, 'C1 crash-before: clear skipped');
+mtucAud020F01_assert($probeCrash->count === 6 && $probeCrash->clearCalls === 0, 'C1 crash-before: cart preserved');
 mtucAud020F01_assert(
     mtucAud020F01_clearState($stackCrash, $attemptCrash) === MtUniCreditCartClearStates::APPLYING,
-    'C applying: state remains applying'
+    'C1 crash-before: state remains applying'
+);
+
+// ---------------------------------------------------------------------------
+// C2. Crash-after-clear: applying + original cart already empty, then new cart
+// ---------------------------------------------------------------------------
+$transportCrashAfter = new Phase4FakeCpHttpTransport();
+Phase9TestHarness::enqueueCpCreateSuccess($transportCrashAfter);
+$stackCrashAfter = Phase9TestHarness::stack($transportCrashAfter);
+$resultCrashAfter = $stackCrashAfter['storefront']->submit(
+    mtucAud020F01_cartInput($stackCrashAfter, 220108)
+);
+mtucAud020F01_assert(!empty($resultCrashAfter['success']), 'C2 crash-after: terminal success');
+$attemptCrashAfter = mtucAud020F01_attemptId($resultCrashAfter);
+$authCrashAfter = new MtUniCreditCartClearAuthorizationRepository($stackCrashAfter['db']);
+mtucAud020F01_assert(
+    $authCrashAfter->claimApplying($attemptCrashAfter) === true,
+    'C2 crash-after: atomic claim won (not_applied → applying)'
+);
+$probeOriginal = new MtucAud020F01ProbeCart(2);
+$probeOriginal->clear();
+mtucAud020F01_assert(
+    $probeOriginal->count === 0 && $probeOriginal->clearCalls === 1,
+    'C2 crash-after: original cart already empty (clear happened; applied not persisted)'
+);
+mtucAud020F01_assert(
+    mtucAud020F01_clearState($stackCrashAfter, $attemptCrashAfter) === MtUniCreditCartClearStates::APPLYING,
+    'C2 crash-after: durable state stuck applying'
+);
+$probeNewAfterCrash = new MtucAud020F01ProbeCart(7);
+mtucAud020F01_assert($probeNewAfterCrash->count === 7, 'C2 crash-after: later/new cart populated');
+$clearedCrashAfter = mtucAud020F01_clearOnce(
+    $stackCrashAfter,
+    $resultCrashAfter,
+    $probeNewAfterCrash
+);
+mtucAud020F01_assert($clearedCrashAfter === false, 'C2 crash-after: clear authorization denied');
+mtucAud020F01_assert(
+    $probeNewAfterCrash->count === 7 && $probeNewAfterCrash->clearCalls === 0,
+    'C2 crash-after: fresh populated cart preserved (0 additional clears)'
+);
+mtucAud020F01_assert(
+    mtucAud020F01_clearState($stackCrashAfter, $attemptCrashAfter) === MtUniCreditCartClearStates::APPLYING,
+    'C2 crash-after: state remains applying'
 );
 
 // ---------------------------------------------------------------------------
@@ -428,32 +523,44 @@ mtucAud020F01_assert($clearedFail === false && $probeFail->count === 3, 'failure
 // ---------------------------------------------------------------------------
 // Mutation-sensitivity matrix (all must be YES)
 // ---------------------------------------------------------------------------
+$focusedSrc = (string) file_get_contents(__FILE__);
 $mutation = array(
-    '1 durable state not fingerprint key' => (
+    '1 attempt authority not replaced with fingerprint' => (
         strpos($navSrc, 'request_fingerprint') === false
+        && strpos($navSrc, 'cartFingerprint') === false
         && strpos($authSrc, 'cart_clear_state') !== false
         && strpos($navSrc, 'claimApplying') !== false
     ),
-    '2 applying must not clear again' => (
+    '2 applying must not claim/clear again' => (
         strpos($authSrc, 'MtUniCreditCartClearStates::NOT_APPLIED') !== false
         && strpos($navSrc, 'claimApplying') !== false
         && strpos($navSrc, 'if (!$auth->claimApplying') !== false
     ),
-    '3 applied must not clear again' => (
+    '3 applied must not claim/clear again' => (
         strpos($authSrc, 'MtUniCreditCartClearStates::NOT_APPLIED') !== false
         && strpos($authSrc, 'MtUniCreditCartClearStates::APPLIED') !== false
         && strpos($navSrc, 'claimApplying') !== false
     ),
-    '4 atomic claim present' => (
+    '4 conditional atomic claim present' => (
         strpos($authSrc, 'AND `cart_clear_state`') !== false
         && strpos($authSrc, 'countAffected() === 1') !== false
     ),
-    '5 first valid P1 clears' => strpos($navSrc, 'clearCartAfterSuccessfulHandoffOnce') !== false,
-    '6 first valid P2 clears' => strpos($navSrc, 'isSuccessfulBankHandoff') !== false,
-    '7 failure path does not clear' => strpos($navSrc, 'isSuccessfulBankHandoff') !== false,
-    '8 no isset cart gate' => (
+    '5 concurrent second claim loses' => (
+        strpos($focusedSrc, 'F concurrent: second claim loses') !== false
+        && strpos($authSrc, 'countAffected() === 1') !== false
+    ),
+    '6 first valid P1 clears' => strpos($navSrc, 'clearCartAfterSuccessfulHandoffOnce') !== false,
+    '7 first valid P2 clears' => strpos($navSrc, 'isSuccessfulBankHandoff') !== false,
+    '8 failure path does not clear' => strpos($navSrc, 'isSuccessfulBankHandoff') !== false,
+    '9 no isset cart gate' => (
         strpos($cartCtrl, 'isset($this->cart)') === false
         && preg_match('/\\$this->cart\\s*\\)/s', $cartCtrl) === 1
+    ),
+    '10 equal-fingerprint fresh cart replay blocked' => (
+        strpos($focusedSrc, 'old_attempt_fingerprint === fresh_cart_fingerprint') !== false
+        && strpos($focusedSrc, 'equal-fingerprint fresh replay: clear skipped') !== false
+        && strpos($navSrc, 'claimApplying') !== false
+        && strpos($navSrc, 'cartFingerprint') === false
     ),
 );
 
