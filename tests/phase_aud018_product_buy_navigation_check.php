@@ -388,6 +388,47 @@ mtucAud018_assert(
     'F02 Product Buy stash not unrelated'
 );
 
+// Residual F02: Product Buy exact-or-slash boundary (no sibling prefixes).
+$productBuyPositives = array(
+    'extension/mt_uni_credit/product',
+    'extension/mt_uni_credit/product/widget',
+    'extension/mt_uni_credit/product_buy',
+    'extension/mt_uni_credit/product_buy/applyPaymentPreselect',
+    'extension/mt_uni_credit/product_buy/onStorefrontNavigation',
+);
+foreach ($productBuyPositives as $route) {
+    mtucAud018_assert(
+        MtUniCreditStorefrontRouteResolver::isProductBuyRoute($route),
+        'F02 Product Buy boundary PRESERVE: ' . $route
+    );
+    mtucAud018_assert(
+        !MtUniCreditStorefrontRouteResolver::isUnrelatedStorefrontRoute($route),
+        'F02 Product Buy boundary not unrelated: ' . $route
+    );
+}
+
+$productBuySiblings = array(
+    'extension/mt_uni_credit/product_evil',
+    'extension/mt_uni_credit/product123',
+    'extension/mt_uni_credit/product_buy_evil',
+    'extension/mt_uni_credit/product_buy2',
+);
+foreach ($productBuySiblings as $route) {
+    mtucAud018_assert(
+        !MtUniCreditStorefrontRouteResolver::isProductBuyRoute($route),
+        'F02 Product Buy sibling not Product Buy: ' . $route
+    );
+    mtucAud018_assert(
+        MtUniCreditStorefrontRouteResolver::isUnrelatedStorefrontRoute($route),
+        'F02 Product Buy sibling CLEAR class: ' . $route
+    );
+}
+mtucAud018_assert(
+    strpos($routeSrc, "strpos(\$route, 'extension/mt_uni_credit/product') === 0") === false
+        && strpos($routeSrc, "strpos(\$route, 'extension/mt_uni_credit/product_buy') === 0") === false,
+    'F02 residual static: no bare Product Buy prefix match'
+);
+
 // Product page: active cleared, pending preserved
 $sessionProd = array();
 $navProd = MtUniCreditProductBuyPreference::save($sessionProd, mtucAud018_saveFields());

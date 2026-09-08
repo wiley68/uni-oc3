@@ -93,6 +93,7 @@ final class MtUniCreditStorefrontRouteResolver
 
     /**
      * Product Buy stash / product widget endpoints.
+     * Exact base or base + "/" sub-action only (no sibling prefixes).
      *
      * @param mixed $route
      * @return bool
@@ -103,11 +104,9 @@ final class MtUniCreditStorefrontRouteResolver
         if ($route === '') {
             return false;
         }
-        if (strpos($route, 'extension/mt_uni_credit/product') === 0) {
-            return true;
-        }
 
-        return strpos($route, 'extension/mt_uni_credit/product_buy') === 0;
+        return self::matchesRouteBase($route, 'extension/mt_uni_credit/product')
+            || self::matchesRouteBase($route, 'extension/mt_uni_credit/product_buy');
     }
 
     /**
