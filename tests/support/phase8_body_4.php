@@ -19,19 +19,22 @@ mtuc8_assert(strpos($installXml, 'mt_uni_credit:cart') !== false, 'OCMOD cart ma
 mtuc8_assert(strpos($installXml, '$data[\'products\'] = array();') !== false, 'OCMOD product controller anchor');
 mtuc8_assert(strpos($installXml, '{{ content_bottom }}</div>') !== false, 'OCMOD cart template anchor');
 mtuc8_assert(
-    strpos($installXml, 'catalog/view/theme/*/template/product/product.twig" error="abort"') !== false,
-    'OCMOD product twig file uses error=abort'
+    preg_match(
+        '/product\/product\.twig">\s*<operation\s+error="abort">/',
+        $installXml
+    ) === 1,
+    'OCMOD product twig operation uses error=abort'
 );
 mtuc8_assert(
     preg_match(
-        '/product\/product\.twig"\s+error="abort">[\s\S]*?<search><!\[CDATA\[\s*\{% if minimum > 1 %\}\s*\]\]><\/search>/',
+        '/product\/product\.twig">\s*<operation\s+error="abort">[\s\S]*?<search><!\[CDATA\[\s*\{% if minimum > 1 %\}\s*\]\]><\/search>/',
         $installXml
     ) === 1,
     'OCMOD product search is exactly {% if minimum > 1 %}'
 );
 mtuc8_assert(
     preg_match(
-        '/product\/product\.twig"\s+error="abort">[\s\S]*?<add position="before">/',
+        '/product\/product\.twig">\s*<operation\s+error="abort">[\s\S]*?<add position="before">/',
         $installXml
     ) === 1,
     'OCMOD product add position is before'
@@ -42,8 +45,11 @@ mtuc8_assert(
     'OCMOD previous brittle multi-line product anchor is gone'
 );
 mtuc8_assert(
-    strpos($installXml, 'checkout/cart.twig" error="skip"') !== false,
-    'OCMOD cart theme still uses error=skip'
+    preg_match(
+        '/checkout\/cart\.twig">\s*<operation\s+error="skip">/',
+        $installXml
+    ) === 1,
+    'OCMOD cart theme operation uses error=skip'
 );
 mtuc8_assert(!preg_match('/<search[^>]*>[^<]*\\.\\*/', $installXml), 'OCMOD no broad .* regex search');
 

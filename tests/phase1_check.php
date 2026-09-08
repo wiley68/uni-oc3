@@ -80,8 +80,15 @@ mtuc1_assert(strpos($installXmlText, '$data[\'products\'] = array();') !== false
 mtuc1_assert(strpos($installXmlText, '{{ content_bottom }}</div>') !== false, 'install.xml cart template anchor');
 mtuc1_assert(strpos($installXmlText, 'error="skip"') !== false, 'install.xml cart theme file uses error=skip');
 mtuc1_assert(
-    strpos($installXmlText, 'catalog/view/theme/*/template/product/product.twig" error="abort"') !== false,
-    'install.xml product theme file uses frozen error=abort'
+    preg_match(
+        '/product\/product\.twig">\s*<operation\s+error="abort">/',
+        $installXmlText
+    ) === 1,
+    'install.xml product theme operation uses frozen error=abort'
+);
+mtuc1_assert(
+    !preg_match('/<file\b[^>]*\berror\s*=/', $installXmlText),
+    'install.xml has no file-level error attributes'
 );
 mtuc1_assert(!preg_match('/<search[^>]*>[^<]*\\.\\*/', $installXmlText), 'install.xml has no broad .* regex in search');
 

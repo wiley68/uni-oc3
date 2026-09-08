@@ -19,11 +19,11 @@
 
     <!--
       Product template: frozen anchor `{% if minimum > 1 %}` (before).
-      Product injection is mandatory → error="abort" (do not silently skip).
+      Product injection is mandatory → error="abort" on <operation> (OC3 reads policy here).
       Widget may sit inside #form-product; JS moves the dialog to document.body.
     -->
-    <file path="catalog/view/theme/*/template/product/product.twig" error="abort">
-        <operation>
+    <file path="catalog/view/theme/*/template/product/product.twig">
+        <operation error="abort">
             <search><![CDATA[
 {% if minimum > 1 %}
         ]]></search>
@@ -46,9 +46,9 @@
         </operation>
     </file>
 
-    <!-- Cart template -->
-    <file path="catalog/view/theme/*/template/checkout/cart.twig" error="skip">
-        <operation>
+    <!-- Cart template: error="skip" on <operation> (OC3-supported failure policy). -->
+    <file path="catalog/view/theme/*/template/checkout/cart.twig">
+        <operation error="skip">
             <search><![CDATA[{{ content_bottom }}</div>]]></search>
             <add position="before"><![CDATA[
       <!-- mt_uni_credit:cart -->
@@ -61,9 +61,10 @@
     <!--
       AUD-018 F01: propagate Product Buy navigation token (mt_uni_nav) on Checkout AJAX.
       Token is tab-scoped via sessionStorage; does not create preferences by itself.
+      error="skip" on <operation> so a missing theme anchor does not abort later files.
     -->
-    <file path="catalog/view/theme/*/template/checkout/checkout.twig" error="skip">
-        <operation>
+    <file path="catalog/view/theme/*/template/checkout/checkout.twig">
+        <operation error="skip">
             <search><![CDATA[{{ header }}]]></search>
             <add position="after"><![CDATA[
 <script type="text/javascript"><!--
@@ -127,16 +128,17 @@
     <!--
       Product Buy → Checkout: native payment_method preselect when Buy preference is valid.
       Thin OCMOD → module controller (OCMOD-001). Session + $data['code'] stay in sync.
+      Both operations use error="skip" so a miss on preselect still attempts cleanup (AUD-022-F02).
     -->
     <file path="catalog/controller/checkout/payment_method.php">
-        <operation>
+        <operation error="skip">
             <search><![CDATA[$this->session->data['payment_methods'] = $method_data;]]></search>
             <add position="after"><![CDATA[
 			// mt_uni_credit:product_buy_payment_preselect
 			$this->load->controller('extension/mt_uni_credit/product_buy/applyPaymentPreselect');
             ]]></add>
         </operation>
-        <operation>
+        <operation error="skip">
             <search><![CDATA[$this->session->data['payment_method'] = $this->session->data['payment_methods'][$this->request->post['payment_method']];]]></search>
             <add position="after"><![CDATA[
 			// mt_uni_credit:product_buy_payment_clear
