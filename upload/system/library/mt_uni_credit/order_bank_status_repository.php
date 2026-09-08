@@ -122,6 +122,12 @@ final class MtUniCreditOrderBankStatusRepository
         }
 
         $allowedFrom = MtUniCreditBankStatusTransitionPolicy::allowedFromStatusIds($statusId, $source);
+        // Policy already ALLOWed ($currentId → $statusId). Named-only predecessor lists omit
+        // arbitrary numeric externals (e.g. "42"); include the exact observed predecessor so
+        // CAS can apply without enumerating every numeric code (AUD-015 F01-R1).
+        if ($currentId !== '' && !in_array($currentId, $allowedFrom, true)) {
+            $allowedFrom[] = $currentId;
+        }
         if ($allowedFrom === array()) {
             return $this->resultPayload($orderReference, $orderId, $existing, false);
         }
