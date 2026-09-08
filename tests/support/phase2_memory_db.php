@@ -1434,6 +1434,9 @@ final class Phase2MemoryDb
             'native_finalize_applied_at' => null,
             'native_finalize_target_status' => null,
             'native_finalize_outcome' => null,
+            'cart_clear_state' => MtUniCreditCartClearStates::NOT_APPLIED,
+            'cart_clear_claimed_at' => null,
+            'cart_clear_applied_at' => null,
             'created_at' => (string) $fields['created_at'],
             'updated_at' => (string) $fields['updated_at'],
         );
@@ -1551,6 +1554,16 @@ final class Phase2MemoryDb
             }
         }
 
+        // AUD-020: Cart clear claim / applied predicates (not_applied → applying → applied).
+        if (preg_match("/AND `cart_clear_state` = '([^']+)'/", $sql, $ccStateMatch)) {
+            $currentCc = (string) (isset($row['cart_clear_state'])
+                ? $row['cart_clear_state']
+                : MtUniCreditCartClearStates::NOT_APPLIED);
+            if ($currentCc !== $ccStateMatch[1]) {
+                return $this->emptyResult();
+            }
+        }
+
         if (
             strpos($sql, "`smartucf_state` = '" . MtUniCreditSmartUcfLifecycleStates::NOT_STARTED . "'") !== false
             || strpos($sql, 'smartucf_retryable` = 1') !== false
@@ -1623,6 +1636,9 @@ final class Phase2MemoryDb
             'native_finalize_claimed_at',
             'native_finalize_applied_at',
             'native_finalize_outcome',
+            'cart_clear_state',
+            'cart_clear_claimed_at',
+            'cart_clear_applied_at',
         );
         foreach ($stringColumns as $column) {
             if (stripos($sql, '`' . $column . '` = NULL') !== false) {

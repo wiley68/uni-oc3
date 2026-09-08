@@ -328,7 +328,8 @@ class ControllerExtensionMtUniCreditCart extends Controller
                 $bankRedirect = !empty($payload['bank_redirect']);
             }
             $cartCleared = MtUniCreditFinancingTerminalNavigationSupport::clearCartAfterSuccessfulHandoffOnce(
-                $this->session->data,
+                MtUniCreditBootstrap::dbFromRegistry($this->db),
+                (int) $this->config->get('config_store_id'),
                 $result,
                 $this->cart
             );

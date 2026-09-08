@@ -51,6 +51,7 @@ final class MtUniCreditPersistenceSchema
         $this->ensureAud007F02Columns();
         $this->ensureAud012Columns();
         $this->ensureAud014Columns();
+        $this->ensureAud020Columns();
     }
 
     /**
@@ -107,6 +108,16 @@ final class MtUniCreditPersistenceSchema
     public function ensureAud014Columns()
     {
         $this->ensureAlterColumns(self::createAud014AlterStatements($this->db->getPrefix()));
+    }
+
+    /**
+     * AUD-020 Cart clear once-claim columns on financing_attempt.
+     *
+     * @return void
+     */
+    public function ensureAud020Columns()
+    {
+        $this->ensureAlterColumns(self::createAud020AlterStatements($this->db->getPrefix()));
     }
 
     /**
@@ -268,6 +279,24 @@ final class MtUniCreditPersistenceSchema
             "ALTER TABLE `{$financingAttempt}` ADD COLUMN `native_finalize_target_status` INT UNSIGNED NULL",
             "ALTER TABLE `{$financingAttempt}` ADD COLUMN `native_finalize_outcome` VARCHAR(64) NULL",
             "ALTER TABLE `{$financingAttempt}` ADD KEY `idx_mt_uni_credit_attempt_native_finalize` (`native_finalize_state`, `native_finalize_claimed_at`)",
+        );
+    }
+
+    /**
+     * Idempotent AUD-020 column upgrades for financing_attempt Cart clear once-claim.
+     *
+     * @param string $prefix
+     * @return array<int, string>
+     */
+    public static function createAud020AlterStatements($prefix)
+    {
+        $financingAttempt = $prefix . MtUniCreditPersistenceTableNames::FINANCING_ATTEMPT;
+
+        return array(
+            "ALTER TABLE `{$financingAttempt}` ADD COLUMN `cart_clear_state` VARCHAR(32) NOT NULL DEFAULT 'not_applied'",
+            "ALTER TABLE `{$financingAttempt}` ADD COLUMN `cart_clear_claimed_at` DATETIME NULL",
+            "ALTER TABLE `{$financingAttempt}` ADD COLUMN `cart_clear_applied_at` DATETIME NULL",
+            "ALTER TABLE `{$financingAttempt}` ADD KEY `idx_mt_uni_credit_attempt_cart_clear` (`cart_clear_state`, `cart_clear_claimed_at`)",
         );
     }
 
@@ -434,13 +463,17 @@ final class MtUniCreditPersistenceSchema
                 `smartucf_retryable` TINYINT(1) NOT NULL DEFAULT 0,
                 `smartucf_claimed_at` DATETIME NULL,
                 `smartucf_completed_at` DATETIME NULL,
+                `cart_clear_state` VARCHAR(32) NOT NULL DEFAULT 'not_applied',
+                `cart_clear_claimed_at` DATETIME NULL,
+                `cart_clear_applied_at` DATETIME NULL,
                 `created_at` DATETIME NOT NULL,
                 `updated_at` DATETIME NOT NULL,
                 PRIMARY KEY (`attempt_id`),
                 UNIQUE KEY `uniq_mt_uni_credit_store_order` (`store_id`, `order_id`),
                 KEY `idx_mt_uni_credit_attempt_operation` (`store_id`, `entry_point`, `operation_key_hash`, `state`),
                 KEY `idx_mt_uni_credit_attempt_state_updated` (`state`, `updated_at`),
-                KEY `idx_mt_uni_credit_attempt_smartucf_state` (`smartucf_state`, `updated_at`)
+                KEY `idx_mt_uni_credit_attempt_smartucf_state` (`smartucf_state`, `updated_at`),
+                KEY `idx_mt_uni_credit_attempt_cart_clear` (`cart_clear_state`, `cart_clear_claimed_at`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
         );
     }

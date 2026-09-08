@@ -122,10 +122,10 @@ mtuc115c2c_assert(
 );
 mtuc115c2c_assert(
     preg_match(
-        '/clearCartAfterSuccessfulHandoffOnce\\s*\\(\\s*\\$this->session->data\\s*,\\s*\\$result\\s*,\\s*\\$this->cart\\s*\\)/s',
+        '/clearCartAfterSuccessfulHandoffOnce\\s*\\(\\s*MtUniCreditBootstrap::dbFromRegistry\\(\\s*\\$this->db\\s*\\)\\s*,\\s*\\(int\\)\\s*\\$this->config->get\\(\\s*[\'"]config_store_id[\'"]\\s*\\)\\s*,\\s*\\$result\\s*,\\s*\\$this->cart\\s*\\)/s',
         $cartCtrl
     ) === 1,
-    'cart controller: passes session + $this->cart to one-shot clear'
+    'cart controller: passes durable db + store_id + $this->cart to one-shot clear'
 );
 mtuc115c2c_assert(
     strpos($productCtrl, 'clearCartAfterSuccessfulHandoff') === false

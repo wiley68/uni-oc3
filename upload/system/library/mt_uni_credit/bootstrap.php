@@ -136,6 +136,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'native_order_finalization_states.p
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'native_order_finalization_repository.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'native_order_finalization_applicator.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'native_order_status_support.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'cart_clear_states.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'cart_clear_authorization_repository.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'storefront_route_resolver.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'storefront_mobile_detector.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'homepage_advertising_gate.php';

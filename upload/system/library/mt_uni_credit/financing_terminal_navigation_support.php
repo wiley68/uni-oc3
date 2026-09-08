@@ -20,14 +20,6 @@ final class MtUniCreditFinancingTerminalNavigationSupport
     const UI_ERROR_MODAL = 'error_modal';
 
     /**
-     * Session map of Cart clear authorizations already consumed for a durable attempt.
-     * Keyed by attempt_id (preferred) or order_id fallback — never by cart fingerprint.
-     */
-    const SESSION_CART_CLEAR_APPLIED = 'mt_uni_credit_cart_clear_applied';
-
-    const CART_CLEAR_APPLIED_MAX = 32;
-
-    /**
      * Definitive remote_reject after CP create (frozen Phase 9 terminal bank_send_failed_*).
      *
      * @param array<string, mixed> $result Storefront/checkout submission result array
@@ -378,7 +370,7 @@ final class MtUniCreditFinancingTerminalNavigationSupport
 
     /**
      * Cart entry only: clear live OC cart after successful bank handoff.
-     * Idempotent for empty carts. Does not enforce one-shot authorization —
+     * Does not enforce durable one-shot authorization —
      * Cart controller must use clearCartAfterSuccessfulHandoffOnce().
      *
      * @param array<string, mixed> $result
@@ -399,74 +391,84 @@ final class MtUniCreditFinancingTerminalNavigationSupport
     }
 
     /**
-     * Cart one-shot clear: first successful handoff for a durable attempt may clear;
-     * later replays of the same attempt never clear again (including identical fresh carts).
+     * Cart durable one-shot clear (AUD-020-F01-R1).
      *
-     * Lost-response safe: if handoff succeeded but clear was not yet applied, retry clears once.
+     * Authority is financing_attempt.cart_clear_state (not session / fingerprint).
+     * Atomic claim: not_applied → applying before clear; applying → applied after.
      *
-     * @param array<string, mixed> $sessionData
+     * Safety: applying and applied never clear again — prefer possible uncleared
+     * original cart after rare crash over destructive clear of a new cart.
+     *
+     * Lost-response (no process crash): first request claims + clears + applied;
+     * replay sees applied and skips clear.
+     *
+     * @param MtUniCreditDbAdapter $db
+     * @param int $storeId
      * @param array<string, mixed> $result
      * @param object|null $cart
      * @return bool True when clear() was invoked this call
      */
-    public static function clearCartAfterSuccessfulHandoffOnce(array &$sessionData, array $result, $cart)
-    {
+    public static function clearCartAfterSuccessfulHandoffOnce(
+        MtUniCreditDbAdapter $db,
+        $storeId,
+        array $result,
+        $cart
+    ) {
         if (!self::isSuccessfulBankHandoff($result)) {
             return false;
         }
-
-        $key = self::cartClearAuthorizationKey($result);
-        if ($key === '') {
+        if (!is_object($cart) || !method_exists($cart, 'clear')) {
             return false;
         }
 
-        if (
-            !isset($sessionData[self::SESSION_CART_CLEAR_APPLIED])
-            || !is_array($sessionData[self::SESSION_CART_CLEAR_APPLIED])
-        ) {
-            $sessionData[self::SESSION_CART_CLEAR_APPLIED] = array();
-        }
-
-        if (!empty($sessionData[self::SESSION_CART_CLEAR_APPLIED][$key])) {
+        $attemptId = self::resolveCartClearAttemptId($db, $storeId, $result);
+        if ($attemptId <= 0) {
             return false;
         }
 
-        if (!self::clearCartAfterSuccessfulHandoff($result, $cart)) {
+        $auth = new MtUniCreditCartClearAuthorizationRepository($db);
+        if (!$auth->claimApplying($attemptId)) {
+            // applying / applied / missing row: never re-authorize destructive clear
             return false;
         }
 
-        $sessionData[self::SESSION_CART_CLEAR_APPLIED][$key] = time();
-        if (count($sessionData[self::SESSION_CART_CLEAR_APPLIED]) > self::CART_CLEAR_APPLIED_MAX) {
-            $sessionData[self::SESSION_CART_CLEAR_APPLIED] = array_slice(
-                $sessionData[self::SESSION_CART_CLEAR_APPLIED],
-                -self::CART_CLEAR_APPLIED_MAX,
-                null,
-                true
-            );
-        }
+        $cart->clear();
+        $auth->markApplied($attemptId);
 
         return true;
     }
 
     /**
+     * Resolve durable attempt identity for Cart clear authorization.
+     * Prefer embedded attempt_id; otherwise load by store_id + order_id.
+     *
+     * @param MtUniCreditDbAdapter $db
+     * @param int $storeId
      * @param array<string, mixed> $result
-     * @return string Empty when result has no durable attempt/order identity
+     * @return int
      */
-    public static function cartClearAuthorizationKey(array $result)
+    public static function resolveCartClearAttemptId(MtUniCreditDbAdapter $db, $storeId, array $result)
     {
         $attemptId = 0;
         if (isset($result['attempt']) && is_array($result['attempt'])) {
             $attemptId = (int) (isset($result['attempt']['attempt_id']) ? $result['attempt']['attempt_id'] : 0);
         }
         if ($attemptId > 0) {
-            return 'a:' . $attemptId;
+            return $attemptId;
         }
 
         $orderId = (int) (isset($result['order_id']) ? $result['order_id'] : 0);
-        if ($orderId > 0) {
-            return 'o:' . $orderId;
+        $storeId = (int) $storeId;
+        if ($storeId <= 0 || $orderId <= 0) {
+            return 0;
         }
 
-        return '';
+        $repo = new MtUniCreditFinancingAttemptRepository($db);
+        $row = $repo->findByStoreOrder($storeId, $orderId);
+        if (!is_array($row)) {
+            return 0;
+        }
+
+        return (int) (isset($row['attempt_id']) ? $row['attempt_id'] : 0);
     }
 }

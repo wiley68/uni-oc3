@@ -165,10 +165,10 @@ $successCtrl = (string) @file_get_contents(
 
 mtuc115c2p1_assert(
     preg_match(
-        '/clearCartAfterSuccessfulHandoffOnce\\s*\\(\\s*\\$this->session->data\\s*,\\s*\\$result\\s*,\\s*\\$this->cart\\s*\\)/s',
+        '/clearCartAfterSuccessfulHandoffOnce\\s*\\(\\s*MtUniCreditBootstrap::dbFromRegistry\\(\\s*\\$this->db\\s*\\)\\s*,\\s*\\(int\\)\\s*\\$this->config->get\\(\\s*[\'"]config_store_id[\'"]\\s*\\)\\s*,\\s*\\$result\\s*,\\s*\\$this->cart\\s*\\)/s',
         $cartCtrl
     ) === 1,
-    'recovery: Cart keeps one-shot $this->cart clear fix'
+    'recovery: Cart keeps durable one-shot $this->cart clear fix'
 );
 // AUD-010 F04 / AUD-019 F05: Product/Cart no longer load localisation models;
 // country_id/zone_id are authoritative zeros (see phase_aud010_f04).
