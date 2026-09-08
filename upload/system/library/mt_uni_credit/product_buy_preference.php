@@ -3,19 +3,22 @@
 /**
  * Transient Product Buy handoff preference (checkout payment + scheme UX).
  *
- * Not a financing attempt. Scoped to one Buy→Checkout navigation:
- * - pending until first Checkout use (payment/scheme resolve)
- * - active while session checkout guard matches navigation_id
- * - ignored/cleared for later unrelated Checkout (guard released on leave)
+ * AUD-018: scoped to one Buy→Checkout navigation identity.
+ * - pending until Checkout request proves matching mt_uni_nav
+ * - active while request (or same-navigation AJAX) carries that navigation_id
+ * - session guard alone does not grant preference to an unrelated Checkout
  *
- * AJAX re-renders of the same Checkout keep the guard and therefore the preference.
+ * Final submit authority is unchanged (explicit scheme_key only).
  */
 final class MtUniCreditProductBuyPreference
 {
     const SESSION_KEY = 'mt_uni_credit_product_buy_preference';
 
-    /** Session guard binding preference.navigation_id to the active Buy Checkout visit. */
+    /** Session guard binding preference.navigation_id after proven activation. */
     const CHECKOUT_GUARD_KEY = 'mt_uni_credit_buy_checkout_guard';
+
+    /** Request query/post parameter carrying the Buy→Checkout navigation token. */
+    const NAV_PARAM = 'mt_uni_nav';
 
     const FLOW = 'product_buy';
 
@@ -28,7 +31,7 @@ final class MtUniCreditProductBuyPreference
     /**
      * @param array<string, mixed> $sessionData
      * @param array<string, mixed> $fields
-     * @return void
+     * @return string New navigation_id
      */
     public static function save(array &$sessionData, array $fields)
     {
@@ -48,6 +51,7 @@ final class MtUniCreditProductBuyPreference
         // New Buy replaces any previous navigation binding.
         unset($sessionData[self::CHECKOUT_GUARD_KEY]);
 
+        $navigationId = self::newNavigationId();
         $sessionData[self::SESSION_KEY] = array(
             'flow' => self::FLOW,
             'store_id' => (int) (isset($fields['store_id']) ? $fields['store_id'] : 0),
@@ -59,18 +63,71 @@ final class MtUniCreditProductBuyPreference
             'scheme_key' => $schemeKey,
             'prefer_payment' => true,
             'payment_code' => MtUniCreditConstants::EXTENSION_CODE,
-            'navigation_id' => self::newNavigationId(),
+            'navigation_id' => $navigationId,
             'state' => self::STATE_PENDING,
             'created_at' => time(),
         );
+
+        return $navigationId;
     }
 
     /**
+     * Extract navigation token from request get/post (association token only).
+     *
+     * @param object|null $request OpenCart request with ->get / ->post arrays
+     * @return string
+     */
+    public static function requestNavigationId($request)
+    {
+        if (!is_object($request)) {
+            return '';
+        }
+        $fromGet = '';
+        $fromPost = '';
+        if (isset($request->get) && is_array($request->get) && isset($request->get[self::NAV_PARAM])) {
+            $fromGet = trim((string) $request->get[self::NAV_PARAM]);
+        }
+        if (isset($request->post) && is_array($request->post) && isset($request->post[self::NAV_PARAM])) {
+            $fromPost = trim((string) $request->post[self::NAV_PARAM]);
+        }
+        if ($fromPost !== '') {
+            return $fromPost;
+        }
+
+        return $fromGet;
+    }
+
+    /**
+     * @param string $checkoutUrl Absolute or relative checkout URL
+     * @param string $navigationId
+     * @return string
+     */
+    public static function appendNavigationToCheckoutUrl($checkoutUrl, $navigationId)
+    {
+        $checkoutUrl = trim((string) $checkoutUrl);
+        $navigationId = trim((string) $navigationId);
+        if ($checkoutUrl === '' || $navigationId === '' || !preg_match('/^[a-f0-9]+$/i', $navigationId)) {
+            return $checkoutUrl;
+        }
+        $sep = (strpos($checkoutUrl, '?') === false) ? '?' : '&';
+
+        return $checkoutUrl . $sep . self::NAV_PARAM . '=' . rawurlencode($navigationId);
+    }
+
+    /**
+     * Load preference for a Checkout request context.
+     *
+     * AUD-018 F01: pending activates only when request navigation_id matches.
+     * Active is returned only when request navigation_id matches the stored identity.
+     * Missing/mismatched token → null (no session-wide inheritance). Active record
+     * is left intact so a parallel tab without the token cannot destroy Tab A.
+     *
      * @param array<string, mixed> $sessionData
      * @param int|null $storeId When set, store mismatch clears preference
+     * @param string|null $requestNavigationId From mt_uni_nav (null = treat as empty)
      * @return array<string, mixed>|null
      */
-    public static function load(array &$sessionData, $storeId = null)
+    public static function load(array &$sessionData, $storeId = null, $requestNavigationId = null)
     {
         if (!isset($sessionData[self::SESSION_KEY]) || !is_array($sessionData[self::SESSION_KEY])) {
             return null;
@@ -82,6 +139,7 @@ final class MtUniCreditProductBuyPreference
         $storedStoreId = (int) (isset($raw['store_id']) ? $raw['store_id'] : -1);
         $navigationId = trim((string) (isset($raw['navigation_id']) ? $raw['navigation_id'] : ''));
         $state = (string) (isset($raw['state']) ? $raw['state'] : '');
+        $requestNavigationId = trim((string) ($requestNavigationId === null ? '' : $requestNavigationId));
 
         if ($flow !== self::FLOW || $createdAt <= 0 || (time() - $createdAt) > self::TTL_SECONDS) {
             self::clear($sessionData);
@@ -102,6 +160,11 @@ final class MtUniCreditProductBuyPreference
             return null;
         }
 
+        // Token required — session guard alone is not authority for a new Checkout request.
+        if ($requestNavigationId === '' || !hash_equals($navigationId, $requestNavigationId)) {
+            return null;
+        }
+
         if ($state === self::STATE_PENDING) {
             $raw['state'] = self::STATE_ACTIVE;
             $sessionData[self::SESSION_KEY] = $raw;
@@ -110,22 +173,47 @@ final class MtUniCreditProductBuyPreference
             return $raw;
         }
 
-        // Active: only valid while the Buy Checkout guard still matches (same visit).
-        $guard = isset($sessionData[self::CHECKOUT_GUARD_KEY])
-            ? trim((string) $sessionData[self::CHECKOUT_GUARD_KEY])
-            : '';
-        if ($guard === '' || !hash_equals($navigationId, $guard)) {
-            self::clear($sessionData);
-
-            return null;
-        }
+        // Active + matching request token: keep guard aligned and return preference.
+        $sessionData[self::CHECKOUT_GUARD_KEY] = $navigationId;
 
         return $raw;
     }
 
     /**
+     * Competing Checkout entry without matching navigation token.
+     * Fail-closed: clear pending so it cannot activate later unexpectedly.
+     * Active is left intact (multi-tab isolation — Tab B must not destroy Tab A).
+     *
+     * @param array<string, mixed> $sessionData
+     * @param string $requestNavigationId
+     * @return void
+     */
+    public static function onCheckoutEntryWithoutMatchingNav(array &$sessionData, $requestNavigationId)
+    {
+        if (!isset($sessionData[self::SESSION_KEY]) || !is_array($sessionData[self::SESSION_KEY])) {
+            return;
+        }
+        $raw = $sessionData[self::SESSION_KEY];
+        $state = (string) (isset($raw['state']) ? $raw['state'] : '');
+        $navigationId = trim((string) (isset($raw['navigation_id']) ? $raw['navigation_id'] : ''));
+        $requestNavigationId = trim((string) $requestNavigationId);
+
+        if ($state === self::STATE_PENDING) {
+            if (
+                $navigationId === ''
+                || $requestNavigationId === ''
+                || !hash_equals($navigationId, $requestNavigationId)
+            ) {
+                self::clear($sessionData);
+            }
+
+            return;
+        }
+        // Active without matching token: do not clear (Scenario C).
+    }
+
+    /**
      * Release the Checkout visit guard without requiring a full preference clear.
-     * Next load() of an active preference will clear it (unrelated Checkout).
      *
      * @param array<string, mixed> $sessionData
      * @return void
@@ -162,6 +250,19 @@ final class MtUniCreditProductBuyPreference
     }
 
     /**
+     * Unrelated storefront navigation while a Buy preference exists.
+     * Active → clear. Pending → clear (abandoned handoff) except callers that
+     * preserve pending via clearIfActivated / route exceptions.
+     *
+     * @param array<string, mixed> $sessionData
+     * @return void
+     */
+    public static function clearOnUnrelatedStorefront(array &$sessionData)
+    {
+        self::clear($sessionData);
+    }
+
+    /**
      * @param array<string, mixed> $sessionData
      * @return void
      */
@@ -186,11 +287,16 @@ final class MtUniCreditProductBuyPreference
      * @param array<string, mixed> $sessionData
      * @param array<string, mixed> $paymentMethods
      * @param int $storeId
+     * @param string $requestNavigationId
      * @return bool
      */
-    public static function applyPaymentIfAvailable(array &$sessionData, array $paymentMethods, $storeId)
-    {
-        $preference = self::load($sessionData, (int) $storeId);
+    public static function applyPaymentIfAvailable(
+        array &$sessionData,
+        array $paymentMethods,
+        $storeId,
+        $requestNavigationId = ''
+    ) {
+        $preference = self::load($sessionData, (int) $storeId, $requestNavigationId);
         if ($preference === null || !self::shouldPreferPayment($preference)) {
             return false;
         }

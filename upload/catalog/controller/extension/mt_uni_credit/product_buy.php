@@ -33,10 +33,12 @@ class ControllerExtensionMtUniCreditProductBuy extends Controller
         }
 
         $storeId = (int) $this->config->get('config_store_id');
+        $navId = MtUniCreditProductBuyPreference::requestNavigationId($this->request);
         MtUniCreditProductBuyPreference::applyPaymentIfAvailable(
             $this->session->data,
             $this->session->data['payment_methods'],
-            $storeId
+            $storeId,
+            $navId
         );
     }
 
@@ -55,9 +57,70 @@ class ControllerExtensionMtUniCreditProductBuy extends Controller
     }
 
     /**
-     * Leaving Checkout via cart/home: drop Buy preference entirely so a later
-     * normal Checkout cannot reuse it. Safe for pending (Buy abandoned before Checkout)
-     * and active (left an in-progress Buy Checkout).
+     * Catalog controller before: Product Buy lifecycle route policy (AUD-018 F01/F02).
+     * Must return null so Loader does not replace the controller output.
+     *
+     * @param string $route
+     * @param mixed $data
+     * @return void
+     */
+    public function onStorefrontNavigation(&$route, &$data)
+    {
+        if (!isset($this->session->data) || !is_array($this->session->data)) {
+            return;
+        }
+
+        $current = MtUniCreditStorefrontRouteResolver::currentRoute($route);
+        $navId = MtUniCreditProductBuyPreference::requestNavigationId($this->request);
+
+        // Preserve Product Buy stash + cart/add handoff.
+        if (
+            MtUniCreditStorefrontRouteResolver::isProductBuyRoute($current)
+            || MtUniCreditStorefrontRouteResolver::isCartAddRoute($current)
+        ) {
+            return;
+        }
+
+        // Checkout entry: competing navigation without matching token clears pending only.
+        if (MtUniCreditStorefrontRouteResolver::isCheckoutEntryRoute($current)) {
+            MtUniCreditProductBuyPreference::onCheckoutEntryWithoutMatchingNav(
+                $this->session->data,
+                $navId
+            );
+
+            return;
+        }
+
+        // Other Checkout lifecycle / UniCredit checkout AJAX: preserve (token checked at load).
+        if (MtUniCreditStorefrontRouteResolver::isCheckoutLifecycleRoute($current)) {
+            return;
+        }
+
+        // Cart page / home: full clear.
+        if (
+            MtUniCreditStorefrontRouteResolver::isCartPageRoute($current)
+            || MtUniCreditStorefrontRouteResolver::isHomepageRoute($current)
+        ) {
+            MtUniCreditProductBuyPreference::clear($this->session->data);
+
+            return;
+        }
+
+        // Product page: clear active only (pending Buy stash may still live here).
+        if (MtUniCreditStorefrontRouteResolver::isProductPageRoute($current)) {
+            MtUniCreditProductBuyPreference::clearIfActivated($this->session->data);
+
+            return;
+        }
+
+        // Unrelated storefront (category/search/manufacturer/information/account/…).
+        if (MtUniCreditStorefrontRouteResolver::isUnrelatedStorefrontRoute($current)) {
+            MtUniCreditProductBuyPreference::clearOnUnrelatedStorefront($this->session->data);
+        }
+    }
+
+    /**
+     * @deprecated Prefer onStorefrontNavigation; retained for older event rows during upgrade.
      *
      * @param string $route
      * @param mixed $data
@@ -65,15 +128,11 @@ class ControllerExtensionMtUniCreditProductBuy extends Controller
      */
     public function releaseCheckoutGuard(&$route, &$data)
     {
-        if (!isset($this->session->data) || !is_array($this->session->data)) {
-            return;
-        }
-        MtUniCreditProductBuyPreference::clear($this->session->data);
+        $this->onStorefrontNavigation($route, $data);
     }
 
     /**
-     * Product page entry: keep pending Buy handoff (Купи stash lives here), but drop an
-     * already-activated Buy Checkout preference (customer left Checkout to browse).
+     * @deprecated Prefer onStorefrontNavigation; retained for older event rows during upgrade.
      *
      * @param string $route
      * @param mixed $data
@@ -81,9 +140,6 @@ class ControllerExtensionMtUniCreditProductBuy extends Controller
      */
     public function releaseActiveCheckoutGuard(&$route, &$data)
     {
-        if (!isset($this->session->data) || !is_array($this->session->data)) {
-            return;
-        }
-        MtUniCreditProductBuyPreference::clearIfActivated($this->session->data);
+        $this->onStorefrontNavigation($route, $data);
     }
 }

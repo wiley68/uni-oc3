@@ -472,9 +472,11 @@ function mtucAud002_paymentController(array $permissions, array $get = array())
 }
 
 /**
+ * @param array<string, mixed> $sessionData
+ * @param string $navigationId Optional mt_uni_nav for request context
  * @return ControllerExtensionMtUniCreditProductBuy
  */
-function mtucAud002_productBuyController(array &$sessionData)
+function mtucAud002_productBuyController(array &$sessionData, $navigationId = '')
 {
     require_once MTUC_PHASE0_ROOT . DIRECTORY_SEPARATOR . 'upload' . DIRECTORY_SEPARATOR . 'catalog'
         . DIRECTORY_SEPARATOR . 'controller' . DIRECTORY_SEPARATOR . 'extension' . DIRECTORY_SEPARATOR
@@ -485,6 +487,14 @@ function mtucAud002_productBuyController(array &$sessionData)
     $session->data = &$sessionData;
     $registry->set('session', $session);
     $registry->set('config', new Aud002ConfigFake(array('config_store_id' => 0)));
+    $request = new Aud002RequestBag();
+    $request->get = array();
+    $request->post = array();
+    $navigationId = trim((string) $navigationId);
+    if ($navigationId !== '') {
+        $request->get[MtUniCreditProductBuyPreference::NAV_PARAM] = $navigationId;
+    }
+    $registry->set('request', $request);
 
     return new ControllerExtensionMtUniCreditProductBuy($registry);
 }
@@ -680,7 +690,7 @@ $sessionA = array(
         'cod' => array('code' => 'cod', 'title' => 'COD'),
     ),
 );
-MtUniCreditProductBuyPreference::save($sessionA, array(
+$navA = MtUniCreditProductBuyPreference::save($sessionA, array(
     'store_id' => 0,
     'product_id' => 10,
     'scheme_type' => 'promo',
@@ -688,7 +698,7 @@ MtUniCreditProductBuyPreference::save($sessionA, array(
     'months' => 12,
     'filter_id' => 1,
 ));
-$buyA = mtucAud002_productBuyController($sessionA);
+$buyA = mtucAud002_productBuyController($sessionA, $navA);
 
 // Simulate Action::execute direct-route refusal (required params > 0 args).
 $refApply = new ReflectionMethod($buyA, 'applyPaymentPreselect');
@@ -779,7 +789,7 @@ mtucAud002_assert(!isset($sessionC['payment_method']), 'F-002-02: no preference 
 
 // Navigation / pending lifecycle still works via library (unchanged by route guard)
 $sessionD = array();
-MtUniCreditProductBuyPreference::save($sessionD, array(
+$navD = MtUniCreditProductBuyPreference::save($sessionD, array(
     'store_id' => 0,
     'product_id' => 12,
     'scheme_type' => 'std',
@@ -793,7 +803,7 @@ mtucAud002_assert(
         === MtUniCreditProductBuyPreference::STATE_PENDING,
     'F-002-02: navigation_id pending lifecycle preserved after save'
 );
-$loaded = MtUniCreditProductBuyPreference::load($sessionD, 0);
+$loaded = MtUniCreditProductBuyPreference::load($sessionD, 0, $navD);
 mtucAud002_assert(
     is_array($loaded)
         && $loaded['state'] === MtUniCreditProductBuyPreference::STATE_ACTIVE
@@ -803,7 +813,7 @@ mtucAud002_assert(
 
 $routeCart = 'checkout/cart';
 $dataCart = array();
-$buyD = mtucAud002_productBuyController($sessionD);
+$buyD = mtucAud002_productBuyController($sessionD, $navD);
 $buyD->releaseCheckoutGuard($routeCart, $dataCart);
 mtucAud002_assert(
     !isset($sessionD[MtUniCreditProductBuyPreference::SESSION_KEY]),

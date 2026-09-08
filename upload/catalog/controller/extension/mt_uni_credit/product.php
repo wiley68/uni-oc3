@@ -157,7 +157,7 @@ class ControllerExtensionMtUniCreditProduct extends Controller
             $storeId = (int) $this->config->get('config_store_id');
             $schemeKey = trim((string) $this->posted('scheme_key', ''));
             $parsed = MtUniCreditStorefrontCalculatorPresenter::parseSchemeKey($schemeKey);
-            MtUniCreditProductBuyPreference::save($this->session->data, array(
+            $navigationId = MtUniCreditProductBuyPreference::save($this->session->data, array(
                 'store_id' => $storeId,
                 'product_id' => (int) $this->posted('product_id', 0),
                 'scheme_type' => $parsed !== null ? $parsed['type'] : (string) $this->posted('scheme_type', ''),
@@ -167,9 +167,15 @@ class ControllerExtensionMtUniCreditProduct extends Controller
                 'scheme_key' => $schemeKey,
             ));
 
+            $checkoutUrl = MtUniCreditProductBuyPreference::appendNavigationToCheckoutUrl(
+                $this->url->link('checkout/checkout', '', true),
+                $navigationId
+            );
+
             MtUniCreditStorefrontRuntime::respondJson($this, array(
                 'success' => true,
-                'redirect' => $this->url->link('checkout/checkout', '', true),
+                'redirect' => $checkoutUrl,
+                'navigation_id' => $navigationId,
             ));
         } catch (Exception $exception) {
             MtUniCreditStorefrontRuntime::respondJson($this, $json);

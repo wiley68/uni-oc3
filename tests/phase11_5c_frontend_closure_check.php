@@ -157,7 +157,7 @@ $sel = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection($presen
 mtuc115cfe_assert($sel['key'] === 'promo|Z|24', 'ISSUE2: duplicate filter variants share one public key');
 
 // Buy preference overrides all buckets
-MtUniCreditProductBuyPreference::save($session, array(
+$navIssue2 = MtUniCreditProductBuyPreference::save($session, array(
     'store_id' => 0,
     'product_id' => 42,
     'scheme_type' => 'promo',
@@ -166,7 +166,7 @@ MtUniCreditProductBuyPreference::save($session, array(
     'filter_id' => 1,
     'scheme_key' => 'promo|Z|6',
 ));
-$sel = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection($presenterZero, $session, 0);
+$sel = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection($presenterZero, $session, 0, $navIssue2);
 mtuc115cfe_assert($sel['source'] === 'product_buy', 'ISSUE2: Buy preference source');
 mtuc115cfe_assert($sel['buy_matched'] === true, 'ISSUE2: Buy preference matched');
 mtuc115cfe_assert($sel['key'] === 'promo|Z|6', 'ISSUE2: Buy preference exact key overrides longest 0%');
@@ -179,7 +179,7 @@ mtuc115cfe_assert(
 // ISSUE 3 — payment preselect
 // ---------------------------------------------------------------------------
 $sessionBuy = array();
-MtUniCreditProductBuyPreference::save($sessionBuy, array(
+$navBuy = MtUniCreditProductBuyPreference::save($sessionBuy, array(
     'store_id' => 1,
     'product_id' => 7,
     'scheme_key' => 'standard|K|12',
@@ -196,7 +196,7 @@ $methods = array(
         'sort_order' => 5,
     ),
 );
-$applied = MtUniCreditProductBuyPreference::applyPaymentIfAvailable($sessionBuy, $methods, 1);
+$applied = MtUniCreditProductBuyPreference::applyPaymentIfAvailable($sessionBuy, $methods, 1, $navBuy);
 mtuc115cfe_assert($applied === true, 'ISSUE3: Buy preference applies payment');
 mtuc115cfe_assert(
     isset($sessionBuy['payment_method']['code'])
@@ -204,8 +204,8 @@ mtuc115cfe_assert(
     'ISSUE3: session.payment_method = mt_uni_credit'
 );
 
-// Same Checkout AJAX refresh — guard retained, preference still applies
-$appliedAgain = MtUniCreditProductBuyPreference::applyPaymentIfAvailable($sessionBuy, $methods, 1);
+// Same Checkout AJAX refresh — matching navigation token retains preference
+$appliedAgain = MtUniCreditProductBuyPreference::applyPaymentIfAvailable($sessionBuy, $methods, 1, $navBuy);
 mtuc115cfe_assert($appliedAgain === true, 'ISSUE3: same-Checkout refresh still applies payment');
 $selAgain = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection(
     array(
@@ -221,7 +221,8 @@ $selAgain = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection(
         ),
     ),
     $sessionBuy,
-    1
+    1,
+    $navBuy
 );
 mtuc115cfe_assert($selAgain['key'] === 'standard|K|12', 'ISSUE3: same-Checkout refresh keeps Buy scheme');
 
@@ -241,7 +242,7 @@ $sessionStale[MtUniCreditProductBuyPreference::SESSION_KEY] = array(
     'state' => MtUniCreditProductBuyPreference::STATE_PENDING,
     'created_at' => time() - MtUniCreditProductBuyPreference::TTL_SECONDS - 10,
 );
-$applied = MtUniCreditProductBuyPreference::applyPaymentIfAvailable($sessionStale, $methods, 1);
+$applied = MtUniCreditProductBuyPreference::applyPaymentIfAvailable($sessionStale, $methods, 1, 'deadbeef');
 mtuc115cfe_assert($applied === false, 'ISSUE3: stale Buy preference no forced payment');
 mtuc115cfe_assert(
     !isset($sessionStale[MtUniCreditProductBuyPreference::SESSION_KEY]),
@@ -259,7 +260,7 @@ mtuc115cfe_assert(
 // Preference consumption — subsequent normal Checkout ignores prior Buy
 // ---------------------------------------------------------------------------
 $sessionConsume = array();
-MtUniCreditProductBuyPreference::save($sessionConsume, array(
+$navConsume = MtUniCreditProductBuyPreference::save($sessionConsume, array(
     'store_id' => 0,
     'product_id' => 5,
     'scheme_type' => 'promo',
@@ -268,7 +269,7 @@ MtUniCreditProductBuyPreference::save($sessionConsume, array(
     'filter_id' => 1,
     'scheme_key' => 'promo|Z|5',
 ));
-// Simulate Buy Checkout use (activates + sets guard)
+// Simulate Buy Checkout use (activates with matching navigation token)
 $buySel = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection(
     array(
         'offers' => array(
@@ -285,12 +286,13 @@ $buySel = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection(
         ),
     ),
     $sessionConsume,
-    0
+    0,
+    $navConsume
 );
 mtuc115cfe_assert($buySel['key'] === 'promo|Z|5', 'CONSUME A: Buy Checkout keeps 5 months');
 mtuc115cfe_assert($buySel['source'] === 'product_buy', 'CONSUME A: Buy source');
 
-// Same-Checkout AJAX: still Buy
+// Same-Checkout AJAX: still Buy (matching token)
 $buySel2 = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection(
     array(
         'offers' => array(
@@ -305,7 +307,8 @@ $buySel2 = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection(
         ),
     ),
     $sessionConsume,
-    0
+    0,
+    $navConsume
 );
 mtuc115cfe_assert($buySel2['key'] === 'promo|Z|5', 'CONSUME B: AJAX refresh still 5 months');
 
@@ -322,9 +325,9 @@ $normalZero = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection(
 mtuc115cfe_assert($normalZero['source'] === 'checkout_default', 'CONSUME C: subsequent source checkout_default');
 mtuc115cfe_assert($normalZero['key'] === 'promo|Z|24', 'CONSUME C: subsequent 0% → 24 (old 5 ignored)');
 
-// Also: release guard alone then load must clear active preference
+// AUD-018: missing navigation token must not inherit Buy preference
 $sessionGuardOnly = array();
-MtUniCreditProductBuyPreference::save($sessionGuardOnly, array(
+$navGuard = MtUniCreditProductBuyPreference::save($sessionGuardOnly, array(
     'store_id' => 0,
     'product_id' => 5,
     'scheme_key' => 'promo|Z|5',
@@ -333,18 +336,18 @@ MtUniCreditProductBuyPreference::save($sessionGuardOnly, array(
     'months' => 5,
     'filter_id' => 1,
 ));
-MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection($presenterZero, $sessionGuardOnly, 0);
-MtUniCreditProductBuyPreference::releaseCheckoutGuard($sessionGuardOnly);
-$afterGuard = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection($presenterZero, $sessionGuardOnly, 0);
-mtuc115cfe_assert($afterGuard['key'] === 'promo|Z|24', 'CONSUME C2: active without guard → ignored, 24');
+MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection($presenterZero, $sessionGuardOnly, 0, $navGuard);
+$afterNoNav = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection($presenterZero, $sessionGuardOnly, 0, '');
+mtuc115cfe_assert($afterNoNav['key'] === 'promo|Z|24', 'CONSUME C2: Checkout without mt_uni_nav → default 24');
+mtuc115cfe_assert($afterNoNav['source'] === 'checkout_default', 'CONSUME C2: no Buy source without token');
 mtuc115cfe_assert(
-    !isset($sessionGuardOnly[MtUniCreditProductBuyPreference::SESSION_KEY]),
-    'CONSUME C2: active without guard cleared'
+    isset($sessionGuardOnly[MtUniCreditProductBuyPreference::SESSION_KEY]),
+    'CONSUME C2: missing token does not clear Tab A preference'
 );
 
 // Promo-only subsequent
 $sessionConsume2 = array();
-MtUniCreditProductBuyPreference::save($sessionConsume2, array(
+$navC2 = MtUniCreditProductBuyPreference::save($sessionConsume2, array(
     'store_id' => 0,
     'product_id' => 5,
     'scheme_key' => 'promo|P|5',
@@ -353,14 +356,14 @@ MtUniCreditProductBuyPreference::save($sessionConsume2, array(
     'months' => 5,
     'filter_id' => 1,
 ));
-MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection($presenterPromo, $sessionConsume2, 0);
+MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection($presenterPromo, $sessionConsume2, 0, $navC2);
 MtUniCreditProductBuyPreference::clear($sessionConsume2);
 $normalPromo = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection($presenterPromo, $sessionConsume2, 0);
 mtuc115cfe_assert($normalPromo['key'] === 'promo|P|24', 'CONSUME D: subsequent no 0% → longest promo 24');
 
 // No-promo subsequent → CP default
 $sessionConsume3 = array();
-MtUniCreditProductBuyPreference::save($sessionConsume3, array(
+$navC3 = MtUniCreditProductBuyPreference::save($sessionConsume3, array(
     'store_id' => 0,
     'product_id' => 5,
     'scheme_key' => 'standard|DEF|5',
@@ -382,14 +385,14 @@ $stdWithFive = array(
         'promo' => array('preferred_scheme_key' => '', 'schemes' => array()),
     ),
 );
-MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection($stdWithFive, $sessionConsume3, 0);
+MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection($stdWithFive, $sessionConsume3, 0, $navC3);
 MtUniCreditProductBuyPreference::clear($sessionConsume3);
 $normalStd = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection($presenterStd, $sessionConsume3, 0);
 mtuc115cfe_assert($normalStd['key'] === 'standard|DEF|12', 'CONSUME E: subsequent no promo → CP default');
 
 // Product page keeps pending; clears only activated
 $sessionPending = array();
-MtUniCreditProductBuyPreference::save($sessionPending, array(
+$navPending = MtUniCreditProductBuyPreference::save($sessionPending, array(
     'store_id' => 0,
     'product_id' => 9,
     'scheme_key' => 'promo|Z|5',
@@ -403,7 +406,7 @@ mtuc115cfe_assert(
     isset($sessionPending[MtUniCreditProductBuyPreference::SESSION_KEY]),
     'CONSUME: product page keeps pending Buy preference'
 );
-MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection($presenterZero, $sessionPending, 0);
+MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection($presenterZero, $sessionPending, 0, $navPending);
 MtUniCreditProductBuyPreference::clearIfActivated($sessionPending);
 mtuc115cfe_assert(
     !isset($sessionPending[MtUniCreditProductBuyPreference::SESSION_KEY]),
@@ -416,20 +419,17 @@ foreach ($defs as $def) {
     $codes[$def['code']] = $def['action'];
 }
 mtuc115cfe_assert(
-    isset($codes['mt_uni_credit_buy_guard_cart'])
-        && $codes['mt_uni_credit_buy_guard_cart'] === 'extension/mt_uni_credit/product_buy/releaseCheckoutGuard',
-    'CONSUME: cart guard event registered'
+    isset($codes['mt_uni_credit_buy_guard_storefront'])
+        && $codes['mt_uni_credit_buy_guard_storefront']
+        === 'extension/mt_uni_credit/product_buy/onStorefrontNavigation',
+    'CONSUME: storefront buy_guard event registered'
 );
 mtuc115cfe_assert(
-    isset($codes['mt_uni_credit_buy_guard_product'])
-        && $codes['mt_uni_credit_buy_guard_product'] === 'extension/mt_uni_credit/product_buy/releaseActiveCheckoutGuard',
-    'CONSUME: product guard event registered'
+    !isset($codes['mt_uni_credit_buy_guard_cart'])
+        && !isset($codes['mt_uni_credit_buy_guard_product'])
+        && !isset($codes['mt_uni_credit_buy_guard_home']),
+    'CONSUME: legacy per-route buy_guard codes removed'
 );
-mtuc115cfe_assert(
-    isset($codes['mt_uni_credit_buy_guard_home']),
-    'CONSUME: home guard event registered'
-);
-
 $installXml = (string) file_get_contents($root . DIRECTORY_SEPARATOR . 'install.xml');
 mtuc115cfe_assert(
     strpos($installXml, 'product_buy/applyPaymentPreselect') !== false,
@@ -438,6 +438,11 @@ mtuc115cfe_assert(
 mtuc115cfe_assert(
     strpos($installXml, 'product_buy/onPaymentMethodSaved') !== false,
     'ISSUE3: OCMOD wires onPaymentMethodSaved'
+);
+mtuc115cfe_assert(
+    strpos($installXml, 'mt_uni_credit:buy_nav') !== false
+        && strpos($installXml, 'mt_uni_nav') !== false,
+    'AUD-018: OCMOD propagates mt_uni_nav on Checkout'
 );
 mtuc115cfe_assert(
     is_file(

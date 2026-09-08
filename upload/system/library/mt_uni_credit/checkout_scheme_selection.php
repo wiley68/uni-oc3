@@ -19,13 +19,22 @@ final class MtUniCreditCheckoutSchemeSelection
      * @param array<string, mixed> $presenter
      * @param array<string, mixed> $sessionData
      * @param int $storeId
+     * @param string $requestNavigationId mt_uni_nav from the Checkout request
      * @return array{key:?string, source:string, buy_matched:bool}
      */
-    public static function resolveInitialSchemeSelection(array $presenter, array &$sessionData, $storeId)
-    {
+    public static function resolveInitialSchemeSelection(
+        array $presenter,
+        array &$sessionData,
+        $storeId,
+        $requestNavigationId = ''
+    ) {
         $schemes = self::collectPresenterSchemes($presenter);
         $defaultKey = self::presenterDefaultSchemeKey($presenter, $schemes);
-        $preference = MtUniCreditProductBuyPreference::load($sessionData, (int) $storeId);
+        $preference = MtUniCreditProductBuyPreference::load(
+            $sessionData,
+            (int) $storeId,
+            $requestNavigationId
+        );
 
         if (is_array($preference)) {
             $buyKey = trim((string) (isset($preference['scheme_key']) ? $preference['scheme_key'] : ''));

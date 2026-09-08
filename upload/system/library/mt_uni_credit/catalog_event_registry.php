@@ -67,20 +67,12 @@ final class MtUniCreditCatalogEventRegistry
                 'trigger' => 'catalog/view/common/footer/after',
                 'action' => 'extension/mt_uni_credit/home/afterFooter',
             ),
+            // AUD-018 F02: one lifecycle classifier for all catalog controllers.
+            // Wildcard is supported by OC3 Event (preg * → .*). Handler must return null.
             array(
-                'code' => 'mt_uni_credit_buy_guard_cart',
-                'trigger' => 'catalog/controller/checkout/cart/before',
-                'action' => 'extension/mt_uni_credit/product_buy/releaseCheckoutGuard',
-            ),
-            array(
-                'code' => 'mt_uni_credit_buy_guard_product',
-                'trigger' => 'catalog/controller/product/product/before',
-                'action' => 'extension/mt_uni_credit/product_buy/releaseActiveCheckoutGuard',
-            ),
-            array(
-                'code' => 'mt_uni_credit_buy_guard_home',
-                'trigger' => 'catalog/controller/common/home/before',
-                'action' => 'extension/mt_uni_credit/product_buy/releaseCheckoutGuard',
+                'code' => 'mt_uni_credit_buy_guard_storefront',
+                'trigger' => 'catalog/controller/*/before',
+                'action' => 'extension/mt_uni_credit/product_buy/onStorefrontNavigation',
             ),
         );
     }

@@ -33,10 +33,12 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
             : array();
         $modal = isset($panel['modal']) && is_array($panel['modal']) ? $panel['modal'] : array();
         $storeId = (int) $this->config->get('config_store_id');
+        $navId = MtUniCreditProductBuyPreference::requestNavigationId($this->request);
         $selection = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection(
             $calculator,
             $this->session->data,
-            $storeId
+            $storeId,
+            $navId
         );
         $initialSchemeKey = isset($selection['key']) ? $selection['key'] : null;
         $calculator = $this->applyCheckoutBuyPreference($calculator, $selection, $initialSchemeKey);

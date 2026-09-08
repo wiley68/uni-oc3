@@ -139,7 +139,7 @@ final class Mtuc11EventFakeDb
 // 1) Event registry — catalog event defs + Phase 11 OC3 triggers/actions
 // ---------------------------------------------------------------------------
 $defs = MtUniCreditCatalogEventRegistry::definitions();
-mtuc11_assert(count($defs) === 13, 'events: exactly 13 definitions');
+mtuc11_assert(count($defs) === 11, 'events: exactly 11 definitions');
 
 $byCode = array();
 foreach ($defs as $def) {
@@ -167,17 +167,9 @@ $expected = array(
         'trigger' => 'catalog/view/common/footer/after',
         'action' => 'extension/mt_uni_credit/home/afterFooter',
     ),
-    'mt_uni_credit_buy_guard_cart' => array(
-        'trigger' => 'catalog/controller/checkout/cart/before',
-        'action' => 'extension/mt_uni_credit/product_buy/releaseCheckoutGuard',
-    ),
-    'mt_uni_credit_buy_guard_product' => array(
-        'trigger' => 'catalog/controller/product/product/before',
-        'action' => 'extension/mt_uni_credit/product_buy/releaseActiveCheckoutGuard',
-    ),
-    'mt_uni_credit_buy_guard_home' => array(
-        'trigger' => 'catalog/controller/common/home/before',
-        'action' => 'extension/mt_uni_credit/product_buy/releaseCheckoutGuard',
+    'mt_uni_credit_buy_guard_storefront' => array(
+        'trigger' => 'catalog/controller/*/before',
+        'action' => 'extension/mt_uni_credit/product_buy/onStorefrontNavigation',
     ),
 );
 foreach ($expected as $code => $pair) {
@@ -201,13 +193,13 @@ foreach ($expected as $code => $pair) {
 $fakeDb = new Mtuc11EventFakeDb();
 $repair = MtUniCreditInstaller::ensureCatalogEvents($fakeDb);
 mtuc11_assert(!empty($repair['healthy']), 'events: ensureCatalogEvents healthy');
-mtuc11_assert((int) $repair['inserted'] === 13, 'events: ensure inserts 13');
-mtuc11_assert(count($fakeDb->rows) === 13, 'events: 13 rows after ensure');
+mtuc11_assert((int) $repair['inserted'] === 11, 'events: ensure inserts 11');
+mtuc11_assert(count($fakeDb->rows) === 11, 'events: 11 rows after ensure');
 $health = MtUniCreditCatalogEventHealth::report($fakeDb, 'oc_');
 mtuc11_assert(!empty($health['ok']), 'events: health ok after ensure');
 
 $repairAgain = MtUniCreditInstaller::ensureCatalogEvents($fakeDb);
-mtuc11_assert(count($fakeDb->rows) === 13, 'events: repeated ensure no duplicates');
+mtuc11_assert(count($fakeDb->rows) === 11, 'events: repeated ensure no duplicates');
 mtuc11_assert((int) $repairAgain['inserted'] === 0, 'events: repeated ensure inserts 0');
 mtuc11_assert(!empty($repairAgain['healthy']), 'events: repeated ensure still healthy');
 

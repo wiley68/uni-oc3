@@ -42,7 +42,7 @@ mtuc8_assert(!MtUniCreditStorefrontCsrf::verify($session, 'deadbeef'), 'csrf rej
 
 // Buy preference TTL
 $prefSession = array();
-MtUniCreditProductBuyPreference::save($prefSession, array(
+$navPref = MtUniCreditProductBuyPreference::save($prefSession, array(
     'store_id' => 0,
     'product_id' => 42,
     'scheme_type' => 'standard',
@@ -50,10 +50,10 @@ MtUniCreditProductBuyPreference::save($prefSession, array(
     'months' => 12,
     'filter_id' => 0,
 ));
-$loaded = MtUniCreditProductBuyPreference::load($prefSession, 0);
+$loaded = MtUniCreditProductBuyPreference::load($prefSession, 0, $navPref);
 mtuc8_assert(is_array($loaded) && $loaded['payment_code'] === MtUniCreditConstants::EXTENSION_CODE, 'buy preference save/load');
 $prefSession[MtUniCreditProductBuyPreference::SESSION_KEY]['created_at'] = time() - 2000;
-mtuc8_assert(MtUniCreditProductBuyPreference::load($prefSession, 0) === null, 'buy preference TTL expiry clears');
+mtuc8_assert(MtUniCreditProductBuyPreference::load($prefSession, 0, $navPref) === null, 'buy preference TTL expiry clears');
 
 // Asset URL missing file
 $missing = MtUniCreditStorefrontAssetUrls::versionedUrl(
