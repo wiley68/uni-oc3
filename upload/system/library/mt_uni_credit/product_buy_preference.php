@@ -41,8 +41,7 @@ final class MtUniCreditProductBuyPreference
             $schemeKey = MtUniCreditStorefrontCalculatorPresenter::schemeKey(
                 $schemeType,
                 $kopCode,
-                $months,
-                $filterId
+                $months
             );
         }
 

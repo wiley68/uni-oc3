@@ -35,19 +35,20 @@ final class MtUniCreditStorefrontCalculatorPresenter
     }
 
     /**
+     * Public selection identity = domain identity: type|urlencoded(kopCode)|months.
+     * Filter metadata must not fork selectable identity (AUD-016 F01).
+     *
      * @param string $type
      * @param string $kopCode
      * @param int $months
-     * @param int $filterId
      * @return string
      */
-    public static function schemeKey($type, $kopCode, $months, $filterId)
+    public static function schemeKey($type, $kopCode, $months)
     {
         return implode('|', array(
             (string) $type,
             rawurlencode((string) $kopCode),
             (string) (int) $months,
-            (string) (int) $filterId,
         ));
     }
 
@@ -57,25 +58,33 @@ final class MtUniCreditStorefrontCalculatorPresenter
      */
     public static function keyForScheme(MtUniCreditAvailableScheme $scheme)
     {
-        return self::schemeKey($scheme->type, $scheme->kopCode, $scheme->months, $scheme->filterId);
+        return self::schemeKey($scheme->type, $scheme->kopCode, $scheme->months);
     }
 
     /**
+     * Strict 3-part parser. Legacy 4-part keys (…|filterId) are not authoritative.
+     *
      * @param string $schemeKey
-     * @return array{type:string,kop_code:string,months:int,filter_id:int}|null
+     * @return array{type:string,kop_code:string,months:int}|null
      */
     public static function parseSchemeKey($schemeKey)
     {
         $parts = explode('|', (string) $schemeKey);
-        if (count($parts) !== 4) {
+        if (count($parts) !== 3) {
+            return null;
+        }
+
+        $type = trim((string) $parts[0]);
+        $kopCode = rawurldecode((string) $parts[1]);
+        $months = (int) $parts[2];
+        if ($type === '' || $kopCode === '' || $months <= 0) {
             return null;
         }
 
         return array(
-            'type' => (string) $parts[0],
-            'kop_code' => rawurldecode((string) $parts[1]),
-            'months' => (int) $parts[2],
-            'filter_id' => (int) $parts[3],
+            'type' => $type,
+            'kop_code' => $kopCode,
+            'months' => $months,
         );
     }
 
@@ -262,8 +271,7 @@ final class MtUniCreditStorefrontCalculatorPresenter
             'preferred_scheme_key' => self::schemeKey(
                 $preferred->type,
                 $preferred->kopCode,
-                $preferred->months,
-                $preferred->filterId
+                $preferred->months
             ),
             'monthly_installment' => $preferred->monthlyInstallment,
             'installment_label' => $this->formatInstallmentLabel(
@@ -406,36 +414,37 @@ final class MtUniCreditStorefrontCalculatorPresenter
     }
 
     /**
+     * Resolve by exact type|kopCode|months. When multiple filter rows share that
+     * identity, keep the lowest filterId (same deterministic metadata preference
+     * as cart reconciliation when first-installment policies agree).
+     *
      * @param array<string, mixed> $shop
      * @param MtUniCreditProductContext $product
-     * @param array{type:string,kop_code:string,months:int,filter_id:int} $parsed
+     * @param array{type:string,kop_code:string,months:int} $parsed
      * @return MtUniCreditAvailableScheme|null
      */
     public function findProductScheme(array $shop, MtUniCreditProductContext $product, array $parsed)
     {
         $schemes = $this->calculator->availableSchemes($shop, $product, $parsed['type']);
+        $match = null;
         foreach ($schemes as $scheme) {
             if (
                 $scheme->kopCode === $parsed['kop_code']
                 && $scheme->months === $parsed['months']
-                && $scheme->filterId === $parsed['filter_id']
             ) {
-                return $scheme;
-            }
-        }
-        foreach ($schemes as $scheme) {
-            if ($scheme->kopCode === $parsed['kop_code'] && $scheme->months === $parsed['months']) {
-                return $scheme;
+                if ($match === null || $scheme->filterId < $match->filterId) {
+                    $match = $scheme;
+                }
             }
         }
 
-        return null;
+        return $match;
     }
 
     /**
      * @param MtUniCreditCartResolution $resolution
      * @param array<string, mixed> $shop
-     * @param array{type:string,kop_code:string,months:int,filter_id:int} $parsed
+     * @param array{type:string,kop_code:string,months:int} $parsed
      * @return MtUniCreditAvailableScheme|null
      */
     public function findCartScheme(MtUniCreditCartResolution $resolution, array $shop, array $parsed)

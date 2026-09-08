@@ -174,17 +174,17 @@ mtuc115c3_assert($resolver->isSatisfied($shopWithConsent, array(9)), 'required c
 $presenter = array(
     'offers' => array(
         'standard' => array(
-            'preferred_scheme_key' => 'standard|KOP|12|1',
+            'preferred_scheme_key' => 'standard|KOP|12',
             'schemes' => array(
-                array('key' => 'standard|KOP|12|1', 'months' => 12, 'description' => '', 'label' => '12 месеца'),
-                array('key' => 'standard|KOP|24|1', 'months' => 24, 'description' => '', 'label' => '24 месеца'),
+                array('key' => 'standard|KOP|12', 'months' => 12, 'description' => '', 'label' => '12 месеца'),
+                array('key' => 'standard|KOP|24', 'months' => 24, 'description' => '', 'label' => '24 месеца'),
             ),
         ),
     ),
 );
 $session = array();
 $resolved = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection($presenter, $session, 0);
-mtuc115c3_assert($resolved['key'] === 'standard|KOP|12|1', 'default preferred scheme selected');
+mtuc115c3_assert($resolved['key'] === 'standard|KOP|12', 'default preferred scheme selected');
 $options = MtUniCreditCheckoutSchemeSelection::buildCheckoutSchemeOptions($presenter, $resolved['key']);
 mtuc115c3_assert(count($options) === 2 && !empty($options[0]['selected']), 'scheme options mark preferred selected');
 

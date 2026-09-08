@@ -116,7 +116,7 @@ $service = new MtUniCreditStorefrontFinancingSubmissionService(
     )
 );
 $line = new MtUniCreditProductLine(42, 'Example', 'EX', array(7), 1, 500.0, 500.0, 500.0, 0, array(), 0);
-$schemeKey = MtUniCreditStorefrontCalculatorPresenter::schemeKey('standard', 'KOPSTD', 12, 0);
+$schemeKey = MtUniCreditStorefrontCalculatorPresenter::schemeKey('standard', 'KOPSTD', 12);
 $sessionBind = array();
 $selectionHashBind = MtUniCreditStorefrontOperationIdentity::productHash(
     (int) $stack['storeId'],

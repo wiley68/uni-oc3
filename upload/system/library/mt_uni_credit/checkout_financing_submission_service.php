@@ -364,28 +364,16 @@ final class MtUniCreditCheckoutFinancingSubmissionService
         $firstInstallment = isset($input['first_installment'])
             ? (float) $input['first_installment']
             : 0.0;
-        $parsed = $schemeKey !== ''
-            ? MtUniCreditStorefrontCalculatorPresenter::parseSchemeKey($schemeKey)
-            : null;
+        // AUD-016 F02: submitted selection is authoritative identity — never replace with preferred.
+        if ($schemeKey === '') {
+            return array('error' => 'unavailable');
+        }
+        $parsed = MtUniCreditStorefrontCalculatorPresenter::parseSchemeKey($schemeKey);
+        if (!is_array($parsed)) {
+            return array('error' => 'unavailable');
+        }
         $presenter = new MtUniCreditStorefrontCalculatorPresenter($this->calculator, $this->cartSchemes);
-        $scheme = null;
-        if (is_array($parsed)) {
-            $scheme = $presenter->findCartScheme($resolution, $shop, $parsed);
-        }
-        if ($scheme === null) {
-            $preferred = $resolution->promoOffer !== null
-                ? $resolution->promoOffer
-                : $resolution->standardOffer;
-            if (!$preferred instanceof MtUniCreditOffer) {
-                return array('error' => 'unavailable');
-            }
-            foreach ($this->cartSchemes->unifiedSchemes($resolution, $shop) as $candidate) {
-                if ($candidate->kopCode === $preferred->kopCode && $candidate->months === $preferred->months) {
-                    $scheme = $candidate;
-                    break;
-                }
-            }
-        }
+        $scheme = $presenter->findCartScheme($resolution, $shop, $parsed);
         if ($scheme === null) {
             return array('error' => 'unavailable');
         }

@@ -661,35 +661,31 @@ final class MtUniCreditStorefrontFinancingSubmissionService
     /**
      * @param array<string, mixed> $shop
      * @param MtUniCreditProductContext $product
-     * @param array{type:string,kop_code:string,months:int,filter_id:int} $parsed
+     * @param array{type:string,kop_code:string,months:int} $parsed
      * @return MtUniCreditAvailableScheme|null
      */
     private function findScheme(array $shop, MtUniCreditProductContext $product, array $parsed)
     {
         $schemes = $this->calculator->availableSchemes($shop, $product, $parsed['type']);
+        $match = null;
         foreach ($schemes as $scheme) {
             if (
                 $scheme->kopCode === $parsed['kop_code']
                 && $scheme->months === $parsed['months']
-                && $scheme->filterId === $parsed['filter_id']
             ) {
-                return $scheme;
-            }
-        }
-        // Prefer identity match without filter when filter drifted to lowest id.
-        foreach ($schemes as $scheme) {
-            if ($scheme->kopCode === $parsed['kop_code'] && $scheme->months === $parsed['months']) {
-                return $scheme;
+                if ($match === null || $scheme->filterId < $match->filterId) {
+                    $match = $scheme;
+                }
             }
         }
 
-        return null;
+        return $match;
     }
 
     /**
      * @param MtUniCreditCartResolution $resolution
      * @param array<string, mixed> $shop
-     * @param array{type:string,kop_code:string,months:int,filter_id:int} $parsed
+     * @param array{type:string,kop_code:string,months:int} $parsed
      * @return MtUniCreditAvailableScheme|null
      */
     private function findCartScheme(MtUniCreditCartResolution $resolution, array $shop, array $parsed)

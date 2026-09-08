@@ -163,7 +163,7 @@ class ControllerExtensionMtUniCreditProduct extends Controller
                 'scheme_type' => $parsed !== null ? $parsed['type'] : (string) $this->posted('scheme_type', ''),
                 'kop_code' => $parsed !== null ? $parsed['kop_code'] : (string) $this->posted('kop_code', ''),
                 'months' => $parsed !== null ? $parsed['months'] : (int) $this->posted('months', 0),
-                'filter_id' => $parsed !== null ? $parsed['filter_id'] : (int) $this->posted('filter_id', 0),
+                'filter_id' => (int) $this->posted('filter_id', 0),
                 'scheme_key' => $schemeKey,
             ));
 

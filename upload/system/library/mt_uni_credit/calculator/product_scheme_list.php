@@ -40,23 +40,23 @@ final class MtUniCreditProductSchemeList
      */
     public static function key(MtUniCreditAvailableScheme $scheme)
     {
-        return self::keyFromParts($scheme->type, $scheme->kopCode, $scheme->months, $scheme->filterId);
+        return self::keyFromParts($scheme->type, $scheme->kopCode, $scheme->months);
     }
 
     /**
+     * Public/domain selection identity (AUD-016 F01): type|urlencoded(kopCode)|months.
+     *
      * @param string $type
      * @param string $kopCode
      * @param int $months
-     * @param int $filterId
      * @return string
      */
-    public static function keyFromParts($type, $kopCode, $months, $filterId)
+    public static function keyFromParts($type, $kopCode, $months)
     {
         return implode('|', array(
-            $type,
-            rawurlencode($kopCode),
-            (string) $months,
-            (string) $filterId,
+            (string) $type,
+            rawurlencode((string) $kopCode),
+            (string) (int) $months,
         ));
     }
 
@@ -76,20 +76,24 @@ final class MtUniCreditProductSchemeList
     }
 
     /**
+     * Exact kop+months identity; lowest filterId when duplicates share identity.
+     *
      * @param MtUniCreditAvailableScheme[] $schemes
      * @param string $kopCode
      * @param int $months
-     * @param int $filterId
      * @return MtUniCreditAvailableScheme|null
      */
-    public static function find(array $schemes, $kopCode, $months, $filterId)
+    public static function find(array $schemes, $kopCode, $months)
     {
+        $match = null;
         foreach ($schemes as $scheme) {
-            if ($scheme->kopCode === $kopCode && $scheme->months === $months && $scheme->filterId === $filterId) {
-                return $scheme;
+            if ($scheme->kopCode === $kopCode && $scheme->months === $months) {
+                if ($match === null || $scheme->filterId < $match->filterId) {
+                    $match = $scheme;
+                }
             }
         }
 
-        return null;
+        return $match;
     }
 }

@@ -165,6 +165,14 @@ $input = array(
     'order' => Phase7TestHarness::orderRow(),
     'order_products' => Phase7TestHarness::orderProducts(),
     'cart_context' => Phase7TestHarness::cartContext(),
+    'scheme_key' => 'standard|KOPSTD|12',
+    'first_installment' => 0.0,
+    'currency_code' => 'BGN',
+    'currency_value' => 1.0,
+    'actor' => Phase5TestHarness::guestActor('example.customer@example.test'),
+    'get_order_options' => function () {
+        return array();
+    },
 );
 $first = $stack['submission']->submit($input);
 mtuc7_assert(!empty($first['success']), 'first CP submit succeeds');
@@ -205,8 +213,8 @@ mtuc7_assert(empty($rejected['success']), 'definitive 422 fails');
 mtuc7_assert(empty($rejected['ambiguous_blocked']), '422 is not ambiguous');
 $rejectAttempt = $stackReject['attempts']->findByStoreOrder($stackReject['storeId'], 7002);
 mtuc7_assert(
-    $rejectAttempt !== null && $rejectAttempt['state'] === MtUniCreditFinancingAttemptState::CP_FAILED_RETRYABLE,
-    'definitive failure state cp_failed_retryable'
+    $rejectAttempt !== null && $rejectAttempt['state'] === MtUniCreditFinancingAttemptState::TERMINAL_FAILED,
+    'definitive failure state terminal_failed'
 );
 
 // Ambiguous timeout STOP GATE
@@ -289,6 +297,14 @@ $missing = $stackVal['submission']->submit(array(
     'order' => null,
     'order_products' => array(),
     'cart_context' => Phase7TestHarness::cartContext(),
+    'scheme_key' => 'standard|KOPSTD|12',
+    'first_installment' => 0.0,
+    'currency_code' => 'BGN',
+    'currency_value' => 1.0,
+    'actor' => Phase5TestHarness::guestActor('example.customer@example.test'),
+    'get_order_options' => function () {
+        return array();
+    },
 ));
 mtuc7_assert(isset($missing['error']) && $missing['error'] === 'order_missing', 'order missing rejected');
 
@@ -298,6 +314,14 @@ $wrongStore = $stackVal['submission']->submit(array(
     'order' => Phase7TestHarness::orderRow(Phase7TestHarness::ORDER_ID, Phase5TestHarness::STORE_B),
     'order_products' => Phase7TestHarness::orderProducts(),
     'cart_context' => Phase7TestHarness::cartContext(),
+    'scheme_key' => 'standard|KOPSTD|12',
+    'first_installment' => 0.0,
+    'currency_code' => 'BGN',
+    'currency_value' => 1.0,
+    'actor' => Phase5TestHarness::guestActor('example.customer@example.test'),
+    'get_order_options' => function () {
+        return array();
+    },
 ));
 mtuc7_assert(isset($wrongStore['error']) && $wrongStore['error'] === 'order_store_mismatch', 'wrong store rejected');
 
@@ -310,6 +334,14 @@ $badPay = $stackVal['submission']->submit(array(
     'order' => $wrongPay,
     'order_products' => Phase7TestHarness::orderProducts(),
     'cart_context' => Phase7TestHarness::cartContext(),
+    'scheme_key' => 'standard|KOPSTD|12',
+    'first_installment' => 0.0,
+    'currency_code' => 'BGN',
+    'currency_value' => 1.0,
+    'actor' => Phase5TestHarness::guestActor('example.customer@example.test'),
+    'get_order_options' => function () {
+        return array();
+    },
 ));
 mtuc7_assert(isset($badPay['error']) && $badPay['error'] === 'payment_method_mismatch', 'wrong payment code rejected');
 
@@ -319,6 +351,14 @@ $amountChanged = $stackVal['submission']->submit(array(
     'order' => Phase7TestHarness::orderRow(7021, Phase5TestHarness::STORE_A, 500.0),
     'order_products' => Phase7TestHarness::orderProducts(),
     'cart_context' => Phase7TestHarness::cartContext(999.0),
+    'scheme_key' => 'standard|KOPSTD|12',
+    'first_installment' => 0.0,
+    'currency_code' => 'BGN',
+    'currency_value' => 1.0,
+    'actor' => Phase5TestHarness::guestActor('example.customer@example.test'),
+    'get_order_options' => function () {
+        return array();
+    },
 ));
 mtuc7_assert(isset($amountChanged['error']) && $amountChanged['error'] === 'amount_changed', 'amount drift rejected');
 mtuc7_assert(Phase7TestHarness::countOrderPosts($transportVal) === 0, 'validation failures never POST /orders');
@@ -400,10 +440,10 @@ mtuc7_assert(
     'stale A token rejected for current B'
 );
 
-// Retryable failure: GET shows retry; POST reuses attempt
+// Retryable failure (HTTP 429 only): GET shows retry; POST reuses attempt
 $transportRetry = new Phase4FakeCpHttpTransport();
 $transportRetry->enqueueJson(200, $payloads['login']);
-$transportRetry->enqueueJson(422, array('success' => false, 'message' => 'invalid'));
+$transportRetry->enqueueJson(429, array('success' => false, 'message' => 'rate limited'));
 $stackRetry = Phase7TestHarness::stack($transportRetry);
 $retryOrderId = 7110;
 $retryInput = $input;

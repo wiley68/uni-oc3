@@ -197,7 +197,7 @@ final class Phase9TestHarness
             'entry_point' => MtUniCreditOperationEntryPoint::PRODUCT,
             'store_id' => $storeId,
             'currency_code' => 'BGN',
-            'scheme_key' => 'standard|KOPSTD|12|0',
+            'scheme_key' => 'standard|KOPSTD|12',
             'product_line' => $line,
             'application_token' => $applicationToken,
             'customer' => array(
@@ -306,7 +306,7 @@ final class Phase9TestHarness
             'entry_point' => MtUniCreditOperationEntryPoint::CART,
             'store_id' => $storeId,
             'currency_code' => 'BGN',
-            'scheme_key' => 'standard|KOPSTD|12|0',
+            'scheme_key' => 'standard|KOPSTD|12',
             'cart_context' => $cart,
             'cart_fingerprint' => $fingerprint,
             'application_token' => $applicationToken,
@@ -502,6 +502,8 @@ final class Phase9TestHarness
             'cart_context' => Phase7TestHarness::cartContext(),
             'currency_code' => (string) $order['currency_code'],
             'currency_value' => isset($order['currency_value']) ? (float) $order['currency_value'] : 1.0,
+            'scheme_key' => 'standard|KOPSTD|12',
+            'first_installment' => 0.0,
             'actor' => Phase5TestHarness::guestActor((string) $order['email']),
             'get_order_options' => function () {
                 return array();

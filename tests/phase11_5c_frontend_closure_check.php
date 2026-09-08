@@ -78,14 +78,14 @@ function mtuc115cfe_scheme($key, $months, $category, $type = 'promo', $filterId 
 // ISSUE 2 — normal Checkout default selection
 // ---------------------------------------------------------------------------
 $zeroBucket = array(
-    mtuc115cfe_scheme('promo|Z|6|1', 6, MtUniCreditSchemePresentationCategory::ZERO_PROMO),
-    mtuc115cfe_scheme('promo|Z|12|1', 12, MtUniCreditSchemePresentationCategory::ZERO_PROMO),
-    mtuc115cfe_scheme('promo|Z|24|1', 24, MtUniCreditSchemePresentationCategory::ZERO_PROMO),
+    mtuc115cfe_scheme('promo|Z|6', 6, MtUniCreditSchemePresentationCategory::ZERO_PROMO),
+    mtuc115cfe_scheme('promo|Z|12', 12, MtUniCreditSchemePresentationCategory::ZERO_PROMO),
+    mtuc115cfe_scheme('promo|Z|24', 24, MtUniCreditSchemePresentationCategory::ZERO_PROMO),
 );
 $presenterZero = array(
     'offers' => array(
         'promo' => array(
-            'preferred_scheme_key' => 'promo|Z|6|1',
+            'preferred_scheme_key' => 'promo|Z|6',
             'schemes' => $zeroBucket,
         ),
         'standard' => array('preferred_scheme_key' => '', 'schemes' => array()),
@@ -94,44 +94,44 @@ $presenterZero = array(
 $session = array();
 $sel = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection($presenterZero, $session, 0);
 mtuc115cfe_assert($sel['source'] === 'checkout_default', 'ISSUE2: 0% bucket uses checkout_default source');
-mtuc115cfe_assert($sel['key'] === 'promo|Z|24|1', 'ISSUE2: 0% 6+12+24 → 24');
+mtuc115cfe_assert($sel['key'] === 'promo|Z|24', 'ISSUE2: 0% 6+12+24 → 24');
 
 $mixed = array(
-    mtuc115cfe_scheme('promo|Z|12|1', 12, MtUniCreditSchemePresentationCategory::ZERO_PROMO),
-    mtuc115cfe_scheme('promo|P|36|1', 36, MtUniCreditSchemePresentationCategory::NONZERO_PROMO),
+    mtuc115cfe_scheme('promo|Z|12', 12, MtUniCreditSchemePresentationCategory::ZERO_PROMO),
+    mtuc115cfe_scheme('promo|P|36', 36, MtUniCreditSchemePresentationCategory::NONZERO_PROMO),
 );
 $presenterMixed = array(
     'offers' => array(
-        'promo' => array('preferred_scheme_key' => 'promo|P|36|1', 'schemes' => $mixed),
+        'promo' => array('preferred_scheme_key' => 'promo|P|36', 'schemes' => $mixed),
         'standard' => array('preferred_scheme_key' => '', 'schemes' => array()),
     ),
 );
 $session = array();
 $sel = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection($presenterMixed, $session, 0);
-mtuc115cfe_assert($sel['key'] === 'promo|Z|12|1', 'ISSUE2: 0% 12 beats promo 36');
+mtuc115cfe_assert($sel['key'] === 'promo|Z|12', 'ISSUE2: 0% 12 beats promo 36');
 
 $promoOnly = array(
-    mtuc115cfe_scheme('promo|P|12|1', 12, MtUniCreditSchemePresentationCategory::NONZERO_PROMO),
-    mtuc115cfe_scheme('promo|P|24|1', 24, MtUniCreditSchemePresentationCategory::NONZERO_PROMO),
+    mtuc115cfe_scheme('promo|P|12', 12, MtUniCreditSchemePresentationCategory::NONZERO_PROMO),
+    mtuc115cfe_scheme('promo|P|24', 24, MtUniCreditSchemePresentationCategory::NONZERO_PROMO),
 );
 $presenterPromo = array(
     'offers' => array(
-        'promo' => array('preferred_scheme_key' => 'promo|P|12|1', 'schemes' => $promoOnly),
+        'promo' => array('preferred_scheme_key' => 'promo|P|12', 'schemes' => $promoOnly),
         'standard' => array('preferred_scheme_key' => '', 'schemes' => array()),
     ),
 );
 $session = array();
 $sel = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection($presenterPromo, $session, 0);
-mtuc115cfe_assert($sel['key'] === 'promo|P|24|1', 'ISSUE2: no 0% → longest promo 24');
+mtuc115cfe_assert($sel['key'] === 'promo|P|24', 'ISSUE2: no 0% → longest promo 24');
 
 $stdOnly = array(
-    mtuc115cfe_scheme('standard|DEF|12|1', 12, MtUniCreditSchemePresentationCategory::STANDARD, 'standard', 1, 'DEF'),
-    mtuc115cfe_scheme('standard|DEF|24|1', 24, MtUniCreditSchemePresentationCategory::STANDARD, 'standard', 1, 'DEF'),
+    mtuc115cfe_scheme('standard|DEF|12', 12, MtUniCreditSchemePresentationCategory::STANDARD, 'standard', 1, 'DEF'),
+    mtuc115cfe_scheme('standard|DEF|24', 24, MtUniCreditSchemePresentationCategory::STANDARD, 'standard', 1, 'DEF'),
 );
 $presenterStd = array(
     'offers' => array(
         'standard' => array(
-            'preferred_scheme_key' => 'standard|DEF|12|1',
+            'preferred_scheme_key' => 'standard|DEF|12',
             'schemes' => $stdOnly,
         ),
         'promo' => array('preferred_scheme_key' => '', 'schemes' => array()),
@@ -139,22 +139,22 @@ $presenterStd = array(
 );
 $session = array();
 $sel = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection($presenterStd, $session, 0);
-mtuc115cfe_assert($sel['key'] === 'standard|DEF|12|1', 'ISSUE2: no promo → CP preferred_scheme_key');
+mtuc115cfe_assert($sel['key'] === 'standard|DEF|12', 'ISSUE2: no promo → CP preferred_scheme_key');
 
 // Tie-break: same months → lower filter_id wins
 $tie = array(
-    mtuc115cfe_scheme('promo|Z|24|9', 24, MtUniCreditSchemePresentationCategory::ZERO_PROMO, 'promo', 9, 'ZB'),
-    mtuc115cfe_scheme('promo|Z|24|2', 24, MtUniCreditSchemePresentationCategory::ZERO_PROMO, 'promo', 2, 'ZA'),
+    mtuc115cfe_scheme('promo|Z|24', 24, MtUniCreditSchemePresentationCategory::ZERO_PROMO, 'promo', 9, 'ZB'),
+    mtuc115cfe_scheme('promo|Z|24', 24, MtUniCreditSchemePresentationCategory::ZERO_PROMO, 'promo', 2, 'ZA'),
 );
 $presenterTie = array(
     'offers' => array(
-        'promo' => array('preferred_scheme_key' => 'promo|Z|24|9', 'schemes' => $tie),
+        'promo' => array('preferred_scheme_key' => 'promo|Z|24', 'schemes' => $tie),
         'standard' => array('preferred_scheme_key' => '', 'schemes' => array()),
     ),
 );
 $session = array();
 $sel = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection($presenterTie, $session, 0);
-mtuc115cfe_assert($sel['key'] === 'promo|Z|24|2', 'ISSUE2: tie months → lower filter_id');
+mtuc115cfe_assert($sel['key'] === 'promo|Z|24', 'ISSUE2: duplicate filter variants share one public key');
 
 // Buy preference overrides all buckets
 MtUniCreditProductBuyPreference::save($session, array(
@@ -164,12 +164,12 @@ MtUniCreditProductBuyPreference::save($session, array(
     'kop_code' => 'Z',
     'months' => 6,
     'filter_id' => 1,
-    'scheme_key' => 'promo|Z|6|1',
+    'scheme_key' => 'promo|Z|6',
 ));
 $sel = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection($presenterZero, $session, 0);
 mtuc115cfe_assert($sel['source'] === 'product_buy', 'ISSUE2: Buy preference source');
 mtuc115cfe_assert($sel['buy_matched'] === true, 'ISSUE2: Buy preference matched');
-mtuc115cfe_assert($sel['key'] === 'promo|Z|6|1', 'ISSUE2: Buy preference exact key overrides longest 0%');
+mtuc115cfe_assert($sel['key'] === 'promo|Z|6', 'ISSUE2: Buy preference exact key overrides longest 0%');
 mtuc115cfe_assert(
     isset($session[MtUniCreditProductBuyPreference::CHECKOUT_GUARD_KEY]),
     'ISSUE2: Buy resolve activates checkout guard'
@@ -182,7 +182,7 @@ $sessionBuy = array();
 MtUniCreditProductBuyPreference::save($sessionBuy, array(
     'store_id' => 1,
     'product_id' => 7,
-    'scheme_key' => 'standard|K|12|1',
+    'scheme_key' => 'standard|K|12',
     'scheme_type' => 'standard',
     'kop_code' => 'K',
     'months' => 12,
@@ -211,10 +211,10 @@ $selAgain = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection(
     array(
         'offers' => array(
             'standard' => array(
-                'preferred_scheme_key' => 'standard|OTHER|24|1',
+                'preferred_scheme_key' => 'standard|OTHER|24',
                 'schemes' => array(
-                    mtuc115cfe_scheme('standard|K|12|1', 12, MtUniCreditSchemePresentationCategory::STANDARD, 'standard'),
-                    mtuc115cfe_scheme('standard|OTHER|24|1', 24, MtUniCreditSchemePresentationCategory::STANDARD, 'standard'),
+                    mtuc115cfe_scheme('standard|K|12', 12, MtUniCreditSchemePresentationCategory::STANDARD, 'standard'),
+                    mtuc115cfe_scheme('standard|OTHER|24', 24, MtUniCreditSchemePresentationCategory::STANDARD, 'standard'),
                 ),
             ),
             'promo' => array('preferred_scheme_key' => '', 'schemes' => array()),
@@ -223,7 +223,7 @@ $selAgain = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection(
     $sessionBuy,
     1
 );
-mtuc115cfe_assert($selAgain['key'] === 'standard|K|12|1', 'ISSUE3: same-Checkout refresh keeps Buy scheme');
+mtuc115cfe_assert($selAgain['key'] === 'standard|K|12', 'ISSUE3: same-Checkout refresh keeps Buy scheme');
 
 $sessionNormal = array();
 $applied = MtUniCreditProductBuyPreference::applyPaymentIfAvailable($sessionNormal, $methods, 1);
@@ -236,7 +236,7 @@ $sessionStale[MtUniCreditProductBuyPreference::SESSION_KEY] = array(
     'store_id' => 1,
     'prefer_payment' => true,
     'payment_code' => 'mt_uni_credit',
-    'scheme_key' => 'standard|K|12|1',
+    'scheme_key' => 'standard|K|12',
     'navigation_id' => 'deadbeef',
     'state' => MtUniCreditProductBuyPreference::STATE_PENDING,
     'created_at' => time() - MtUniCreditProductBuyPreference::TTL_SECONDS - 10,
@@ -266,19 +266,19 @@ MtUniCreditProductBuyPreference::save($sessionConsume, array(
     'kop_code' => 'Z',
     'months' => 5,
     'filter_id' => 1,
-    'scheme_key' => 'promo|Z|5|1',
+    'scheme_key' => 'promo|Z|5',
 ));
 // Simulate Buy Checkout use (activates + sets guard)
 $buySel = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection(
     array(
         'offers' => array(
             'promo' => array(
-                'preferred_scheme_key' => 'promo|Z|24|1',
+                'preferred_scheme_key' => 'promo|Z|24',
                 'schemes' => array(
-                    mtuc115cfe_scheme('promo|Z|5|1', 5, MtUniCreditSchemePresentationCategory::ZERO_PROMO),
-                    mtuc115cfe_scheme('promo|Z|6|1', 6, MtUniCreditSchemePresentationCategory::ZERO_PROMO),
-                    mtuc115cfe_scheme('promo|Z|12|1', 12, MtUniCreditSchemePresentationCategory::ZERO_PROMO),
-                    mtuc115cfe_scheme('promo|Z|24|1', 24, MtUniCreditSchemePresentationCategory::ZERO_PROMO),
+                    mtuc115cfe_scheme('promo|Z|5', 5, MtUniCreditSchemePresentationCategory::ZERO_PROMO),
+                    mtuc115cfe_scheme('promo|Z|6', 6, MtUniCreditSchemePresentationCategory::ZERO_PROMO),
+                    mtuc115cfe_scheme('promo|Z|12', 12, MtUniCreditSchemePresentationCategory::ZERO_PROMO),
+                    mtuc115cfe_scheme('promo|Z|24', 24, MtUniCreditSchemePresentationCategory::ZERO_PROMO),
                 ),
             ),
             'standard' => array('preferred_scheme_key' => '', 'schemes' => array()),
@@ -287,7 +287,7 @@ $buySel = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection(
     $sessionConsume,
     0
 );
-mtuc115cfe_assert($buySel['key'] === 'promo|Z|5|1', 'CONSUME A: Buy Checkout keeps 5 months');
+mtuc115cfe_assert($buySel['key'] === 'promo|Z|5', 'CONSUME A: Buy Checkout keeps 5 months');
 mtuc115cfe_assert($buySel['source'] === 'product_buy', 'CONSUME A: Buy source');
 
 // Same-Checkout AJAX: still Buy
@@ -295,10 +295,10 @@ $buySel2 = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection(
     array(
         'offers' => array(
             'promo' => array(
-                'preferred_scheme_key' => 'promo|Z|24|1',
+                'preferred_scheme_key' => 'promo|Z|24',
                 'schemes' => array(
-                    mtuc115cfe_scheme('promo|Z|5|1', 5, MtUniCreditSchemePresentationCategory::ZERO_PROMO),
-                    mtuc115cfe_scheme('promo|Z|24|1', 24, MtUniCreditSchemePresentationCategory::ZERO_PROMO),
+                    mtuc115cfe_scheme('promo|Z|5', 5, MtUniCreditSchemePresentationCategory::ZERO_PROMO),
+                    mtuc115cfe_scheme('promo|Z|24', 24, MtUniCreditSchemePresentationCategory::ZERO_PROMO),
                 ),
             ),
             'standard' => array('preferred_scheme_key' => '', 'schemes' => array()),
@@ -307,7 +307,7 @@ $buySel2 = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection(
     $sessionConsume,
     0
 );
-mtuc115cfe_assert($buySel2['key'] === 'promo|Z|5|1', 'CONSUME B: AJAX refresh still 5 months');
+mtuc115cfe_assert($buySel2['key'] === 'promo|Z|5', 'CONSUME B: AJAX refresh still 5 months');
 
 // Leave Checkout (cart/home) → clear preference entirely
 MtUniCreditProductBuyPreference::clear($sessionConsume);
@@ -320,14 +320,14 @@ mtuc115cfe_assert(
 $sessionAfter = array();
 $normalZero = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection($presenterZero, $sessionAfter, 0);
 mtuc115cfe_assert($normalZero['source'] === 'checkout_default', 'CONSUME C: subsequent source checkout_default');
-mtuc115cfe_assert($normalZero['key'] === 'promo|Z|24|1', 'CONSUME C: subsequent 0% → 24 (old 5 ignored)');
+mtuc115cfe_assert($normalZero['key'] === 'promo|Z|24', 'CONSUME C: subsequent 0% → 24 (old 5 ignored)');
 
 // Also: release guard alone then load must clear active preference
 $sessionGuardOnly = array();
 MtUniCreditProductBuyPreference::save($sessionGuardOnly, array(
     'store_id' => 0,
     'product_id' => 5,
-    'scheme_key' => 'promo|Z|5|1',
+    'scheme_key' => 'promo|Z|5',
     'scheme_type' => 'promo',
     'kop_code' => 'Z',
     'months' => 5,
@@ -336,7 +336,7 @@ MtUniCreditProductBuyPreference::save($sessionGuardOnly, array(
 MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection($presenterZero, $sessionGuardOnly, 0);
 MtUniCreditProductBuyPreference::releaseCheckoutGuard($sessionGuardOnly);
 $afterGuard = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection($presenterZero, $sessionGuardOnly, 0);
-mtuc115cfe_assert($afterGuard['key'] === 'promo|Z|24|1', 'CONSUME C2: active without guard → ignored, 24');
+mtuc115cfe_assert($afterGuard['key'] === 'promo|Z|24', 'CONSUME C2: active without guard → ignored, 24');
 mtuc115cfe_assert(
     !isset($sessionGuardOnly[MtUniCreditProductBuyPreference::SESSION_KEY]),
     'CONSUME C2: active without guard cleared'
@@ -347,7 +347,7 @@ $sessionConsume2 = array();
 MtUniCreditProductBuyPreference::save($sessionConsume2, array(
     'store_id' => 0,
     'product_id' => 5,
-    'scheme_key' => 'promo|P|5|1',
+    'scheme_key' => 'promo|P|5',
     'scheme_type' => 'promo',
     'kop_code' => 'P',
     'months' => 5,
@@ -356,14 +356,14 @@ MtUniCreditProductBuyPreference::save($sessionConsume2, array(
 MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection($presenterPromo, $sessionConsume2, 0);
 MtUniCreditProductBuyPreference::clear($sessionConsume2);
 $normalPromo = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection($presenterPromo, $sessionConsume2, 0);
-mtuc115cfe_assert($normalPromo['key'] === 'promo|P|24|1', 'CONSUME D: subsequent no 0% → longest promo 24');
+mtuc115cfe_assert($normalPromo['key'] === 'promo|P|24', 'CONSUME D: subsequent no 0% → longest promo 24');
 
 // No-promo subsequent → CP default
 $sessionConsume3 = array();
 MtUniCreditProductBuyPreference::save($sessionConsume3, array(
     'store_id' => 0,
     'product_id' => 5,
-    'scheme_key' => 'standard|DEF|5|1',
+    'scheme_key' => 'standard|DEF|5',
     'scheme_type' => 'standard',
     'kop_code' => 'DEF',
     'months' => 5,
@@ -372,11 +372,11 @@ MtUniCreditProductBuyPreference::save($sessionConsume3, array(
 $stdWithFive = array(
     'offers' => array(
         'standard' => array(
-            'preferred_scheme_key' => 'standard|DEF|12|1',
+            'preferred_scheme_key' => 'standard|DEF|12',
             'schemes' => array(
-                mtuc115cfe_scheme('standard|DEF|5|1', 5, MtUniCreditSchemePresentationCategory::STANDARD, 'standard', 1, 'DEF'),
-                mtuc115cfe_scheme('standard|DEF|12|1', 12, MtUniCreditSchemePresentationCategory::STANDARD, 'standard', 1, 'DEF'),
-                mtuc115cfe_scheme('standard|DEF|24|1', 24, MtUniCreditSchemePresentationCategory::STANDARD, 'standard', 1, 'DEF'),
+                mtuc115cfe_scheme('standard|DEF|5', 5, MtUniCreditSchemePresentationCategory::STANDARD, 'standard', 1, 'DEF'),
+                mtuc115cfe_scheme('standard|DEF|12', 12, MtUniCreditSchemePresentationCategory::STANDARD, 'standard', 1, 'DEF'),
+                mtuc115cfe_scheme('standard|DEF|24', 24, MtUniCreditSchemePresentationCategory::STANDARD, 'standard', 1, 'DEF'),
             ),
         ),
         'promo' => array('preferred_scheme_key' => '', 'schemes' => array()),
@@ -385,14 +385,14 @@ $stdWithFive = array(
 MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection($stdWithFive, $sessionConsume3, 0);
 MtUniCreditProductBuyPreference::clear($sessionConsume3);
 $normalStd = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection($presenterStd, $sessionConsume3, 0);
-mtuc115cfe_assert($normalStd['key'] === 'standard|DEF|12|1', 'CONSUME E: subsequent no promo → CP default');
+mtuc115cfe_assert($normalStd['key'] === 'standard|DEF|12', 'CONSUME E: subsequent no promo → CP default');
 
 // Product page keeps pending; clears only activated
 $sessionPending = array();
 MtUniCreditProductBuyPreference::save($sessionPending, array(
     'store_id' => 0,
     'product_id' => 9,
-    'scheme_key' => 'promo|Z|5|1',
+    'scheme_key' => 'promo|Z|5',
     'scheme_type' => 'promo',
     'kop_code' => 'Z',
     'months' => 5,

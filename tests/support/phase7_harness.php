@@ -146,6 +146,35 @@ final class Phase7TestHarness
     }
 
     /**
+     * Baseline Checkout financing submit input (AUD-016: scheme_key required).
+     *
+     * @param int $orderId
+     * @param int $storeId
+     * @param float $total
+     * @return array<string, mixed>
+     */
+    public static function submitInput($orderId = self::ORDER_ID, $storeId = Phase5TestHarness::STORE_A, $total = 500.0)
+    {
+        $order = self::orderRow($orderId, $storeId, $total);
+
+        return array(
+            'store_id' => $storeId,
+            'order_id' => $orderId,
+            'order' => $order,
+            'order_products' => self::orderProducts(),
+            'cart_context' => self::cartContext($total),
+            'currency_code' => (string) (isset($order['currency_code']) ? $order['currency_code'] : 'BGN'),
+            'currency_value' => isset($order['currency_value']) ? (float) $order['currency_value'] : 1.0,
+            'scheme_key' => 'standard|KOPSTD|12',
+            'first_installment' => 0.0,
+            'actor' => Phase5TestHarness::guestActor((string) $order['email']),
+            'get_order_options' => function () {
+                return array();
+            },
+        );
+    }
+
+    /**
      * Minimal success fixture (data.id only). Fake transport completes Phase-A identity
      * fields from the outbound POST /orders payload when order_id/shop_id/unicid are all absent.
      *
