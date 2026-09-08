@@ -280,15 +280,50 @@ $unrelated = array(
     'account/account',
     'common/home',
     'checkout/cart',
+    'extension/foo/bar',
+    'extension/module/example',
+    'extension/account/example',
+    'checkout/unrelated',
+    'checkout/custom_page',
+    'checkout/success',
+    'checkout/failure',
 );
 foreach ($unrelated as $route) {
     mtucAud018_assert(
         MtUniCreditStorefrontRouteResolver::isUnrelatedStorefrontRoute($route)
             || MtUniCreditStorefrontRouteResolver::isCartPageRoute($route)
-            || MtUniCreditStorefrontRouteResolver::isHomepageRoute($route),
+            || MtUniCreditStorefrontRouteResolver::isHomepageRoute($route)
+            || $route === 'checkout/success'
+            || strpos($route, 'checkout/success/') === 0,
         'F02 classifier marks unrelated/clear target: ' . $route
     );
+    mtucAud018_assert(
+        !MtUniCreditStorefrontRouteResolver::isCheckoutLifecycleRoute($route),
+        'F02 unrelated is not checkout lifecycle: ' . $route
+    );
 }
+
+// Residual F02 regression: blanket checkout/* or extension/* must NOT preserve.
+foreach (array('extension/foo/bar', 'extension/module/example', 'checkout/unrelated') as $route) {
+    mtucAud018_assert(
+        MtUniCreditStorefrontRouteResolver::isUnrelatedStorefrontRoute($route),
+        'F02 residual: unrelated must CLEAR class (' . $route . ')'
+    );
+    mtucAud018_assert(
+        !MtUniCreditStorefrontRouteResolver::isCheckoutLifecycleRoute($route),
+        'F02 residual: must not lifecycle-preserve (' . $route . ')'
+    );
+}
+mtucAud018_assert(
+    strpos($routeSrc, 'checkoutLifecycleBases') !== false
+        && strpos($routeSrc, 'unicreditPaymentLifecycleBases') !== false,
+    'F02 residual static: explicit Checkout + UniCredit payment allowlists'
+);
+mtucAud018_assert(
+    strpos($routeSrc, "if (strpos(\$route, 'checkout/') === 0) {\n            return true;") === false
+        && strpos($routeSrc, "if (strpos(\$route, 'extension/') === 0) {\n            return false;") === false,
+    'F02 residual static: removed over-broad lifecycle preserve branches'
+);
 
 foreach (array('product/category', 'product/search', 'information/information', 'account/login') as $route) {
     $tmp = $sessionActive;
@@ -299,26 +334,58 @@ foreach (array('product/category', 'product/search', 'information/information', 
     );
 }
 
-// Preserve Buy path + Checkout lifecycle classifiers
+// Preserve Buy path + explicit Checkout lifecycle allowlist
+$preserveLifecycle = array(
+    'checkout/checkout',
+    'checkout/checkout/country',
+    'checkout/login',
+    'checkout/login/save',
+    'checkout/register/save',
+    'checkout/guest/save',
+    'checkout/guest_shipping/save',
+    'checkout/payment_method',
+    'checkout/payment_method/save',
+    'checkout/shipping_method',
+    'checkout/shipping_method/save',
+    'checkout/payment_address',
+    'checkout/payment_address/save',
+    'checkout/shipping_address',
+    'checkout/shipping_address/save',
+    'checkout/confirm',
+    'extension/payment/mt_uni_credit',
+    'extension/payment/mt_uni_credit/confirm',
+    'extension/payment/mt_uni_credit/calculate',
+);
+foreach ($preserveLifecycle as $route) {
+    mtucAud018_assert(
+        MtUniCreditStorefrontRouteResolver::isCheckoutLifecycleRoute($route),
+        'F02 lifecycle PRESERVE: ' . $route
+    );
+    mtucAud018_assert(
+        !MtUniCreditStorefrontRouteResolver::isUnrelatedStorefrontRoute($route),
+        'F02 lifecycle not unrelated: ' . $route
+    );
+}
+
 mtucAud018_assert(
     MtUniCreditStorefrontRouteResolver::isCartAddRoute('checkout/cart/add'),
     'F02 cart/add is handoff route'
+);
+mtucAud018_assert(
+    MtUniCreditStorefrontRouteResolver::isCheckoutLifecycleRoute('checkout/cart/add'),
+    'F02 cart/add is checkout lifecycle'
 );
 mtucAud018_assert(
     !MtUniCreditStorefrontRouteResolver::isUnrelatedStorefrontRoute('checkout/cart/add'),
     'F02 cart/add not unrelated'
 );
 mtucAud018_assert(
-    MtUniCreditStorefrontRouteResolver::isCheckoutLifecycleRoute('checkout/payment_method'),
-    'F02 payment_method is checkout lifecycle'
+    MtUniCreditStorefrontRouteResolver::isProductBuyRoute('extension/mt_uni_credit/product_buy'),
+    'F02 Product Buy stash route preserved class'
 );
 mtucAud018_assert(
-    MtUniCreditStorefrontRouteResolver::isCheckoutLifecycleRoute('extension/payment/mt_uni_credit'),
-    'F02 UniCredit payment is checkout lifecycle'
-);
-mtucAud018_assert(
-    !MtUniCreditStorefrontRouteResolver::isUnrelatedStorefrontRoute('checkout/payment_method'),
-    'F02 Checkout AJAX not unrelated'
+    !MtUniCreditStorefrontRouteResolver::isUnrelatedStorefrontRoute('extension/mt_uni_credit/product_buy'),
+    'F02 Product Buy stash not unrelated'
 );
 
 // Product page: active cleared, pending preserved
@@ -469,6 +536,61 @@ mtucAud018_assert(
     !isset($sessionCtrl[MtUniCreditProductBuyPreference::SESSION_KEY]),
     'F02 controller clears active on category'
 );
+
+foreach (array('extension/foo/bar', 'extension/module/example', 'checkout/unrelated') as $clearRoute) {
+    $sessionCtrl = array();
+    $navCtrl = MtUniCreditProductBuyPreference::save($sessionCtrl, mtucAud018_saveFields());
+    MtUniCreditProductBuyPreference::load($sessionCtrl, 0, $navCtrl);
+    $sessionObj->data = &$sessionCtrl;
+    $routeClear = $clearRoute;
+    $dataClear = array();
+    $ctrl->onStorefrontNavigation($routeClear, $dataClear);
+    mtucAud018_assert(
+        !isset($sessionCtrl[MtUniCreditProductBuyPreference::SESSION_KEY]),
+        'F02 controller clears active on ' . $clearRoute
+    );
+}
+
+foreach (
+    array(
+        'checkout/checkout',
+        'checkout/shipping_method',
+        'checkout/payment_address',
+        'checkout/shipping_address',
+        'checkout/confirm',
+        'extension/payment/mt_uni_credit',
+    ) as $keepRoute
+) {
+    $sessionKeep = array();
+    $navKeep = MtUniCreditProductBuyPreference::save($sessionKeep, mtucAud018_saveFields());
+    MtUniCreditProductBuyPreference::load($sessionKeep, 0, $navKeep);
+    $sessionObjKeep = new stdClass();
+    $sessionObjKeep->data = &$sessionKeep;
+    $registryKeep = new Registry();
+    $registryKeep->set('session', $sessionObjKeep);
+    $reqKeep = new stdClass();
+    $reqKeep->get = array(MtUniCreditProductBuyPreference::NAV_PARAM => $navKeep);
+    $reqKeep->post = array();
+    $registryKeep->set('request', $reqKeep);
+    $registryKeep->set('config', new class {
+        /**
+         * @param string $k
+         * @return mixed
+         */
+        public function get($k)
+        {
+            return $k === 'config_store_id' ? 0 : null;
+        }
+    });
+    $ctrlKeep = new ControllerExtensionMtUniCreditProductBuy($registryKeep);
+    $routeKeep = $keepRoute;
+    $dataKeep = array();
+    $ctrlKeep->onStorefrontNavigation($routeKeep, $dataKeep);
+    mtucAud018_assert(
+        isset($sessionKeep[MtUniCreditProductBuyPreference::SESSION_KEY]),
+        'F02 controller PRESERVE active on ' . $keepRoute
+    );
+}
 
 // Checkout AJAX must not clear
 $sessionAjax = array();

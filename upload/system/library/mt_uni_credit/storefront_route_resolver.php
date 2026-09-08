@@ -5,9 +5,72 @@
  *
  * AUD-018 F02: classify routes so active Buy preference clears on unrelated browsing
  * without breaking Buy stash → cart/add → Checkout, or Checkout AJAX.
+ *
+ * Checkout / extension preservation is an explicit allowlist (not checkout/* or extension/*).
  */
 final class MtUniCreditStorefrontRouteResolver
 {
+    /**
+     * Native OC3 Checkout lifecycle controllers used by default checkout.twig AJAX
+     * and checkout controllers (reference-oc3-store). Not a blanket checkout/* prefix.
+     *
+     * @return string[]
+     */
+    private static function checkoutLifecycleBases()
+    {
+        return array(
+            'checkout/checkout',
+            'checkout/login',
+            'checkout/register',
+            'checkout/guest',
+            'checkout/guest_shipping',
+            'checkout/payment_address',
+            'checkout/shipping_address',
+            'checkout/shipping_method',
+            'checkout/payment_method',
+            'checkout/confirm',
+            'checkout/cart/add',
+        );
+    }
+
+    /**
+     * UniCredit payment endpoints invoked from Checkout confirm / payment step.
+     *
+     * @return string[]
+     */
+    private static function unicreditPaymentLifecycleBases()
+    {
+        return array(
+            'extension/payment/mt_uni_credit',
+        );
+    }
+
+    /**
+     * @param string $route
+     * @param string $base
+     * @return bool
+     */
+    private static function matchesRouteBase($route, $base)
+    {
+        return $route === $base || strpos($route, $base . '/') === 0;
+    }
+
+    /**
+     * @param string $route
+     * @param string[] $bases
+     * @return bool
+     */
+    private static function matchesAnyRouteBase($route, array $bases)
+    {
+        foreach ($bases as $base) {
+            if (self::matchesRouteBase($route, $base)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /**
      * @param mixed $route
      * @return string
@@ -86,8 +149,8 @@ final class MtUniCreditStorefrontRouteResolver
     }
 
     /**
-     * Same Checkout navigation lifecycle (entry, steps, payment AJAX, UniCredit checkout).
-     * Excludes cart page, cart/add, and success.
+     * Intended Checkout navigation lifecycle (entry, steps, payment AJAX, UniCredit).
+     * Explicit allowlist only — excludes cart page, success, failure, and unrelated checkout/*.
      *
      * @param mixed $route
      * @return bool
@@ -101,25 +164,13 @@ final class MtUniCreditStorefrontRouteResolver
         if ($route === 'checkout/success' || strpos($route, 'checkout/success/') === 0) {
             return false;
         }
-        if (self::isCartAddRoute($route)) {
-            return true;
-        }
         if (self::isCartPageRoute($route)) {
             return false;
         }
-        if (strpos($route, 'checkout/') === 0) {
+        if (self::matchesAnyRouteBase($route, self::checkoutLifecycleBases())) {
             return true;
         }
-        if (strpos($route, 'extension/payment/mt_uni_credit') === 0) {
-            return true;
-        }
-        if (strpos($route, 'extension/mt_uni_credit/') === 0) {
-            // Product widget/buy endpoints are handled separately; other mt_uni_credit
-            // checkout helpers stay in lifecycle.
-            if (self::isProductBuyRoute($route)) {
-                return false;
-            }
-
+        if (self::matchesAnyRouteBase($route, self::unicreditPaymentLifecycleBases())) {
             return true;
         }
 
@@ -158,7 +209,7 @@ final class MtUniCreditStorefrontRouteResolver
         if (self::isProductPageRoute($route)) {
             return false;
         }
-        // Cart page is "related" only as an explicit clear target (handled by caller).
+        // Cart page / home are explicit clear targets (handled by caller).
         if (self::isCartPageRoute($route) || self::isHomepageRoute($route)) {
             return true;
         }
@@ -174,8 +225,9 @@ final class MtUniCreditStorefrontRouteResolver
         if (strpos($route, 'common/') === 0) {
             return true;
         }
-        if (strpos($route, 'extension/') === 0) {
-            return false;
+        // Unrelated extension/* and checkout/* (not on allowlist) clear active preference.
+        if (strpos($route, 'extension/') === 0 || strpos($route, 'checkout/') === 0) {
+            return true;
         }
         // Any other catalog controller route is unrelated browsing.
         return true;
