@@ -5,7 +5,7 @@
  *
  * AUD-029-F01: malformed/partial cached advertising fields fail closed (null) —
  * no Array-to-string warnings, no incomplete blocks.
- * AUD-029-F03: raw attribute-breaking characters in HTTP(S) URLs fail closed.
+ * AUD-029-F03: CTA URLs use MtUniCreditStorefrontHttpUrl (attribute-safe http/https).
  */
 final class MtUniCreditHomepageAdvertisingPresenter
 {
@@ -101,48 +101,7 @@ final class MtUniCreditHomepageAdvertisingPresenter
      */
     public function httpUrl($value)
     {
-        if (!$this->isAllowedString($value)) {
-            return '';
-        }
-        $url = trim($value);
-        if ($url === '') {
-            return '';
-        }
-        // AUD-029-F03: FILTER_VALIDATE_URL alone is not HTML-attribute-safe.
-        // CTA sinks use double-quoted attributes with Twig autoescape=false.
-        if ($this->containsUnsafeRawAttributeChars($url)) {
-            return '';
-        }
-        if (!filter_var($url, FILTER_VALIDATE_URL)) {
-            return '';
-        }
-        $scheme = strtolower((string) parse_url($url, PHP_URL_SCHEME));
-
-        return ($scheme === 'http' || $scheme === 'https') ? $url : '';
-    }
-
-    /**
-     * Reject raw characters that can break out of (or corrupt) double-quoted
-     * HTML attribute sinks used for CTA / image URLs.
-     *
-     * Rejected set (justified by homepage_advertising.twig + JS open path):
-     * - " (U+0022): breaks href="…" and data-mt-uni-credit-advertising-open="…"
-     * - ASCII C0 controls (0x00–0x1F) and DEL (0x7F): malformed attribute values
-     *
-     * Not rejected here:
-     * - ' (no single-quoted backurl sink in current templates)
-     * - percent-encoded sequences such as %22 (remain encoded; not decoded)
-     *
-     * @param string $url
-     * @return bool
-     */
-    private function containsUnsafeRawAttributeChars($url)
-    {
-        if (strpos($url, '"') !== false) {
-            return true;
-        }
-        // ASCII controls / DEL — keep PHP 7.3-safe (no \p{C} / unicode props required).
-        return (bool) preg_match('/[\x00-\x1F\x7F]/', $url);
+        return MtUniCreditStorefrontHttpUrl::sanitize($value);
     }
 
     /**

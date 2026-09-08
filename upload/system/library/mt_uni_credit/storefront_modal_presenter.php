@@ -51,20 +51,13 @@ final class MtUniCreditStorefrontModalPresenter
     }
 
     /**
+     * Attribute-safe absolute http/https URL (shared storefront gate).
+     *
      * @param mixed $value
      * @return string
      */
-    private static function httpUrl($value)
+    public static function httpUrl($value)
     {
-        $url = trim((string) $value);
-        if ($url === '') {
-            return '';
-        }
-        if (!filter_var($url, FILTER_VALIDATE_URL)) {
-            return '';
-        }
-        $scheme = strtolower((string) parse_url($url, PHP_URL_SCHEME));
-
-        return ($scheme === 'http' || $scheme === 'https') ? $url : '';
+        return MtUniCreditStorefrontHttpUrl::sanitize($value);
     }
 }

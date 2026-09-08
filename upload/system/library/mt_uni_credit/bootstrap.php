@@ -69,6 +69,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'oc3_product_line_resolver.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'storefront_operation_identity.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'storefront_application_token.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'storefront_calculator_presenter.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'storefront_http_url.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'storefront_modal_presenter.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'storefront_customer_prefill.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'storefront_consent_resolver.php';

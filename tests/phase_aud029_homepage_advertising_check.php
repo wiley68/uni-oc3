@@ -1,11 +1,12 @@
 <?php
 
 /**
- * AUD-029 — Homepage advertising malformed-cache fail-closed + F02 assurance.
+ * AUD-029 — Homepage + modal storefront CTA fail-closed assurance.
  * Run: php tests/phase_aud029_homepage_advertising_check.php
  *
  * F01: wrong-type / incomplete cached advertising → present() null, no warnings
  * F02: route / CTA / event self-heal / duplicate footer assurance (tests only)
+ * F03: homepage + modal raw-quote attribute injection rejected
  *
  * PHP 7.3 compatible. Offline.
  */
@@ -651,6 +652,213 @@ mtucAud029_assert(
     strpos($presenterSrc, 'Array to string') === false
         && strpos($presenterSrc, 'isAllowedString') !== false,
     'F01 source: type guard present'
+);
+mtucAud029_assert(
+    strpos($presenterSrc, 'MtUniCreditStorefrontHttpUrl::sanitize') !== false,
+    'homepage regression: presenter delegates to shared StorefrontHttpUrl'
+);
+
+// ---------------------------------------------------------------------------
+// F03 — storefront modal CTA (banner_link) attribute injection
+// ---------------------------------------------------------------------------
+$modalBreakout = 'https://example.com/"onclick="alert(1)';
+mtucAud029_assert(
+    MtUniCreditStorefrontModalPresenter::httpUrl($modalBreakout) === '',
+    'modal A: raw quote-breakout httpUrl → empty'
+);
+$modalMalicious = MtUniCreditStorefrontModalPresenter::present(
+    array('reklama_url' => $modalBreakout, 'uni_backurl' => ''),
+    'BGN',
+    array()
+);
+mtucAud029_assert(
+    $modalMalicious['banner_link'] === ''
+        && strpos(json_encode($modalMalicious), '"onclick="') === false
+        && strpos((string) $modalMalicious['banner_link'], $modalBreakout) === false,
+    'modal A: present() does not expose malicious banner_link'
+);
+
+$modalQuotePlacements = array(
+    'https://example.com/"',
+    'https://example.com/foo"bar',
+    'https://example.com/" onclick="alert(1)',
+);
+foreach ($modalQuotePlacements as $placement) {
+    mtucAud029_assert(
+        MtUniCreditStorefrontModalPresenter::httpUrl($placement) === '',
+        'modal B: raw quote placement rejected: ' . substr($placement, 0, 48)
+    );
+}
+
+$modalEncoded = 'https://example.com/path%22quoted%22ok';
+mtucAud029_assert(
+    MtUniCreditStorefrontModalPresenter::httpUrl($modalEncoded) === $modalEncoded,
+    'modal C: encoded %22 accepted unchanged'
+);
+mtucAud029_assert(
+    MtUniCreditStorefrontModalPresenter::httpUrl('https://example.com/path') === 'https://example.com/path',
+    'modal D: normal HTTPS accepted'
+);
+mtucAud029_assert(
+    MtUniCreditStorefrontModalPresenter::httpUrl('http://example.com/path') === 'http://example.com/path',
+    'modal E: normal HTTP accepted'
+);
+mtucAud029_assert(
+    MtUniCreditStorefrontModalPresenter::httpUrl('https://example.com/path?foo=bar&baz=1')
+        === 'https://example.com/path?foo=bar&baz=1',
+    'modal: HTTPS with query accepted'
+);
+
+$modalSchemeBad = array(
+    'javascript:alert(1)',
+    'data:text/html,x',
+    'vbscript:msgbox(1)',
+    '//example.com/path',
+    '/relative/path',
+    'java%0ascript:alert(1)',
+);
+foreach ($modalSchemeBad as $bad) {
+    mtucAud029_assert(
+        MtUniCreditStorefrontModalPresenter::httpUrl($bad) === '',
+        'modal F: reject ' . substr($bad, 0, 40)
+    );
+}
+
+$modalFallbackMalicious = MtUniCreditStorefrontModalPresenter::present(
+    array(
+        'reklama_url' => '',
+        'uni_backurl' => $modalBreakout,
+    ),
+    'BGN',
+    array()
+);
+mtucAud029_assert(
+    $modalFallbackMalicious['banner_link'] === '',
+    'modal G: malicious uni_backurl fallback rejected'
+);
+
+$modalFallbackSafe = MtUniCreditStorefrontModalPresenter::present(
+    array(
+        'reklama_url' => '',
+        'uni_backurl' => 'https://safe.example/offer',
+    ),
+    'BGN',
+    array()
+);
+mtucAud029_assert(
+    $modalFallbackSafe['banner_link'] === 'https://safe.example/offer',
+    'modal H: safe uni_backurl fallback usable'
+);
+
+$modalPreferReklama = MtUniCreditStorefrontModalPresenter::present(
+    array(
+        'reklama_url' => 'https://reklama.example/a',
+        'uni_backurl' => 'https://back.example/b',
+    ),
+    'BGN',
+    array()
+);
+mtucAud029_assert(
+    $modalPreferReklama['banner_link'] === 'https://reklama.example/a',
+    'modal priority: reklama_url preferred over uni_backurl'
+);
+
+$modalReklamaBadFallbackGood = MtUniCreditStorefrontModalPresenter::present(
+    array(
+        'reklama_url' => $modalBreakout,
+        'uni_backurl' => 'https://safe.example/fallback',
+    ),
+    'BGN',
+    array()
+);
+mtucAud029_assert(
+    $modalReklamaBadFallbackGood['banner_link'] === 'https://safe.example/fallback',
+    'modal: bad reklama_url falls through to validated uni_backurl'
+);
+
+// C0 / DEL rejection (shared gate)
+mtucAud029_assert(
+    MtUniCreditStorefrontHttpUrl::sanitize("https://example.com/a\x00b") === '',
+    'modal mutation-2 fixture: C0 NUL rejected'
+);
+mtucAud029_assert(
+    MtUniCreditStorefrontHttpUrl::sanitize("https://example.com/a\x7Fb") === '',
+    'modal mutation-2 fixture: DEL rejected'
+);
+
+// Raw apostrophe: not forced-reject (double-quoted sink only)
+$modalApos = "https://example.com/path'segment";
+$modalAposResult = MtUniCreditStorefrontModalPresenter::httpUrl($modalApos);
+mtucAud029_assert(
+    $modalAposResult === $modalApos || $modalAposResult === '',
+    'modal: raw apostrophe follows filter_var (no forced reject)'
+);
+
+// Homepage regression sentinel (must remain fixed)
+mtucAud029_assert($presenter->httpUrl($modalBreakout) === '', 'homepage regression: raw quote rejected');
+mtucAud029_assert($presenter->httpUrl($modalEncoded) === $modalEncoded, 'homepage regression: %22 accepted');
+mtucAud029_assert($presenter->httpUrl('https://ok.example/a') === 'https://ok.example/a', 'homepage regression: https');
+mtucAud029_assert($presenter->httpUrl('http://ok.example/a') === 'http://ok.example/a', 'homepage regression: http');
+mtucAud029_assert($presenter->httpUrl('javascript:x') === '', 'homepage regression: javascript');
+mtucAud029_assert($presenter->httpUrl('data:text/html,x') === '', 'homepage regression: data');
+mtucAud029_assert($presenter->httpUrl('vbscript:x') === '', 'homepage regression: vbscript');
+
+// Modal mutation sensitivity 1–7 (behavioral + source; removal of shared gate fails fixtures)
+$modalSrc = (string) file_get_contents($lib . '/storefront_modal_presenter.php');
+$httpUrlSrc = (string) file_get_contents($lib . '/storefront_http_url.php');
+mtucAud029_assert(
+    MtUniCreditStorefrontModalPresenter::httpUrl($modalBreakout) === ''
+        && strpos($httpUrlSrc, "strpos(\$url, '\"')") !== false,
+    'modal security mutation-1 YES: raw-quote check required'
+);
+mtucAud029_assert(
+    MtUniCreditStorefrontHttpUrl::sanitize("https://example.com/\x01") === ''
+        && strpos($httpUrlSrc, '\\x00-\\x1F\\x7F') !== false,
+    'modal security mutation-2 YES: C0/DEL rejection required'
+);
+mtucAud029_assert(
+    MtUniCreditStorefrontModalPresenter::httpUrl('javascript:alert(1)') === '',
+    'modal security mutation-3 YES: javascript rejected'
+);
+mtucAud029_assert(
+    MtUniCreditStorefrontModalPresenter::httpUrl('//example.com') === '',
+    'modal security mutation-4 YES: protocol-relative rejected'
+);
+mtucAud029_assert(
+    strpos($modalSrc, "httpUrl(isset(\$shop['reklama_url'])") !== false
+        && MtUniCreditStorefrontModalPresenter::present(array('reklama_url' => $modalBreakout), 'BGN', array())['banner_link'] === '',
+    'modal security mutation-5 YES: reklama_url passes validator'
+);
+mtucAud029_assert(
+    strpos($modalSrc, "httpUrl(isset(\$shop['uni_backurl'])") !== false
+        && $modalFallbackMalicious['banner_link'] === '',
+    'modal security mutation-6 YES: fallback uni_backurl passes validator'
+);
+mtucAud029_assert(
+    MtUniCreditStorefrontModalPresenter::httpUrl($modalEncoded) === $modalEncoded
+        && strpos($httpUrlSrc, 'urldecode') === false
+        && strpos($httpUrlSrc, 'rawurldecode') === false,
+    'modal security mutation-7 YES: encoded %22 not decoded/rejected'
+);
+
+// Caller bypass scan: product/cart/payment use StorefrontModalPresenter only
+$productSrc = (string) file_get_contents($root . '/upload/catalog/controller/extension/mt_uni_credit/product.php');
+$cartSrc = (string) file_get_contents($root . '/upload/catalog/controller/extension/mt_uni_credit/cart.php');
+$paymentSrc = (string) file_get_contents($root . '/upload/catalog/model/extension/payment/mt_uni_credit.php');
+$modalTwig = (string) file_get_contents(
+    $root . '/upload/catalog/view/theme/default/template/extension/mt_uni_credit/modal.twig'
+);
+mtucAud029_assert(
+    strpos($productSrc, 'MtUniCreditStorefrontModalPresenter::present') !== false
+        && strpos($cartSrc, 'MtUniCreditStorefrontModalPresenter::present') !== false
+        && strpos($paymentSrc, 'MtUniCreditStorefrontModalPresenter::present') !== false,
+    'bypass scan: product/cart/payment consume modal presenter'
+);
+mtucAud029_assert(
+    strpos($modalTwig, 'href="{{ modal_meta.banner_link }}"') !== false
+        && strpos($modalTwig, 'reklama_url') === false
+        && strpos($modalTwig, 'uni_backurl') === false,
+    'modal.twig: double-quoted banner_link sink only (no raw shop URL vars)'
 );
 
 restore_error_handler();
