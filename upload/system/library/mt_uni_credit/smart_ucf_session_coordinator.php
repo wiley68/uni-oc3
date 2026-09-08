@@ -612,7 +612,8 @@ final class MtUniCreditSmartUcfSessionCoordinator
                     $storeId,
                     $shopOrderId,
                     $status['status_id'],
-                    $status['status_label']
+                    $status['status_label'],
+                    MtUniCreditBankStatusTransitionPolicy::SOURCE_LOCAL_LIFECYCLE
                 );
             } catch (Throwable $ignored) {
             }

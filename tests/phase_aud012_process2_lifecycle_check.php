@@ -81,13 +81,23 @@ final class MtUniCreditAud012FailClosedBankStatuses
      * @param string $statusLabel
      * @return array<string, mixed>|null
      */
-    public function updateByOrderIdentifier($storeId, $orderReference, $statusId, $statusLabel)
+    public function updateByOrderIdentifier($storeId, $orderReference, $statusId, $statusLabel, $source = null)
     {
         if ($this->failLocal) {
             return null;
         }
 
-        return $this->inner->updateByOrderIdentifier($storeId, $orderReference, $statusId, $statusLabel);
+        if ($source === null) {
+            return $this->inner->updateByOrderIdentifier($storeId, $orderReference, $statusId, $statusLabel);
+        }
+
+        return $this->inner->updateByOrderIdentifier(
+            $storeId,
+            $orderReference,
+            $statusId,
+            $statusLabel,
+            $source
+        );
     }
 
     /**
@@ -355,8 +365,9 @@ mtucAud012_assert(
 );
 mtucAud012_assert(count($mailerPatch->sent) === 0, 'F01 CP fail: no mail');
 mtucAud012_assert(
-    Phase9TestHarness::bankStatusId($stackPatch, $orderPatch) === MtUniCreditBankStatus::SENT_PROCESS2,
-    'F01 CP fail: local bank_sent_process2 may remain'
+    Phase9TestHarness::bankStatusId($stackPatch, $orderPatch) !== MtUniCreditBankStatus::SENT_PROCESS2
+        && Phase9TestHarness::bankStatusId($stackPatch, $orderPatch) === null,
+    'F01 CP fail: local bank_sent_process2 NOT persisted'
 );
 mtucAud012_assert(Phase7TestHarness::countOrderPosts($transportPatchFail) === 1, 'F01 CP fail: CP create = 1');
 mtucAud012_assert(Phase9TestHarness::smartUcfCallCount($stackPatch['smartUcfProbe']) === 0, 'F01 CP fail: SmartUCF = 0');
@@ -713,7 +724,7 @@ foreach ($throwRows as $row) {
 }
 mtucAud012_assert(
     $throwAdminState === MtUniCreditProcessTwoMailRecipientStates::UNCERTAIN
-    || $throwAdminState === MtUniCreditProcessTwoMailRecipientStates::SENDING,
+        || $throwAdminState === MtUniCreditProcessTwoMailRecipientStates::SENDING,
     'F03 markSent throw: recipient uncertain (or sending pending stale→uncertain), not failed'
 );
 mtucAud012_assert($anyFailed === false, 'F03 markSent throw: no recipient downgraded to retryable failed');

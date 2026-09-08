@@ -279,9 +279,8 @@ final class MtUniCreditSmartUcfSessionClient
             return MtUniCreditSmartUcfSessionException::KIND_DUPLICATE;
         }
 
-        return ($httpCode === 0 || $httpCode >= 500)
-            ? MtUniCreditSmartUcfSessionException::KIND_TRANSPORT
-            : MtUniCreditSmartUcfSessionException::KIND_REMOTE;
+        // No session ID and no structured rejection evidence → ambiguous (AUD-015 F03).
+        return MtUniCreditSmartUcfSessionException::KIND_TRANSPORT;
     }
 
     /**

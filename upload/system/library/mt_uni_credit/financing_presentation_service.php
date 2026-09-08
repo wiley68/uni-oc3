@@ -60,13 +60,14 @@ final class MtUniCreditFinancingPresentationService
      */
     public function customerThankYouRows($storeId, $orderId)
     {
-        // Terminal bank failures own the customer message (override P2 leasing snapshot).
-        $status = $this->repository->findBankStatusLabel((int) $storeId, (int) $orderId);
-        if ($status === MtUniCreditBankStatus::LABEL_SEND_FAILED_SMARTUCF) {
+        // Terminal bank failures own the customer message — branch on status_id (AUD-015 F04).
+        $statusId = $this->repository->findBankStatusId((int) $storeId, (int) $orderId);
+        $statusLabel = $this->repository->findBankStatusLabel((int) $storeId, (int) $orderId);
+        if ($statusId === MtUniCreditBankStatus::SEND_FAILED_SMARTUCF) {
             return array(
                 array(
                     'label' => MtUniCreditFinancingLeasingPresenter::LABEL_BANK_STATUS,
-                    'value' => $status,
+                    'value' => MtUniCreditBankStatus::LABEL_SEND_FAILED_SMARTUCF,
                 ),
                 array(
                     'label' => MtUniCreditFinancingLeasingPresenter::LABEL_MESSAGE,
@@ -74,11 +75,11 @@ final class MtUniCreditFinancingPresentationService
                 ),
             );
         }
-        if ($status === MtUniCreditBankStatus::LABEL_SEND_FAILED_CP) {
+        if ($statusId === MtUniCreditBankStatus::SEND_FAILED_CP) {
             return array(
                 array(
                     'label' => MtUniCreditFinancingLeasingPresenter::LABEL_BANK_STATUS,
-                    'value' => $status,
+                    'value' => MtUniCreditBankStatus::LABEL_SEND_FAILED_CP,
                 ),
                 array(
                     'label' => MtUniCreditFinancingLeasingPresenter::LABEL_MESSAGE,
@@ -94,11 +95,11 @@ final class MtUniCreditFinancingPresentationService
             return $rows;
         }
 
-        if ($status !== '') {
+        if ($statusLabel !== '') {
             return array(
                 array(
                     'label' => MtUniCreditFinancingLeasingPresenter::LABEL_BANK_STATUS,
-                    'value' => $status,
+                    'value' => $statusLabel,
                 ),
             );
         }

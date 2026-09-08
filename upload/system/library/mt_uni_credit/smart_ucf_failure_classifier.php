@@ -69,10 +69,11 @@ final class MtUniCreditSmartUcfFailureClassifier
             );
         }
 
+        // Absence of success data is not affirmative rejection evidence (AUD-015 F03).
         return new MtUniCreditSmartUcfFailureClassification(
-            MtUniCreditSmartUcfLifecycleStates::FAILED,
+            MtUniCreditSmartUcfLifecycleStates::OUTCOME_UNKNOWN,
             false,
-            MtUniCreditSmartUcfFailureClassification::CLASS_REMOTE_REJECT,
+            MtUniCreditSmartUcfFailureClassification::CLASS_TRANSPORT_AMBIGUOUS,
             $httpCode
         );
     }

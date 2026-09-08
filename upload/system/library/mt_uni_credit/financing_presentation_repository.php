@@ -45,13 +45,40 @@ final class MtUniCreditFinancingPresentationRepository
     /**
      * @param int $storeId
      * @param int $orderId
-     * @return string Persisted status_label (local + inbound CP vocabulary)
+     * @return string Display label (canonical for named codes)
      */
     public function findBankStatusLabel($storeId, $orderId)
     {
-        $map = $this->batchBankStatusLabels((int) $storeId, array((int) $orderId));
+        $row = $this->findBankStatusRow((int) $storeId, (int) $orderId);
+        if ($row === null) {
+            return '';
+        }
 
-        return isset($map[(int) $orderId]) ? $map[(int) $orderId] : '';
+        return MtUniCreditBankStatus::resolveLabel($row['status_id'], $row['status_label']);
+    }
+
+    /**
+     * @param int $storeId
+     * @param int $orderId
+     * @return string status_id or empty
+     */
+    public function findBankStatusId($storeId, $orderId)
+    {
+        $row = $this->findBankStatusRow((int) $storeId, (int) $orderId);
+
+        return $row !== null ? (string) $row['status_id'] : '';
+    }
+
+    /**
+     * @param int $storeId
+     * @param int $orderId
+     * @return array{status_id: string, status_label: string}|null
+     */
+    public function findBankStatusRow($storeId, $orderId)
+    {
+        $map = $this->batchBankStatusRows((int) $storeId, array((int) $orderId));
+
+        return isset($map[(int) $orderId]) ? $map[(int) $orderId] : null;
     }
 
     /**
@@ -60,6 +87,25 @@ final class MtUniCreditFinancingPresentationRepository
      * @return array<int, string> order_id => status_label
      */
     public function batchBankStatusLabels($storeId, array $orderIds)
+    {
+        $rows = $this->batchBankStatusRows($storeId, $orderIds);
+        $map = array();
+        foreach ($rows as $orderId => $row) {
+            $map[(int) $orderId] = MtUniCreditBankStatus::resolveLabel(
+                $row['status_id'],
+                $row['status_label']
+            );
+        }
+
+        return $map;
+    }
+
+    /**
+     * @param int $storeId
+     * @param array<int, int> $orderIds
+     * @return array<int, array{status_id: string, status_label: string}>
+     */
+    public function batchBankStatusRows($storeId, array $orderIds)
     {
         $ids = array();
         foreach ($orderIds as $orderId) {
@@ -73,7 +119,7 @@ final class MtUniCreditFinancingPresentationRepository
         }
 
         $table = $this->db->getPrefix() . MtUniCreditPersistenceTableNames::ORDER_BANK_STATUS;
-        $sql = "SELECT `order_id`, `status_label` FROM `{$table}`"
+        $sql = "SELECT `order_id`, `status_id`, `status_label` FROM `{$table}`"
             . " WHERE `store_id` = " . (int) $storeId
             . " AND `order_id` IN (" . implode(',', $ids) . ")";
         $result = $this->db->query($sql);
@@ -83,7 +129,10 @@ final class MtUniCreditFinancingPresentationRepository
                 if (!isset($row['order_id'])) {
                     continue;
                 }
-                $map[(int) $row['order_id']] = (string) (isset($row['status_label']) ? $row['status_label'] : '');
+                $map[(int) $row['order_id']] = array(
+                    'status_id' => (string) (isset($row['status_id']) ? $row['status_id'] : ''),
+                    'status_label' => (string) (isset($row['status_label']) ? $row['status_label'] : ''),
+                );
             }
         }
 

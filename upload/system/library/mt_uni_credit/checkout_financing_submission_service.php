@@ -479,7 +479,8 @@ final class MtUniCreditCheckoutFinancingSubmissionService
                 $storeId,
                 (string) $orderId,
                 $status['status_id'],
-                $status['status_label']
+                $status['status_label'],
+                MtUniCreditBankStatusTransitionPolicy::SOURCE_LOCAL_LIFECYCLE
             );
             if ($updated === null) {
                 return false;

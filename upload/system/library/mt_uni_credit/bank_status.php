@@ -10,12 +10,16 @@ final class MtUniCreditBankStatus
     const SEND_FAILED = 'bank_send_failed';
     const SEND_FAILED_CP = 'bank_send_failed_cp';
     const SEND_FAILED_SMARTUCF = 'bank_send_failed_smartucf';
+    const CP_SENT = 'cp_sent';
+    const SMARTUCF_SENT = 'smartucf_sent';
 
     const LABEL_SENT_PROCESS1 = 'Изпратен Банка - Процес 1';
     const LABEL_SENT_PROCESS2 = 'Изпратен Банка - Процес 2';
     const LABEL_SEND_FAILED = 'Неуспешно изпратен Банка';
     const LABEL_SEND_FAILED_CP = 'Неуспешно изпратен Банка - КП';
     const LABEL_SEND_FAILED_SMARTUCF = 'Неуспешно изпратен Банка - SmartUCF';
+    const LABEL_CP_SENT = 'Създаден в КП Банка';
+    const LABEL_SMARTUCF_SENT = 'Създаден в SmartUCF';
 
     /**
      * @return array{status_id: string, status_label: string}
@@ -68,5 +72,52 @@ final class MtUniCreditBankStatus
             'status_id' => self::SEND_FAILED_CP,
             'status_label' => self::LABEL_SEND_FAILED_CP,
         );
+    }
+
+    /**
+     * Server-side canonical BG label for named status codes (AUD-015 F04).
+     * Returns null for numeric / unknown codes (display-only inbound label may apply).
+     *
+     * @param string $statusId
+     * @return string|null
+     */
+    public static function canonicalLabel($statusId)
+    {
+        $statusId = strtolower(trim((string) $statusId));
+        switch ($statusId) {
+            case self::SENT_PROCESS1:
+                return self::LABEL_SENT_PROCESS1;
+            case self::SENT_PROCESS2:
+                return self::LABEL_SENT_PROCESS2;
+            case self::SEND_FAILED_SMARTUCF:
+                return self::LABEL_SEND_FAILED_SMARTUCF;
+            case self::SEND_FAILED_CP:
+                return self::LABEL_SEND_FAILED_CP;
+            case self::SEND_FAILED:
+                return self::LABEL_SEND_FAILED;
+            case self::CP_SENT:
+                return self::LABEL_CP_SENT;
+            case self::SMARTUCF_SENT:
+                return self::LABEL_SMARTUCF_SENT;
+            default:
+                return null;
+        }
+    }
+
+    /**
+     * Resolve display label: canonical for named codes; otherwise trimmed inbound/display label.
+     *
+     * @param string $statusId
+     * @param string $fallbackLabel
+     * @return string
+     */
+    public static function resolveLabel($statusId, $fallbackLabel = '')
+    {
+        $canonical = self::canonicalLabel($statusId);
+        if ($canonical !== null) {
+            return $canonical;
+        }
+
+        return trim((string) $fallbackLabel);
     }
 }

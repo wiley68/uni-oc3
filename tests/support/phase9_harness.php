@@ -26,7 +26,25 @@ final class Phase9TestHarness
      * @param Phase2MemoryDb|null $memoryDb
      * @param int $storeId
      * @param array<string, mixed> $shopOverrides
-     * @return array<string, mixed>
+     * @return array{
+     *   memoryDb: Phase2MemoryDb,
+     *   db: MtUniCreditDbAdapter,
+     *   transport: Phase4FakeCpHttpTransport,
+     *   client: MtUniCreditControlPanelClient,
+     *   attempts: MtUniCreditFinancingAttemptRepository,
+     *   locks: MtUniCreditOperationLockRepository,
+     *   lifecycle: MtUniCreditControlPanelOrderLifecycleService,
+     *   submission: MtUniCreditCheckoutFinancingSubmissionService,
+     *   storefront: MtUniCreditStorefrontFinancingSubmissionService,
+     *   storeId: int,
+     *   smartUcfProbe: object,
+     *   process1: MtUniCreditSmartUcfSessionCoordinator,
+     *   process2: MtUniCreditProcessTwoLifecycleCoordinator,
+     *   process2Mailer: MtUniCreditRecordingProcessTwoMailer,
+     *   bankStatuses: MtUniCreditOrderBankStatusRepository,
+     *   smartUcfLifecycle: MtUniCreditSmartUcfLifecycleRepository,
+     *   clock: MtUniCreditPersistenceClock
+     * }
      */
     public static function stack(
         Phase4FakeCpHttpTransport $transport,

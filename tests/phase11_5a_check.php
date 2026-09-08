@@ -333,7 +333,11 @@ mtuc115a_assert(strpos($controllerSource, 'addOrderHistory') === false, 'inbound
 mtuc115a_assert(strpos($controllerSource, 'sucfOnlineSessionStart') === false, 'inbound API never calls SmartUCF');
 
 $bankRepoSource = (string) file_get_contents($lib . DIRECTORY_SEPARATOR . 'order_bank_status_repository.php');
-mtuc115a_assert(strpos($bankRepoSource, 'last-write wins') !== false, 'bank status docs last-write-wins parity');
+mtuc115a_assert(
+    strpos($bankRepoSource, 'BankStatusTransitionPolicy') !== false
+        && strpos($bankRepoSource, 'status_id` IN (') !== false,
+    'bank status AUD-015 transition policy + CAS'
+);
 
 // ---------------------------------------------------------------------------
 // A — shop_cache
@@ -590,7 +594,7 @@ $same = mtuc115a_invoke('order_bank_status', array(
 ), $stackBank, array('X-UniPayment-Nonce' => mtuc115a_nonce()));
 mtuc115a_assert($same['status'] === 200 && $same['payload']['data']['oc_order_state_changed'] === false, 'bank: same-status idempotent');
 
-// OC4 parity: last-write wins (store does NOT reject regressive push; CP must not send them)
+// AUD-015: durable terminal rejects stale intermediate / conflicting terminal inbound.
 $stale = mtuc115a_invoke('order_bank_status', array(
     'unicid' => $stackBank['unicid'],
     'order_id' => '901',
@@ -598,16 +602,10 @@ $stale = mtuc115a_invoke('order_bank_status', array(
     'status' => 'Създаден в КП',
 ), $stackBank, array('X-UniPayment-Nonce' => mtuc115a_nonce()));
 mtuc115a_assert(
-    $stale['status'] === 200 && $stale['payload']['data']['status_id'] === 'cp_sent',
-    'bank: OC4 last-write-wins accepts rewrite (CP must not push stale)'
+    $stale['status'] === 200 && $stale['payload']['data']['status_id'] === 'bank_sent_process1',
+    'bank: AUD-015 blocks stale cp_sent over P1'
 );
 
-$termA = mtuc115a_invoke('order_bank_status', array(
-    'unicid' => $stackBank['unicid'],
-    'order_id' => '901',
-    'status_id' => 'bank_sent_process1',
-    'status' => 'P1',
-), $stackBank, array('X-UniPayment-Nonce' => mtuc115a_nonce()));
 $termB = mtuc115a_invoke('order_bank_status', array(
     'unicid' => $stackBank['unicid'],
     'order_id' => '901',
@@ -615,9 +613,9 @@ $termB = mtuc115a_invoke('order_bank_status', array(
     'status' => 'Fail',
 ), $stackBank, array('X-UniPayment-Nonce' => mtuc115a_nonce()));
 mtuc115a_assert(
-    $termA['status'] === 200 && $termB['status'] === 200
-        && $termB['payload']['data']['status_id'] === 'bank_send_failed_smartucf',
-    'bank: terminal conflict resolved by last-write (OC4 parity; CP must avoid)'
+    $termB['status'] === 200
+        && $termB['payload']['data']['status_id'] === 'bank_sent_process1',
+    'bank: AUD-015 blocks FS overwrite of P1'
 );
 
 $unknown = mtuc115a_invoke('order_bank_status', array(
@@ -645,8 +643,8 @@ $labels = (new MtUniCreditFinancingPresentationRepository($stackBank['db']))->ba
     $stackBank['storeId']
 );
 mtuc115a_assert(
-    isset($labels[0]) && $labels[0] === 'Fail',
-    'bank: Admin list/detail source reflects pushed status_label locally'
+    isset($labels[0]) && $labels[0] === MtUniCreditBankStatus::LABEL_SENT_PROCESS1,
+    'bank: Admin list/detail uses canonical label for named status_id'
 );
 
 // Multistore

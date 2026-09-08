@@ -77,6 +77,8 @@ class ControllerExtensionMtUniCreditApi extends Controller
                 throw new MtUniCreditInboundApiException('Полето status е невалидно.', 400, 'invalid_payload');
             }
             $status = trim($status);
+            // AUD-015 F04: named codes get canonical server-side labels (ignore conflicting inbound text).
+            $status = MtUniCreditBankStatus::resolveLabel($statusId, $status);
 
             $storeId = (int) $this->config->get('config_store_id');
             $db = MtUniCreditBootstrap::dbFromRegistry($this->db);
@@ -84,7 +86,8 @@ class ControllerExtensionMtUniCreditApi extends Controller
                 $storeId,
                 $orderId,
                 $statusId,
-                $status
+                $status,
+                MtUniCreditBankStatusTransitionPolicy::SOURCE_INBOUND_CALLBACK
             );
             if ($result === null) {
                 throw new MtUniCreditInboundApiException('Поръчката не е намерена в магазина.', 404, 'order_not_found');

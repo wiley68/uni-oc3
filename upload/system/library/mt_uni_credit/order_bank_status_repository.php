@@ -1,13 +1,11 @@
 <?php
 
 /**
- * Persists CP → module bank status callbacks scoped by store + local order.
+ * Persists module bank status callbacks scoped by store + local order.
  *
- * Update semantics (OC4 / Woo / PS8 Bridge A parity): last-write wins.
- * Any accepted status_id may replace any previous status_id for the same
- * (store_id, order_id). Same status_id + label is idempotent (no rewrite).
+ * AUD-015 F01: transitions enforced by MtUniCreditBankStatusTransitionPolicy via
+ * atomic conditional UPDATE (CAS) — not unconditional last-write-wins.
  * Native OpenCart order history / mail are never touched here.
- * CP schedulers must not push regressive / stale statuses.
  */
 final class MtUniCreditOrderBankStatusRepository
 {
@@ -40,16 +38,26 @@ final class MtUniCreditOrderBankStatusRepository
      * @param int $storeId
      * @param string $orderReference
      * @param string $statusId
-     * @param string $statusLabel
-     * @return array<string, mixed>|null
+     * @param string $statusLabel inbound/display hint; named codes are canonicalized server-side
+     * @param string $source MtUniCreditBankStatusTransitionPolicy::SOURCE_*
+     * @return array<string, mixed>|null null only when order ownership cannot be resolved
      */
-    public function updateByOrderIdentifier($storeId, $orderReference, $statusId, $statusLabel)
-    {
+    public function updateByOrderIdentifier(
+        $storeId,
+        $orderReference,
+        $statusId,
+        $statusLabel,
+        $source = MtUniCreditBankStatusTransitionPolicy::SOURCE_INBOUND_CALLBACK
+    ) {
         MtUniCreditStoreScope::requireStoreId($storeId);
         $orderReference = trim($orderReference);
         $statusId = strtolower(trim($statusId));
-        $statusLabel = trim($statusLabel);
+        $statusLabel = trim((string) $statusLabel);
+        $source = MtUniCreditBankStatusTransitionPolicy::normalizeSource($source);
         if ($orderReference === '' || $statusId === '') {
+            return null;
+        }
+        if (!MtUniCreditBankStatusTransitionPolicy::isRecognizedStatusId($statusId)) {
             return null;
         }
 
@@ -58,44 +66,91 @@ final class MtUniCreditOrderBankStatusRepository
             return null;
         }
 
-        $existing = $this->findByOrderId($storeId, $orderId);
-        if ($existing !== null && $existing['status_id'] === $statusId && $existing['status_label'] === $statusLabel) {
-            return array(
-                'order_id' => $orderReference,
-                'oc_order_id' => $orderId,
-                'status' => $statusLabel,
-                'status_id' => $statusId,
-                'oc_order_state_changed' => false,
-            );
-        }
-
+        $canonicalLabel = MtUniCreditBankStatus::resolveLabel($statusId, $statusLabel);
         $updatedAt = $this->clock->formatUtc($this->clock->now());
         $table = $this->tableName();
+
+        $existing = $this->findByOrderId($storeId, $orderId);
+        $currentId = $existing !== null ? (string) $existing['status_id'] : '';
+        $decision = MtUniCreditBankStatusTransitionPolicy::decide($currentId, $statusId, $source);
+
+        if ($decision === MtUniCreditBankStatusTransitionPolicy::DECISION_REJECT) {
+            return $this->resultPayload($orderReference, $orderId, $existing, false);
+        }
+
+        if ($decision === MtUniCreditBankStatusTransitionPolicy::DECISION_NOOP) {
+            if (
+                $existing !== null
+                && (string) $existing['status_label'] !== $canonicalLabel
+                && MtUniCreditBankStatus::canonicalLabel($statusId) !== null
+            ) {
+                // Canonicalize stale/mismatched label without changing status_id (AUD-015 F04).
+                $this->db->query(
+                    "UPDATE `{$table}` SET"
+                        . " `status_label` = '" . $this->db->escape($canonicalLabel) . "',"
+                        . " `order_reference` = '" . $this->db->escape($orderReference) . "',"
+                        . " `updated_at` = '" . $this->db->escape($updatedAt) . "'"
+                        . " WHERE `store_id` = " . (int) $storeId
+                        . " AND `order_id` = " . (int) $orderId
+                        . " AND `status_id` = '" . $this->db->escape($statusId) . "'"
+                );
+                $existing = $this->findByOrderId($storeId, $orderId);
+            }
+
+            return $this->resultPayload($orderReference, $orderId, $existing, false);
+        }
+
+        // DECISION_ALLOW
+        if ($existing === null) {
+            $this->insertNewRow($storeId, $orderId, $orderReference, $statusId, $canonicalLabel, $updatedAt);
+            $after = $this->findByOrderId($storeId, $orderId);
+            if ($after === null) {
+                return null;
+            }
+            // Concurrent insert may have won with a different status — re-apply policy.
+            if ((string) $after['status_id'] !== $statusId) {
+                return $this->updateByOrderIdentifier(
+                    $storeId,
+                    $orderReference,
+                    $statusId,
+                    $canonicalLabel,
+                    $source
+                );
+            }
+
+            return $this->resultPayload($orderReference, $orderId, $after, true);
+        }
+
+        $allowedFrom = MtUniCreditBankStatusTransitionPolicy::allowedFromStatusIds($statusId, $source);
+        if ($allowedFrom === array()) {
+            return $this->resultPayload($orderReference, $orderId, $existing, false);
+        }
+
+        $inList = array();
+        foreach ($allowedFrom as $fromId) {
+            $inList[] = "'" . $this->db->escape($fromId) . "'";
+        }
+
+        // Atomic CAS: only mutate when current status is still an allowed predecessor.
         $this->db->query(
-            "INSERT INTO `{$table}`"
-                . " (`store_id`, `order_id`, `order_reference`, `status_id`, `status_label`, `updated_at`)"
-                . " VALUES ("
-                . (int) $storeId . ","
-                . (int) $orderId . ","
-                . " '" . $this->db->escape($orderReference) . "',"
-                . " '" . $this->db->escape($statusId) . "',"
-                . " '" . $this->db->escape($statusLabel) . "',"
-                . " '" . $this->db->escape($updatedAt) . "'"
-                . ")"
-                . " ON DUPLICATE KEY UPDATE"
-                . " `order_reference` = VALUES(`order_reference`),"
-                . " `status_id` = VALUES(`status_id`),"
-                . " `status_label` = VALUES(`status_label`),"
-                . " `updated_at` = VALUES(`updated_at`)"
+            "UPDATE `{$table}` SET"
+                . " `order_reference` = '" . $this->db->escape($orderReference) . "',"
+                . " `status_id` = '" . $this->db->escape($statusId) . "',"
+                . " `status_label` = '" . $this->db->escape($canonicalLabel) . "',"
+                . " `updated_at` = '" . $this->db->escape($updatedAt) . "'"
+                . " WHERE `store_id` = " . (int) $storeId
+                . " AND `order_id` = " . (int) $orderId
+                . " AND `status_id` IN (" . implode(',', $inList) . ")"
         );
 
-        return array(
-            'order_id' => $orderReference,
-            'oc_order_id' => $orderId,
-            'status' => $statusLabel,
-            'status_id' => $statusId,
-            'oc_order_state_changed' => false,
-        );
+        $affected = method_exists($this->db, 'countAffected') ? (int) $this->db->countAffected() : 0;
+        $after = $this->findByOrderId($storeId, $orderId);
+        if ($affected > 0 && $after !== null && (string) $after['status_id'] === $statusId) {
+            return $this->resultPayload($orderReference, $orderId, $after, true);
+        }
+
+        // Race lost or policy now rejects — return durable current without regression.
+        return $this->resultPayload($orderReference, $orderId, $after !== null ? $after : $existing, false);
     }
 
     /**
@@ -125,6 +180,61 @@ final class MtUniCreditOrderBankStatusRepository
             'status_id' => (string) $result->row['status_id'],
             'status_label' => (string) $result->row['status_label'],
             'updated_at' => (string) $result->row['updated_at'],
+        );
+    }
+
+    /**
+     * @param int $storeId
+     * @param int $orderId
+     * @param string $orderReference
+     * @param string $statusId
+     * @param string $statusLabel
+     * @param string $updatedAt
+     * @return void
+     */
+    private function insertNewRow($storeId, $orderId, $orderReference, $statusId, $statusLabel, $updatedAt)
+    {
+        $table = $this->tableName();
+        // INSERT only — concurrent winner keeps its row; loser re-reads and CAS-updates.
+        // ON DUPLICATE KEY UPDATE is intentionally a no-op so a raced durable row is not clobbered.
+        $this->db->query(
+            "INSERT INTO `{$table}`"
+                . " (`store_id`, `order_id`, `order_reference`, `status_id`, `status_label`, `updated_at`)"
+                . " VALUES ("
+                . (int) $storeId . ","
+                . (int) $orderId . ","
+                . " '" . $this->db->escape($orderReference) . "',"
+                . " '" . $this->db->escape($statusId) . "',"
+                . " '" . $this->db->escape($statusLabel) . "',"
+                . " '" . $this->db->escape($updatedAt) . "'"
+                . ")"
+                . " ON DUPLICATE KEY UPDATE"
+                . " `order_id` = `order_id`"
+        );
+    }
+
+    /**
+     * @param string $orderReference
+     * @param int $orderId
+     * @param array<string, mixed>|null $row
+     * @param bool $changed
+     * @return array<string, mixed>
+     */
+    private function resultPayload($orderReference, $orderId, $row, $changed)
+    {
+        $statusId = $row !== null ? (string) $row['status_id'] : '';
+        $statusLabel = $row !== null ? (string) $row['status_label'] : '';
+        if ($statusId !== '') {
+            $statusLabel = MtUniCreditBankStatus::resolveLabel($statusId, $statusLabel);
+        }
+
+        return array(
+            'order_id' => $orderReference,
+            'oc_order_id' => $orderId,
+            'status' => $statusLabel,
+            'status_id' => $statusId,
+            'oc_order_state_changed' => false,
+            'applied' => (bool) $changed,
         );
     }
 

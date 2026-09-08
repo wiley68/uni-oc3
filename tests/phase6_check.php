@@ -338,7 +338,17 @@ mtuc6_assert($result !== null && $result['status_id'] === 'bank_sent_process1', 
 $duplicate = $bankRepo->updateByOrderIdentifier($stack['storeId'], '501', 'bank_sent_process1', 'Sent');
 mtuc6_assert($duplicate !== null && $duplicate['oc_order_state_changed'] === false, 'duplicate bank status idempotent');
 $newer = $bankRepo->updateByOrderIdentifier($stack['storeId'], '501', 'bank_sent_process2', 'Process 2');
-mtuc6_assert($newer !== null && $newer['status_id'] === 'bank_sent_process2', 'newer bank status accepted');
+mtuc6_assert(
+    $newer !== null
+        && $newer['status_id'] === 'bank_sent_process1'
+        && empty($newer['applied']),
+    'AUD-015: P1→P2 inbound cross-process blocked'
+);
+$stale = $bankRepo->updateByOrderIdentifier($stack['storeId'], '501', 'cp_sent', 'Създаден в КП Банка');
+mtuc6_assert(
+    $stale !== null && $stale['status_id'] === 'bank_sent_process1',
+    'AUD-015: P1→stale cp_sent blocked'
+);
 $stack['memoryDb']->seedOrder(502, Phase6TestHarness::STORE_B, MtUniCreditConstants::EXTENSION_CODE);
 mtuc6_assert($bankRepo->updateByOrderIdentifier($stack['storeId'], '502', 'cp_sent', 'X') === null, 'cross-store order rejected');
 mtuc6_assert($bankRepo->updateByOrderIdentifier($stack['storeId'], '999', 'cp_sent', 'X') === null, 'order not found rejected');

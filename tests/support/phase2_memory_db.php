@@ -281,6 +281,10 @@ final class Phase2MemoryDb
             return $this->insertSetting($sql);
         }
 
+        if (stripos($sql, 'UPDATE') === 0 && strpos($sql, 'order_bank_status') !== false) {
+            return $this->updateOrderBankStatus($sql);
+        }
+
         if (stripos($sql, 'UPDATE') === 0 && strpos($sql, 'operation_lock') !== false) {
             return $this->updateOperationLock($sql);
         }
@@ -1115,12 +1119,20 @@ final class Phase2MemoryDb
      */
     private function upsertOrderBankStatus($sql)
     {
+        $hasNoopDuplicate = stripos($sql, 'ON DUPLICATE KEY UPDATE') !== false
+            && preg_match('/ON DUPLICATE KEY UPDATE\s+`?order_id`?\s*=\s*`?order_id`?/i', $sql);
         $normalized = preg_replace('/\s+ON DUPLICATE KEY UPDATE.+$/is', '', $sql);
         $fields = $this->parseInsertValues($normalized);
         $storeId = (int) $fields['store_id'];
         $orderId = (int) $fields['order_id'];
         $key = $storeId . '|' . $orderId;
         $existing = isset($this->orderBankStatus[$key]);
+        if ($existing && $hasNoopDuplicate) {
+            // AUD-015: INSERT ... ON DUPLICATE KEY UPDATE order_id=order_id — keep winner.
+            $this->affected = 0;
+
+            return $this->emptyResult();
+        }
         $this->orderBankStatus[$key] = array(
             'order_bank_status_id' => $existing ? $this->orderBankStatus[$key]['order_bank_status_id'] : $this->nextBankStatusId++,
             'store_id' => $storeId,
@@ -1130,6 +1142,66 @@ final class Phase2MemoryDb
             'status_label' => (string) $fields['status_label'],
             'updated_at' => (string) $fields['updated_at'],
         );
+        $this->affected = 1;
+
+        return $this->emptyResult();
+    }
+
+    /**
+     * Conditional UPDATE for order_bank_status (AUD-015 CAS).
+     *
+     * @param string $sql
+     * @return object
+     */
+    private function updateOrderBankStatus($sql)
+    {
+        $storeId = (int) $this->extractWhereInt($sql, 'store_id');
+        $orderId = (int) $this->extractWhereInt($sql, 'order_id');
+        $key = $storeId . '|' . $orderId;
+        if (!isset($this->orderBankStatus[$key])) {
+            $this->affected = 0;
+
+            return $this->emptyResult();
+        }
+
+        $currentStatus = (string) $this->orderBankStatus[$key]['status_id'];
+
+        if (preg_match('/AND\s+`status_id`\s+IN\s*\(([^)]+)\)/i', $sql, $inMatch)) {
+            $allowed = array();
+            if (preg_match_all('/\'([^\']*)\'/', $inMatch[1], $vals)) {
+                foreach ($vals[1] as $v) {
+                    $allowed[] = (string) $v;
+                }
+            }
+            if (!in_array($currentStatus, $allowed, true)) {
+                $this->affected = 0;
+
+                return $this->emptyResult();
+            }
+        } elseif (preg_match('/AND\s+`status_id`\s*=\s*\'([^\']*)\'/i', $sql, $eqMatch)) {
+            if ($currentStatus !== (string) $eqMatch[1]) {
+                $this->affected = 0;
+
+                return $this->emptyResult();
+            }
+        }
+
+        if (preg_match('/`status_id`\s*=\s*\'([^\']*)\'/', $sql, $sid)) {
+            // Prefer SET clause status_id (before WHERE).
+            if (preg_match('/SET[\s\S]*?`status_id`\s*=\s*\'([^\']*)\'/i', $sql, $setSid)) {
+                $this->orderBankStatus[$key]['status_id'] = (string) $setSid[1];
+            }
+        }
+        if (preg_match('/SET[\s\S]*?`status_label`\s*=\s*\'([^\']*)\'/i', $sql, $sl)) {
+            $this->orderBankStatus[$key]['status_label'] = (string) $sl[1];
+        }
+        if (preg_match('/SET[\s\S]*?`order_reference`\s*=\s*\'([^\']*)\'/i', $sql, $or)) {
+            $this->orderBankStatus[$key]['order_reference'] = (string) $or[1];
+        }
+        if (preg_match('/SET[\s\S]*?`updated_at`\s*=\s*\'([^\']*)\'/i', $sql, $ua)) {
+            $this->orderBankStatus[$key]['updated_at'] = (string) $ua[1];
+        }
+
         $this->affected = 1;
 
         return $this->emptyResult();

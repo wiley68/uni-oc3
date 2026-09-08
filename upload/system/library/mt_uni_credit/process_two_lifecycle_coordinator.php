@@ -341,6 +341,8 @@ final class MtUniCreditProcessTwoLifecycleCoordinator
     }
 
     /**
+     * AUD-015 F02: CP PATCH/handoff first; local bank_sent_process2 only after remote success.
+     *
      * @param int $attemptId
      * @param int $storeId
      * @param int $localOrderId
@@ -353,11 +355,32 @@ final class MtUniCreditProcessTwoLifecycleCoordinator
         $shopOrderId = substr((string) $localOrderId, 0, 13);
 
         try {
+            $this->controlPanel->updateOrderStatus(
+                $shopOrderId,
+                $status['status_label'],
+                $status['status_id']
+            );
+        } catch (Throwable $exception) {
+            error_log(
+                'mt_uni_credit: ' . self::ERROR_CP_BANK_STATUS_SYNC_PENDING
+                    . ' attempt_id=' . $attemptId
+                    . ' order_id=' . $shopOrderId
+                    . ' status_id=' . $status['status_id']
+                    . ' class=' . get_class($exception)
+            );
+            if ($requireSuccess) {
+                throw $exception;
+            }
+            // Soft reconcile (already PREPARED): keep trying local durability below.
+        }
+
+        try {
             $local = $this->bankStatuses->updateByOrderIdentifier(
                 $storeId,
                 $shopOrderId,
                 $status['status_id'],
-                $status['status_label']
+                $status['status_label'],
+                MtUniCreditBankStatusTransitionPolicy::SOURCE_LOCAL_LIFECYCLE
             );
         } catch (Throwable $exception) {
             if ($requireSuccess) {
@@ -376,25 +399,6 @@ final class MtUniCreditProcessTwoLifecycleCoordinator
                 || (string) $verified['status_id'] !== (string) $status['status_id']
             ) {
                 throw new RuntimeException(self::ERROR_LOCAL_BANK_STATUS_FAILED);
-            }
-        }
-
-        try {
-            $this->controlPanel->updateOrderStatus(
-                $shopOrderId,
-                $status['status_label'],
-                $status['status_id']
-            );
-        } catch (Throwable $exception) {
-            error_log(
-                'mt_uni_credit: ' . self::ERROR_CP_BANK_STATUS_SYNC_PENDING
-                    . ' attempt_id=' . $attemptId
-                    . ' order_id=' . $shopOrderId
-                    . ' status_id=' . $status['status_id']
-                    . ' class=' . get_class($exception)
-            );
-            if ($requireSuccess) {
-                throw $exception;
             }
         }
     }
