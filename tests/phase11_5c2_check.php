@@ -303,8 +303,8 @@ foreach (array('logged' => 61, 'guest' => 0) as $actor => $customerId) {
     $attempt = $stack['attempts']->findByStoreOrder($stack['storeId'], $orderId);
     mtuc115c2_assert(
         $attempt !== null
-            && $attempt['state'] === MtUniCreditFinancingAttemptState::CP_FAILED_RETRYABLE,
-        'P1 ' . $actor . ' CP: cp_failed_retryable'
+            && $attempt['state'] === MtUniCreditFinancingAttemptState::TERMINAL_FAILED,
+        'P1 ' . $actor . ' CP: terminal_failed (definitive 422)'
     );
     mtuc115c2_assert(
         (string) $result['message'] === MtUniCreditControlPanelOrderLifecycleService::CUSTOMER_FAILURE_MESSAGE,
@@ -397,7 +397,7 @@ mtuc115c2_assert(
 mtuc115c2_assert(empty($jsonAmb['redirect']), 'ambiguous: no redirect');
 
 // ---------------------------------------------------------------------------
-// Safe CP retry after definitive failure (no duplicate OC)
+// Definitive CP 422 is terminal — no fresh retry / second CP POST (AUD-014 / AUD-019 F05)
 // ---------------------------------------------------------------------------
 $transportRetry = new Phase4FakeCpHttpTransport();
 $payloadsRetry = Phase7TestHarness::loginAndOrderSuccessPayloads();
@@ -414,17 +414,23 @@ if (isset($firstRetry['session']) && is_array($firstRetry['session'])) {
 }
 Phase9TestHarness::enqueueCpOrderCreateSuccess($transportRetry);
 $secondRetry = $stackRetry['storefront']->submit($inputRetry);
-mtuc115c2_assert(!empty($secondRetry['success']), 'retry: second success');
+mtuc115c2_assert(empty($secondRetry['success']), 'retry: second remains failed (no fresh CP retry)');
 mtuc115c2_assert($createsRetry === 1, 'retry: no duplicate OC order');
 mtuc115c2_assert(
-    Phase7TestHarness::countOrderPosts($transportRetry) === 2,
-    'retry: two CP POSTs (fail then success)'
+    Phase7TestHarness::countOrderPosts($transportRetry) === 1,
+    'retry: single CP POST (no second create after terminal 422)'
 );
 mtuc115c2_assert(
-    count($stackRetry['smartUcfProbe']->calls) === 1,
-    'retry: one SmartUCF after CP success'
+    count($stackRetry['smartUcfProbe']->calls) === 0,
+    'retry: zero SmartUCF after terminal CP reject'
 );
-mtuc115c2_assert(!empty($secondRetry['bank_redirect']), 'retry: bank redirect');
+mtuc115c2_assert(empty($secondRetry['bank_redirect']), 'retry: no bank redirect after terminal reject');
+$attemptRetry = $stackRetry['attempts']->findByStoreOrder($stackRetry['storeId'], $orderRetry);
+mtuc115c2_assert(
+    $attemptRetry !== null
+        && $attemptRetry['state'] === MtUniCreditFinancingAttemptState::TERMINAL_FAILED,
+    'retry: attempt stays terminal_failed'
+);
 
 // ---------------------------------------------------------------------------
 // Successful P1 + P2 regressions (Cart)

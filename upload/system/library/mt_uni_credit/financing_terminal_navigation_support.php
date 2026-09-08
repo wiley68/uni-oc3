@@ -20,6 +20,14 @@ final class MtUniCreditFinancingTerminalNavigationSupport
     const UI_ERROR_MODAL = 'error_modal';
 
     /**
+     * Session map of Cart clear authorizations already consumed for a durable attempt.
+     * Keyed by attempt_id (preferred) or order_id fallback — never by cart fingerprint.
+     */
+    const SESSION_CART_CLEAR_APPLIED = 'mt_uni_credit_cart_clear_applied';
+
+    const CART_CLEAR_APPLIED_MAX = 32;
+
+    /**
      * Definitive remote_reject after CP create (frozen Phase 9 terminal bank_send_failed_*).
      *
      * @param array<string, mixed> $result Storefront/checkout submission result array
@@ -370,7 +378,8 @@ final class MtUniCreditFinancingTerminalNavigationSupport
 
     /**
      * Cart entry only: clear live OC cart after successful bank handoff.
-     * Idempotent. Safe no-op when cart object is missing or handoff was not successful.
+     * Idempotent for empty carts. Does not enforce one-shot authorization —
+     * Cart controller must use clearCartAfterSuccessfulHandoffOnce().
      *
      * @param array<string, mixed> $result
      * @param object|null $cart OpenCart cart with clear()
@@ -387,5 +396,77 @@ final class MtUniCreditFinancingTerminalNavigationSupport
         $cart->clear();
 
         return true;
+    }
+
+    /**
+     * Cart one-shot clear: first successful handoff for a durable attempt may clear;
+     * later replays of the same attempt never clear again (including identical fresh carts).
+     *
+     * Lost-response safe: if handoff succeeded but clear was not yet applied, retry clears once.
+     *
+     * @param array<string, mixed> $sessionData
+     * @param array<string, mixed> $result
+     * @param object|null $cart
+     * @return bool True when clear() was invoked this call
+     */
+    public static function clearCartAfterSuccessfulHandoffOnce(array &$sessionData, array $result, $cart)
+    {
+        if (!self::isSuccessfulBankHandoff($result)) {
+            return false;
+        }
+
+        $key = self::cartClearAuthorizationKey($result);
+        if ($key === '') {
+            return false;
+        }
+
+        if (
+            !isset($sessionData[self::SESSION_CART_CLEAR_APPLIED])
+            || !is_array($sessionData[self::SESSION_CART_CLEAR_APPLIED])
+        ) {
+            $sessionData[self::SESSION_CART_CLEAR_APPLIED] = array();
+        }
+
+        if (!empty($sessionData[self::SESSION_CART_CLEAR_APPLIED][$key])) {
+            return false;
+        }
+
+        if (!self::clearCartAfterSuccessfulHandoff($result, $cart)) {
+            return false;
+        }
+
+        $sessionData[self::SESSION_CART_CLEAR_APPLIED][$key] = time();
+        if (count($sessionData[self::SESSION_CART_CLEAR_APPLIED]) > self::CART_CLEAR_APPLIED_MAX) {
+            $sessionData[self::SESSION_CART_CLEAR_APPLIED] = array_slice(
+                $sessionData[self::SESSION_CART_CLEAR_APPLIED],
+                -self::CART_CLEAR_APPLIED_MAX,
+                null,
+                true
+            );
+        }
+
+        return true;
+    }
+
+    /**
+     * @param array<string, mixed> $result
+     * @return string Empty when result has no durable attempt/order identity
+     */
+    public static function cartClearAuthorizationKey(array $result)
+    {
+        $attemptId = 0;
+        if (isset($result['attempt']) && is_array($result['attempt'])) {
+            $attemptId = (int) (isset($result['attempt']['attempt_id']) ? $result['attempt']['attempt_id'] : 0);
+        }
+        if ($attemptId > 0) {
+            return 'a:' . $attemptId;
+        }
+
+        $orderId = (int) (isset($result['order_id']) ? $result['order_id'] : 0);
+        if ($orderId > 0) {
+            return 'o:' . $orderId;
+        }
+
+        return '';
     }
 }

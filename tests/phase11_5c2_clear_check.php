@@ -113,8 +113,8 @@ $paymentCtrl = mtuc115c2c_read(
 );
 
 mtuc115c2c_assert(
-    strpos($cartCtrl, 'clearCartAfterSuccessfulHandoff') !== false,
-    'cart controller wires success-only cart clear'
+    strpos($cartCtrl, 'clearCartAfterSuccessfulHandoffOnce') !== false,
+    'cart controller wires one-shot success cart clear'
 );
 mtuc115c2c_assert(
     strpos($cartCtrl, 'isset($this->cart)') === false,
@@ -122,10 +122,10 @@ mtuc115c2c_assert(
 );
 mtuc115c2c_assert(
     preg_match(
-        '/clearCartAfterSuccessfulHandoff\\s*\\(\\s*\\$result\\s*,\\s*\\$this->cart\\s*\\)/s',
+        '/clearCartAfterSuccessfulHandoffOnce\\s*\\(\\s*\\$this->session->data\\s*,\\s*\\$result\\s*,\\s*\\$this->cart\\s*\\)/s',
         $cartCtrl
     ) === 1,
-    'cart controller: passes $this->cart directly'
+    'cart controller: passes session + $this->cart to one-shot clear'
 );
 mtuc115c2c_assert(
     strpos($productCtrl, 'clearCartAfterSuccessfulHandoff') === false

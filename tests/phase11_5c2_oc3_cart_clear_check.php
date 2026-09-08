@@ -260,10 +260,10 @@ mtuc115c2oc3_assert(
 );
 mtuc115c2oc3_assert(
     preg_match(
-        '/clearCartAfterSuccessfulHandoff\\s*\\(\\s*\\$result\\s*,\\s*\\$this->cart\\s*\\)/s',
+        '/clearCartAfterSuccessfulHandoffOnce\\s*\\(\\s*\\$this->session->data\\s*,\\s*\\$result\\s*,\\s*\\$this->cart\\s*\\)/s',
         $cartCtrl
     ) === 1,
-    'cart.php: passes $this->cart directly'
+    'cart.php: one-shot clear passes session + $this->cart'
 );
 mtuc115c2oc3_assert(
     strpos($productCtrl, 'clearCartAfterSuccessfulHandoff') === false
