@@ -59,8 +59,10 @@ final class MtUniCreditOc3ProductLineResolver
                 'quantity_below_minimum'
             );
         }
-        $s = trim((string) $raw);
-        if ($s === '' || preg_match('/^(0|[1-9][0-9]*)$/', $s) !== 1) {
+        // Canonical grammar only — no whitespace/sign/decimal normalization.
+        // Use \A...\z so trailing newlines cannot slip past `$` (PCRE default).
+        $s = (string) $raw;
+        if (preg_match('/\A(0|[1-9][0-9]*)\z/', $s) !== 1) {
             throw new MtUniCreditProductLineValidationException(
                 MtUniCreditProductLineValidationException::CODE_QUANTITY_BELOW_MINIMUM,
                 'quantity_below_minimum'
@@ -302,7 +304,7 @@ final class MtUniCreditOc3ProductLineResolver
                     }
                     continue;
                 }
-                $code = trim((string) $value);
+                $code = (string) $value;
                 if ($code === '') {
                     if ($strict && $isRequired) {
                         throw new MtUniCreditProductLineValidationException(

@@ -261,21 +261,7 @@ final class MtUniCreditStorefrontRuntime
         };
 
         $uploadLoader = function ($code) use ($self) {
-            $code = trim((string) $code);
-            if ($code === '') {
-                return null;
-            }
-            try {
-                $self->load->model('tool/upload');
-                if (!isset($self->model_tool_upload) || !is_object($self->model_tool_upload)) {
-                    return null;
-                }
-                $row = $self->model_tool_upload->getUploadByCode($code);
-
-                return is_array($row) && $row !== array() ? $row : null;
-            } catch (Exception $exception) {
-                return null;
-            }
+            return MtUniCreditStorefrontRuntime::lookupNativeUploadByCode($self, $code);
         };
 
         $productOptions = null;
@@ -338,6 +324,44 @@ final class MtUniCreditStorefrontRuntime
         }
 
         return $line;
+    }
+
+    /**
+     * Native OC3 file-option authority: load model tool/upload → getUploadByCode.
+     *
+     * Uses OC3 Controller magic __get (assignment), not isset() — Registry models are
+     * typically unavailable via __isset.
+     *
+     * @param object $controller
+     * @param mixed $code
+     * @return array<string, mixed>|null
+     */
+    public static function lookupNativeUploadByCode($controller, $code)
+    {
+        $code = (string) $code;
+        if ($code === '') {
+            return null;
+        }
+        try {
+            $controller->load->model('tool/upload');
+            // OC3: model is exposed via Controller::__get → Registry::get after load->model.
+            $model = $controller->model_tool_upload;
+            if (!is_object($model) || !method_exists($model, 'getUploadByCode')) {
+                return null;
+            }
+            $row = $model->getUploadByCode($code);
+            if (!is_array($row) || $row === array()) {
+                return null;
+            }
+            // Malformed/non-native record (missing upload code) is not authoritative.
+            if (!isset($row['code']) || (string) $row['code'] === '') {
+                return null;
+            }
+
+            return $row;
+        } catch (Exception $exception) {
+            return null;
+        }
     }
 
     /**

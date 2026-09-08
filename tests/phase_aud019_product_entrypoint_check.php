@@ -399,6 +399,67 @@ mtucAud019_assert(
 );
 
 // ---------------------------------------------------------------------------
+// R1A — canonical quantity grammar (no trim / no normalization)
+// ---------------------------------------------------------------------------
+$qtySyntax = array(
+    '0' => false, // syntactic ok then Apply BLOCK (<1) — parse throws
+    '1' => true,
+    '01' => false,
+    '+1' => false,
+    '-1' => false,
+    '1.0' => false,
+    '1abc' => false,
+    ' 1' => false,
+    '1 ' => false,
+    '' => false,
+    "\t1" => false,
+    "1\n" => false,
+    ' 01 ' => false,
+);
+foreach ($qtySyntax as $raw => $expectPass) {
+    $caught = null;
+    $parsed = null;
+    try {
+        $parsed = MtUniCreditOc3ProductLineResolver::parseStrictPostedQuantity($raw);
+    } catch (MtUniCreditProductLineValidationException $e) {
+        $caught = $e;
+    }
+    if ($expectPass) {
+        mtucAud019_assert(
+            $caught === null && $parsed === 1,
+            'R1A PASS raw=' . json_encode($raw)
+        );
+    } else {
+        mtucAud019_assert(
+            $caught instanceof MtUniCreditProductLineValidationException,
+            'R1A BLOCK raw=' . json_encode($raw)
+        );
+    }
+}
+$resolverSrc = mtucAud019_read($lib . '/oc3_product_line_resolver.php');
+mtucAud019_assert(
+    preg_match(
+        '/function parseStrictPostedQuantity\([\s\S]*?trim\s*\(\s*\(string\)\s*\$raw\s*\)/',
+        $resolverSrc
+    ) !== 1,
+    'R1A residual: parseStrictPostedQuantity must not trim()'
+);
+mtucAud019_assert(
+    strpos($resolverSrc, "preg_match('/\\A(0|[1-9][0-9]*)\\z/', \$s)") !== false
+        || preg_match('/preg_match\\(\'\\/\\\\A\\(0\\|\\[1-9\\]\\[0-9\\]\\*\\)\\\\z\\/\'/', $resolverSrc) === 1,
+    'R1A residual: canonical quantity regex uses \\A...\\z'
+);
+
+// Whitespace Apply side-effect barrier (submissionCalls=0)
+foreach (array(' 1', '1 ', "\t1", '0') as $blockedQty) {
+    $calls = 0;
+    mtucAud019_assert(
+        mtucAud019_strictApplyQuantityGate($blockedQty, 1, $calls) === 'BLOCK' && $calls === 0,
+        'R1A side-effect: raw=' . json_encode($blockedQty) . ' → submission=0'
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Static F01/F02 wiring on Product submit
 // ---------------------------------------------------------------------------
 $productCtrl = mtucAud019_read(
@@ -447,6 +508,19 @@ mtucAud019_assert(
 mtucAud019_assert(
     strpos($runtimeSrc, 'getProductOptions') !== false,
     'F01 static: runtime loads getProductOptions'
+);
+mtucAud019_assert(
+    strpos($runtimeSrc, 'lookupNativeUploadByCode') !== false
+        && strpos($runtimeSrc, 'isset($self->model_tool_upload)') === false
+        && strpos($runtimeSrc, 'isset($controller->model_tool_upload)') === false,
+    'R2A residual: upload loader uses lookupNativeUploadByCode without isset(model_tool_upload)'
+);
+mtucAud019_assert(
+    preg_match(
+        '/function lookupNativeUploadByCode\([\s\S]*?\$model\s*=\s*\$controller->model_tool_upload/s',
+        $runtimeSrc
+    ) === 1,
+    'R2A residual: OC3-compatible model_tool_upload assignment via __get'
 );
 mtucAud019_assert(
     strpos($runtimeSrc, 'CODE_PRODUCT_OPTIONS_UNAVAILABLE') !== false
@@ -568,6 +642,432 @@ mtucAud019_assert(
     strpos($js, 'data-route-submit') !== false
         && !preg_match('/action === ["\']buy["\'][\s\S]{0,1200}?data-route-submit/', $js),
     'separation: Buy path does not call Product submit'
+);
+
+// ---------------------------------------------------------------------------
+// R4B — production runtime upload adapter (OC3 magic __get, no isset)
+// ---------------------------------------------------------------------------
+if (!class_exists('MtucAud019Registry', false)) {
+    final class MtucAud019Registry
+    {
+        /** @var array<string, mixed> */
+        private $data = array();
+
+        /**
+         * @param string $key
+         * @param mixed $value
+         * @return void
+         */
+        public function set($key, $value)
+        {
+            $this->data[$key] = $value;
+        }
+
+        /**
+         * @param string $key
+         * @return mixed
+         */
+        public function get($key)
+        {
+            return array_key_exists($key, $this->data) ? $this->data[$key] : null;
+        }
+    }
+}
+if (!class_exists('MtucAud019UploadModel', false)) {
+    final class MtucAud019UploadModel
+    {
+        /** @var array<string, array<string, mixed>> */
+        private $rows;
+
+        /**
+         * @param array<string, array<string, mixed>> $rows
+         */
+        public function __construct(array $rows)
+        {
+            $this->rows = $rows;
+        }
+
+        /**
+         * @param string $code
+         * @return array<string, mixed>
+         */
+        public function getUploadByCode($code)
+        {
+            $code = (string) $code;
+
+            return isset($this->rows[$code]) ? $this->rows[$code] : array();
+        }
+    }
+}
+if (!class_exists('MtucAud019Loader', false)) {
+    final class MtucAud019Loader
+    {
+        /** @var MtucAud019Registry */
+        private $registry;
+        /** @var MtucAud019UploadModel */
+        private $uploadModel;
+
+        /**
+         * @param MtucAud019Registry $registry
+         * @param MtucAud019UploadModel $uploadModel
+         */
+        public function __construct(MtucAud019Registry $registry, MtucAud019UploadModel $uploadModel)
+        {
+            $this->registry = $registry;
+            $this->uploadModel = $uploadModel;
+        }
+
+        /**
+         * @param string $route
+         * @return void
+         */
+        public function model($route)
+        {
+            if ($route === 'tool/upload') {
+                // Native OC3 Loader registers model_* on the Registry.
+                $this->registry->set('model_tool_upload', $this->uploadModel);
+            }
+        }
+    }
+}
+if (!class_exists('MtucAud019ControllerHost', false)) {
+    /**
+     * Models OC3 Controller: __get without __isset (isset(model_*) is unreliable).
+     */
+    final class MtucAud019ControllerHost
+    {
+        /** @var MtucAud019Registry */
+        private $registry;
+
+        public function __construct(MtucAud019Registry $registry)
+        {
+            $this->registry = $registry;
+        }
+
+        /**
+         * @param string $key
+         * @return mixed
+         */
+        public function __get($key)
+        {
+            return $this->registry->get($key);
+        }
+
+        /**
+         * @param string $key
+         * @param mixed $value
+         * @return void
+         */
+        public function __set($key, $value)
+        {
+            $this->registry->set($key, $value);
+        }
+    }
+}
+
+$uploadReg = new MtucAud019Registry();
+$uploadModel = new MtucAud019UploadModel(array(
+    'native-valid-code' => array(
+        'code' => 'native-valid-code',
+        'name' => 'photo.jpg',
+        'filename' => 'photo.jpg',
+    ),
+    'malformed-empty-code' => array(
+        'name' => 'broken.bin',
+        'filename' => 'broken.bin',
+    ),
+));
+$uploadReg->set('load', new MtucAud019Loader($uploadReg, $uploadModel));
+$uploadHost = new MtucAud019ControllerHost($uploadReg);
+
+// Prove isset trap: magic property is not a real property.
+mtucAud019_assert(
+    !isset($uploadHost->model_tool_upload),
+    'R4B fixture: isset(model_tool_upload) is false before/after load (OC3 trap)'
+);
+$validUpload = MtUniCreditStorefrontRuntime::lookupNativeUploadByCode($uploadHost, 'native-valid-code');
+mtucAud019_assert(
+    is_array($validUpload) && (string) $validUpload['code'] === 'native-valid-code',
+    'R4B PASS: production lookupNativeUploadByCode(valid) via load->model + __get'
+);
+mtucAud019_assert(
+    !isset($uploadHost->model_tool_upload) && is_object($uploadHost->model_tool_upload),
+    'R4B: model available via __get while isset remains false'
+);
+$fabricatedUpload = MtUniCreditStorefrontRuntime::lookupNativeUploadByCode($uploadHost, 'fabricated-token');
+mtucAud019_assert(
+    $fabricatedUpload === null,
+    'R4B BLOCK: fabricated upload code lookup miss'
+);
+$malformedUpload = MtUniCreditStorefrontRuntime::lookupNativeUploadByCode($uploadHost, 'malformed-empty-code');
+mtucAud019_assert(
+    $malformedUpload === null,
+    'R4B BLOCK: malformed lookup record without code'
+);
+
+// Resolver + production adapter loader (not a test-local closure bypass).
+$runtimeBackedResolver = new MtUniCreditOc3ProductLineResolver(
+    function ($price, $taxClassId) {
+        return (float) $price;
+    },
+    function ($amount, $from, $to) {
+        return (float) $amount;
+    },
+    function () {
+        return array(1);
+    },
+    function ($productOptionId, $value) {
+        return null;
+    },
+    function ($code) use ($uploadHost) {
+        return MtUniCreditStorefrontRuntime::lookupNativeUploadByCode($uploadHost, $code);
+    }
+);
+$fileOnlyDefs = array(
+    array(
+        'product_option_id' => 15,
+        'name' => 'Attachment',
+        'type' => 'file',
+        'required' => 1,
+        'product_option_value' => array(),
+    ),
+);
+$filePass = $runtimeBackedResolver->resolve(
+    mtucAud019_productRow(1),
+    1,
+    array(15 => 'native-valid-code'),
+    'BGN',
+    'BGN',
+    null,
+    $fileOnlyDefs,
+    true
+);
+mtucAud019_assert(
+    is_object($filePass)
+        && isset($filePass->options[0]['type'])
+        && $filePass->options[0]['type'] === 'file'
+        && $filePass->options[0]['value'] === 'native-valid-code',
+    'R4B PASS: strict Apply accepts file via production runtime adapter'
+);
+$fileBlock = null;
+try {
+    $runtimeBackedResolver->resolve(
+        mtucAud019_productRow(1),
+        1,
+        array(15 => 'fabricated-token'),
+        'BGN',
+        'BGN',
+        null,
+        $fileOnlyDefs,
+        true
+    );
+} catch (MtUniCreditProductLineValidationException $e) {
+    $fileBlock = $e;
+}
+mtucAud019_assert(
+    $fileBlock instanceof MtUniCreditProductLineValidationException
+        && $fileBlock->errorCode() === MtUniCreditProductLineValidationException::CODE_INVALID_OPTION,
+    'R4B BLOCK: fabricated file via production runtime adapter'
+);
+
+// ---------------------------------------------------------------------------
+// R4C — real Product controller submit path (qty=0 / minimum=1)
+// ---------------------------------------------------------------------------
+if (!class_exists('Controller', false)) {
+    abstract class Controller
+    {
+        /** @var MtucAud019Registry */
+        protected $registry;
+
+        public function __construct($registry)
+        {
+            $this->registry = $registry;
+        }
+
+        /**
+         * @param string $key
+         * @return mixed
+         */
+        public function __get($key)
+        {
+            return $this->registry->get($key);
+        }
+
+        /**
+         * @param string $key
+         * @param mixed $value
+         * @return void
+         */
+        public function __set($key, $value)
+        {
+            $this->registry->set($key, $value);
+        }
+    }
+}
+if (!class_exists('MtucAud019Language', false)) {
+    final class MtucAud019Language
+    {
+        /**
+         * @param string $key
+         * @return string
+         */
+        public function get($key)
+        {
+            return (string) $key;
+        }
+    }
+}
+if (!class_exists('MtucAud019Config', false)) {
+    final class MtucAud019Config
+    {
+        /**
+         * @param string $key
+         * @return mixed
+         */
+        public function get($key)
+        {
+            $map = array(
+                'config_store_id' => 0,
+                'config_currency' => 'BGN',
+                'config_language_id' => 1,
+                'config_customer_group_id' => 1,
+            );
+
+            return isset($map[$key]) ? $map[$key] : null;
+        }
+    }
+}
+if (!class_exists('MtucAud019Response', false)) {
+    final class MtucAud019Response
+    {
+        /** @var string */
+        public $output = '';
+
+        /**
+         * @param string $header
+         * @return void
+         */
+        public function addHeader($header) {}
+
+        /**
+         * @param string $output
+         * @return void
+         */
+        public function setOutput($output)
+        {
+            $this->output = (string) $output;
+        }
+    }
+}
+if (!class_exists('MtucAud019Session', false)) {
+    final class MtucAud019Session
+    {
+        /** @var array<string, mixed> */
+        public $data = array();
+    }
+}
+if (!class_exists('MtucAud019Request', false)) {
+    final class MtucAud019Request
+    {
+        /** @var array<string, mixed> */
+        public $post = array();
+        /** @var array<string, mixed> */
+        public $get = array();
+        /** @var array<string, mixed> */
+        public $server = array();
+    }
+}
+if (!class_exists('MtucAud019Db', false)) {
+    final class MtucAud019Db
+    {
+        /**
+         * @param string $value
+         * @return string
+         */
+        public function escape($value)
+        {
+            return addslashes((string) $value);
+        }
+
+        /**
+         * @param string $sql
+         * @return object
+         */
+        public function query($sql)
+        {
+            return (object) array('num_rows' => 0, 'row' => array(), 'rows' => array());
+        }
+    }
+}
+if (!class_exists('MtucAud019ProductLoad', false)) {
+    final class MtucAud019ProductLoad
+    {
+        /**
+         * @param string $route
+         * @return void
+         */
+        public function language($route) {}
+
+        /**
+         * @param string $route
+         * @return void
+         */
+        public function model($route) {}
+    }
+}
+
+require_once $root . '/upload/catalog/controller/extension/mt_uni_credit/product.php';
+
+$ctrlReg = new MtucAud019Registry();
+$sessionObj = new MtucAud019Session();
+$csrf = MtUniCreditStorefrontCsrf::issue($sessionObj->data);
+$req = new MtucAud019Request();
+$req->server['REQUEST_METHOD'] = 'POST';
+$req->post = array(
+    'csrf' => $csrf,
+    'consent' => '1',
+    'product_id' => '9',
+    'quantity' => '0',
+    'scheme_key' => 'standard|STD|12',
+    'firstname' => 'Ivan',
+    'lastname' => 'Petrov',
+    'email' => 'ivan@example.com',
+    'telephone' => '0888123456',
+    'address_1' => 'Test Street 1',
+);
+$resp = new MtucAud019Response();
+$ctrlReg->set('session', $sessionObj);
+$ctrlReg->set('request', $req);
+$ctrlReg->set('response', $resp);
+$ctrlReg->set('language', new MtucAud019Language());
+$ctrlReg->set('config', new MtucAud019Config());
+$ctrlReg->set('db', new MtucAud019Db());
+$ctrlReg->set('load', new MtucAud019ProductLoad());
+$ctrlReg->set('customer', new class {
+    public function isLogged()
+    {
+        return false;
+    }
+
+    public function getId()
+    {
+        return 0;
+    }
+});
+
+$productCtrlObj = new ControllerExtensionMtUniCreditProduct($ctrlReg);
+$productCtrlObj->submit();
+$jsonOut = json_decode($resp->output, true);
+mtucAud019_assert(
+    is_array($jsonOut)
+        && isset($jsonOut['error'])
+        && (string) $jsonOut['error'] === 'quantity_below_minimum'
+        && empty($jsonOut['success']),
+    'R4C controller submit: qty=0 → quantity_below_minimum (no clamp bypass)'
+);
+mtucAud019_assert(
+    !empty($jsonOut['cart_unchanged']),
+    'R4C controller submit: cart_unchanged on quantity BLOCK'
 );
 
 echo PHP_EOL;
