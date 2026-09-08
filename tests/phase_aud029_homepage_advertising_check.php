@@ -234,6 +234,24 @@ mtucAud029_assert(
     $presenter->present(array_merge(mtucAud029_validShop(), array('uni_backurl' => $quoteBreakout)), false, $logo) === null,
     'CTA raw quote-breakout → no advertising block'
 );
+$rawQuotePlacements = array(
+    'https://example.com/"',
+    'https://example.com/foo"bar',
+    'https://example.com/" onclick="alert(1)',
+);
+foreach ($rawQuotePlacements as $rawPlacement) {
+    mtucAud029_assert(
+        $presenter->httpUrl($rawPlacement) === '',
+        'CTA raw quote placement rejected: ' . substr($rawPlacement, 0, 48)
+    );
+}
+// Single-quote is not part of the rejection contract (no single-quoted backurl sink).
+$singleQuoteUrl = "https://example.com/path'segment";
+$singleQuoteResult = $presenter->httpUrl($singleQuoteUrl);
+mtucAud029_assert(
+    $singleQuoteResult === $singleQuoteUrl || $singleQuoteResult === '',
+    'CTA raw single-quote: contract follows filter_var (no forced apostrophe reject)'
+);
 // Distinct: safely percent-encoded quotes in path may remain valid under current contract.
 $encodedSafe = 'https://example.com/path%22quoted%22ok';
 $encodedResult = $presenter->httpUrl($encodedSafe);
@@ -241,11 +259,22 @@ mtucAud029_assert(
     $encodedResult === $encodedSafe,
     'CTA encoded-safe HTTPS path remains valid when filter_var accepts it'
 );
+mtucAud029_assert(strpos($encodedResult, '"') === false, 'CTA encoded %22 stays encoded (no decode to raw quote)');
 mtucAud029_assert($presenter->httpUrl('https://ok.example/a') === 'https://ok.example/a', 'CTA accept https');
 mtucAud029_assert($presenter->httpUrl('http://ok.example/a') === 'http://ok.example/a', 'CTA accept http');
+mtucAud029_assert(
+    $presenter->httpUrl('https://example.com/path?foo=bar&baz=1') === 'https://example.com/path?foo=bar&baz=1',
+    'CTA accept https with query'
+);
 mtucAud029_assert($presenter->httpUrl('javascript:alert(1)') === '', 'mutation-6 YES: javascript rejected');
 mtucAud029_assert($presenter->httpUrl('data:text/html,x') === '', 'mutation-7 YES: data rejected');
-
+mtucAud029_assert($presenter->httpUrl('vbscript:msgbox(1)') === '', 'CTA reject vbscript');
+mtucAud029_assert($presenter->httpUrl('//example.com') === '', 'CTA reject protocol-relative');
+mtucAud029_assert(
+    $presenter->httpUrl($quoteBreakout) === ''
+        && $presenter->present(array_merge(mtucAud029_validShop(), array('uni_backurl' => $quoteBreakout)), false, $logo) === null,
+    'raw-quote injection sentinel YES'
+);
 // ---------------------------------------------------------------------------
 // F02 — event self-heal (reuse Mtuc11EventFakeDb pattern inline)
 // ---------------------------------------------------------------------------
