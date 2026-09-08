@@ -223,6 +223,7 @@ final class MtUniCreditFinancingTerminalNavigationSupport
         $sessionData['order_id'] = $orderId;
         $sessionData[self::SESSION_SUCCESS_ORDER_ID] = $orderId;
         unset($sessionData[MtUniCreditCheckoutConfirmPreparation::SESSION_PREPARED_ORDER_ID]);
+        MtUniCreditCheckoutPreparedSelection::clear($sessionData);
 
         $payload['redirect'] = $thankYouUrl;
         $payload['bank_redirect'] = false;
@@ -259,6 +260,7 @@ final class MtUniCreditFinancingTerminalNavigationSupport
         $sessionData['order_id'] = $orderId;
         $sessionData[self::SESSION_SUCCESS_ORDER_ID] = $orderId;
         unset($sessionData[MtUniCreditCheckoutConfirmPreparation::SESSION_PREPARED_ORDER_ID]);
+        MtUniCreditCheckoutPreparedSelection::clear($sessionData);
 
         $payload['redirect'] = $thankYouUrl;
         $payload['bank_redirect'] = false;
@@ -323,6 +325,7 @@ final class MtUniCreditFinancingTerminalNavigationSupport
     {
         unset($payload['redirect']);
         unset($sessionData[MtUniCreditCheckoutConfirmPreparation::SESSION_PREPARED_ORDER_ID]);
+        MtUniCreditCheckoutPreparedSelection::clear($sessionData);
         // Never promote CP-create failure to Thank You ownership.
         unset($sessionData[self::SESSION_SUCCESS_ORDER_ID]);
 

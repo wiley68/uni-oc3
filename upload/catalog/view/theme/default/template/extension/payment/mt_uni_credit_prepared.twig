@@ -28,6 +28,8 @@
       {% if can_submit %}
       <form action="{{ action }}" method="post" enctype="multipart/form-data" id="mt-uni-credit-submit-form">
         <input type="hidden" name="mt_uni_credit_submit_token" value="{{ submit_token }}" />
+        <input type="hidden" name="scheme_key" value="{{ scheme_key }}" />
+        <input type="hidden" name="first_installment" value="{{ first_installment }}" />
         {% if process2 %}
         <fieldset class="mt-uni-credit-checkout-process2" data-mtuc-customer-form>
           <div class="form-group required">

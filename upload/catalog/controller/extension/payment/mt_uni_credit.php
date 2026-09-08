@@ -369,6 +369,9 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
         }
 
         $orderId = (int) (isset($this->session->data['order_id']) ? $this->session->data['order_id'] : 0);
+        $preparedOrderId = (int) (isset($this->session->data[MtUniCreditCheckoutConfirmPreparation::SESSION_PREPARED_ORDER_ID])
+            ? $this->session->data[MtUniCreditCheckoutConfirmPreparation::SESSION_PREPARED_ORDER_ID]
+            : $orderId);
         $process2 = array(
             'egn' => (string) $this->posted('egn', ''),
             'phone2' => (string) $this->posted('phone2', ''),
@@ -376,6 +379,14 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
         $selection = array(
             'scheme_key' => $schemeKey,
             'first_installment' => (float) str_replace(',', '.', (string) $this->posted('first_installment', '0')),
+        );
+        MtUniCreditCheckoutPreparedSelection::store(
+            $this->session->data,
+            (int) $this->config->get('config_store_id'),
+            $orderId,
+            $preparedOrderId,
+            $selection['scheme_key'],
+            $selection['first_installment']
         );
 
         $this->recordCheckoutPreSubmitTrace('before_submit', array(
@@ -520,6 +531,16 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
         }
 
         $view = MtUniCreditCheckoutPreparedViewState::fromAttempt($context['attempt']);
+        $selection = MtUniCreditCheckoutPreparedSelection::load(
+            $this->session->data,
+            (int) $context['store_id'],
+            (int) $context['order_id'],
+            (int) $context['prepared_order_id']
+        );
+        if ($selection === null && !empty($view['can_submit'])) {
+            $view['can_submit'] = false;
+            $view['message_key'] = 'error_unavailable';
+        }
         $token = MtUniCreditCheckoutSubmitToken::issue(
             $this->session->data,
             (int) $context['store_id'],
@@ -529,7 +550,7 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
         $flash = $this->consumeCheckoutFlash();
 
         $this->document->setTitle($this->language->get('heading_prepared_title'));
-        $data = $this->buildPreparedViewData($view, $token, $flash);
+        $data = $this->buildPreparedViewData($view, $token, $flash, $selection);
         $this->response->setOutput($this->load->view('extension/payment/mt_uni_credit_prepared', $data));
     }
 
@@ -582,9 +603,10 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
      * @param array<string, mixed> $view
      * @param string $token
      * @param string $flash
+     * @param array{scheme_key?:string,first_installment?:float}|null $selection
      * @return array<string, mixed>
      */
-    private function buildPreparedViewData(array $view, $token, $flash)
+    private function buildPreparedViewData(array $view, $token, $flash, $selection = null)
     {
         $data = array(
             'breadcrumbs' => array(
@@ -613,6 +635,12 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
             'button_retry_financing' => $this->language->get('button_retry_financing'),
             'action' => $this->url->link(MtUniCreditConstants::CHECKOUT_SUBMIT_ROUTE, '', true),
             'submit_token' => $token,
+            'scheme_key' => is_array($selection) && isset($selection['scheme_key'])
+                ? (string) $selection['scheme_key']
+                : '',
+            'first_installment' => is_array($selection) && isset($selection['first_installment'])
+                ? (float) $selection['first_installment']
+                : 0.0,
             'process2' => $this->resolveCheckoutProcess2Flag(),
             'text_egn' => $this->language->get('text_egn'),
             'text_phone2' => $this->language->get('text_phone2'),
@@ -676,6 +704,27 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
             return;
         }
 
+        $postedSelection = array(
+            'scheme_key' => isset($this->request->post['scheme_key'])
+                ? trim((string) $this->request->post['scheme_key'])
+                : '',
+            'first_installment' => isset($this->request->post['first_installment'])
+                ? (float) str_replace(',', '.', (string) $this->request->post['first_installment'])
+                : 0.0,
+        );
+        $selection = MtUniCreditCheckoutPreparedSelection::resolveForSubmit(
+            $this->session->data,
+            (int) $context['store_id'],
+            (int) $context['order_id'],
+            (int) $context['prepared_order_id'],
+            $postedSelection
+        );
+        if ($selection === null) {
+            $this->session->data['mt_uni_credit_checkout_flash'] = $this->language->get('error_unavailable');
+            $this->response->redirect($this->url->link(MtUniCreditConstants::CHECKOUT_PREPARED_ROUTE, '', true));
+            return;
+        }
+
         $this->load->model('extension/payment/mt_uni_credit');
         $this->load->model('checkout/order');
         $process2 = array(
@@ -684,7 +733,8 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
         );
         $result = $this->model_extension_payment_mt_uni_credit->submitCheckoutFinancing(
             (int) $context['order_id'],
-            $process2
+            $process2,
+            $selection
         );
 
         $this->maybeApplyCheckoutNativeOrderStatusAfterHandoff((int) $context['order_id'], $result);
