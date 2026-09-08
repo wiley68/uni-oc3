@@ -273,7 +273,14 @@ class ModelExtensionModuleMtUniCredit extends Model
                 'cache_fresh' => (bool) (isset($meta['is_fresh']) ? $meta['is_fresh'] : true),
             );
         } catch (MtUniCreditCpAuthenticationException $exception) {
-            $this->writeRefreshLog('authentication_failed');
+            $this->writeRefreshLog(
+                'authentication_failed',
+                array(
+                    'store_id' => $storeId,
+                    'shop_name' => isset($shopName) ? (string) $shopName : '',
+                    'exception_class' => get_class($exception),
+                )
+            );
 
             return array('error' => 'authentication_failed');
         } catch (MtUniCreditShopSnapshotValidationException $exception) {
@@ -286,7 +293,12 @@ class ModelExtensionModuleMtUniCredit extends Model
 
             return array('error' => $code);
         } catch (Exception $exception) {
-            $this->writeRefreshLog('request_failed');
+            $this->writeRefreshLog(
+                'request_failed',
+                array(
+                    'exception_class' => get_class($exception),
+                )
+            );
 
             return array('error' => 'request_failed');
         }
@@ -336,16 +348,34 @@ class ModelExtensionModuleMtUniCredit extends Model
     }
 
     /**
+     * Safe operator log — never include Secret / bearer / refresh tokens.
+     *
      * @param string $classification
+     * @param array<string, scalar> $context
      * @return void
      */
-    private function writeRefreshLog($classification)
+    private function writeRefreshLog($classification, array $context = array())
     {
         if (!isset($this->log) || !is_object($this->log) || !method_exists($this->log, 'write')) {
             return;
         }
 
-        $this->log->write('mt_uni_credit.refreshBankData classification=' . $classification);
+        $parts = array('mt_uni_credit.refreshBankData classification=' . $classification);
+        foreach ($context as $key => $value) {
+            $key = (string) $key;
+            if ($key === '' || $key === 'secret' || $key === 'token' || $key === 'access_token' || $key === 'refresh_token') {
+                continue;
+            }
+            if (is_bool($value)) {
+                $parts[] = $key . '=' . ($value ? 'yes' : 'no');
+            } elseif (is_int($value) || is_float($value)) {
+                $parts[] = $key . '=' . $value;
+            } else {
+                $parts[] = $key . '=' . json_encode((string) $value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            }
+        }
+
+        $this->log->write(implode(' ', $parts));
     }
 
     /**

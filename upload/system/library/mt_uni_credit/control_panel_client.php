@@ -49,7 +49,7 @@ final class MtUniCreditControlPanelClient
         $this->credentials = $credentials;
         $this->tokens = $tokens;
         $this->transport = $transport;
-        // Shop identity is an exact CP Shop.name value — do not rtrim('/') or rewrite spelling.
+        // Shop identity is the validated CP Shop.name (provider already applied historical rtrim).
         $this->shopName = trim((string) $shopName);
         $this->storeId = (int) $storeId;
 

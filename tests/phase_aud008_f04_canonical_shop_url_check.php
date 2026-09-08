@@ -4,8 +4,10 @@
  * AUD-008 F04 — CP-compatible validated shop identity (exact Shop.name).
  * Run: php tests/phase_aud008_f04_canonical_shop_url_check.php
  *
- * "Canonical" here means validated CP-compatible configured base identity,
- * not collapsing every equivalent URL spelling.
+ * "Canonical" here means validated CP-compatible configured base identity.
+ * RECOVERY-01 restores historical trailing-slash collapse (`rtrim`) after
+ * validation — matching reference-uni-oc4 / pre-AUD-008 OC3 login identity —
+ * while keeping AUD-008 https-only / structure rejects.
  *
  * PHP 7.3 compatible. Offline.
  */
@@ -100,43 +102,43 @@ mtucAud008F04_assert(mtuc_phase0_network_isolation_active(), 'isolation: offline
 $provider = new MtUniCreditCanonicalShopUrlProvider();
 
 // ---------------------------------------------------------------------------
-// Representation-preserving accepts
+// Validated accepts + historical trailing-slash identity (RECOVERY-01)
 // ---------------------------------------------------------------------------
 mtucAud008F04_assert(
     MtUniCreditCanonicalShopUrlProvider::normalize('https://shop.example.com') === 'https://shop.example.com',
     'lowercase https root accepted unchanged'
 );
 mtucAud008F04_assert(
-    MtUniCreditCanonicalShopUrlProvider::normalize('https://SHOP.Example.COM/') === 'https://SHOP.Example.COM/',
-    'mixed-case host accepted unchanged'
+    MtUniCreditCanonicalShopUrlProvider::normalize('https://SHOP.Example.COM/') === 'https://SHOP.Example.COM',
+    'mixed-case host preserved; trailing slash collapsed'
 );
 mtucAud008F04_assert(
     MtUniCreditCanonicalShopUrlProvider::normalize('https://shop.example.com:443') === 'https://shop.example.com:443',
     ':443 preserved'
 );
 mtucAud008F04_assert(
-    MtUniCreditCanonicalShopUrlProvider::normalize('https://shop.example.com:443/') === 'https://shop.example.com:443/',
-    ':443 with trailing slash preserved'
+    MtUniCreditCanonicalShopUrlProvider::normalize('https://shop.example.com:443/') === 'https://shop.example.com:443',
+    ':443 trailing slash collapsed'
 );
 mtucAud008F04_assert(
-    MtUniCreditCanonicalShopUrlProvider::normalize('https://shop.example.com:8443/store/') === 'https://shop.example.com:8443/store/',
-    'non-default port + subdirectory trailing slash preserved'
+    MtUniCreditCanonicalShopUrlProvider::normalize('https://shop.example.com:8443/store/') === 'https://shop.example.com:8443/store',
+    'non-default port + subdirectory trailing slash collapsed'
 );
 mtucAud008F04_assert(
-    MtUniCreditCanonicalShopUrlProvider::normalize('https://shop.example.com/') === 'https://shop.example.com/',
-    'root trailing slash preserved'
+    MtUniCreditCanonicalShopUrlProvider::normalize('https://shop.example.com/') === 'https://shop.example.com',
+    'root trailing slash collapsed to historical identity'
 );
 mtucAud008F04_assert(
     MtUniCreditCanonicalShopUrlProvider::normalize('https://shop.example.com/store') === 'https://shop.example.com/store',
     'subdirectory without trailing slash preserved'
 );
 mtucAud008F04_assert(
-    MtUniCreditCanonicalShopUrlProvider::normalize('https://shop.example.com/store/') === 'https://shop.example.com/store/',
-    'subdirectory trailing slash preserved'
+    MtUniCreditCanonicalShopUrlProvider::normalize('https://shop.example.com/store/') === 'https://shop.example.com/store',
+    'subdirectory trailing slash collapsed'
 );
 mtucAud008F04_assert(
-    MtUniCreditCanonicalShopUrlProvider::normalize('https://shop.example.com/Store-One/') === 'https://shop.example.com/Store-One/',
-    'ordinary path spelling preserved'
+    MtUniCreditCanonicalShopUrlProvider::normalize('https://shop.example.com/Store-One/') === 'https://shop.example.com/Store-One',
+    'ordinary path spelling preserved; trailing slash collapsed'
 );
 mtucAud008F04_assert(
     MtUniCreditCanonicalShopUrlProvider::normalize('https://127.0.0.1') === 'https://127.0.0.1',
@@ -147,8 +149,8 @@ mtucAud008F04_assert(
     'IPv4 with port and path accepted'
 );
 mtucAud008F04_assert(
-    MtUniCreditCanonicalShopUrlProvider::normalize('  https://shop.example.com/  ') === 'https://shop.example.com/',
-    'outer whitespace trimmed intentionally'
+    MtUniCreditCanonicalShopUrlProvider::normalize('  https://shop.example.com/  ') === 'https://shop.example.com',
+    'outer whitespace trimmed; trailing slash collapsed'
 );
 mtucAud008F04_assert(
     MtUniCreditCanonicalShopUrlProvider::normalize('') === '',
@@ -159,32 +161,36 @@ mtucAud008F04_assert(
     'whitespace-only treated as empty'
 );
 
-// Distinct literal spellings must remain distinct
+// Distinct host/port/path spellings remain distinct; slash variants collapse
 $a = MtUniCreditCanonicalShopUrlProvider::normalize('https://SHOP.Example.COM/');
 $b = MtUniCreditCanonicalShopUrlProvider::normalize('https://shop.example.com');
 $c = MtUniCreditCanonicalShopUrlProvider::normalize('https://shop.example.com:443/');
-mtucAud008F04_assert($a === 'https://SHOP.Example.COM/', 'exact spelling A preserved');
+mtucAud008F04_assert($a === 'https://SHOP.Example.COM', 'exact spelling A after rtrim');
 mtucAud008F04_assert($b === 'https://shop.example.com', 'exact spelling B preserved');
-mtucAud008F04_assert($c === 'https://shop.example.com:443/', 'exact spelling C preserved');
-mtucAud008F04_assert($a !== $b && $b !== $c && $a !== $c, 'distinct valid spellings stay distinct');
+mtucAud008F04_assert($c === 'https://shop.example.com:443', 'exact spelling C after rtrim');
+mtucAud008F04_assert($a !== $b && $b !== $c && $a !== $c, 'distinct host/port spellings stay distinct');
 
 $subA = MtUniCreditCanonicalShopUrlProvider::normalize('https://shop.example.com/store');
 $subB = MtUniCreditCanonicalShopUrlProvider::normalize('https://shop.example.com/store/');
-mtucAud008F04_assert($subA !== $subB, 'subdirectory slash spellings remain distinct');
+mtucAud008F04_assert($subA === $subB, 'subdirectory slash variants share historical identity');
 
-// Exact CP identity fixture
-$stored = 'https://SHOP.Example.COM:443/store/';
+// Exact CP identity fixture (registered without trailing slash)
+$stored = 'https://SHOP.Example.COM:443/store';
 mtucAud008F04_assert(
     MtUniCreditCanonicalShopUrlProvider::normalize($stored) === $stored,
     'exact CP identity fixture preserved byte-for-byte'
 );
+mtucAud008F04_assert(
+    MtUniCreditCanonicalShopUrlProvider::normalize($stored . '/') === $stored,
+    'OpenCart trailing-slash config resolves to registered CP identity'
+);
 
-// Negative demonstration: previous collapsing would have rewritten this value
+// Negative demonstration: host/path casing and port remain significant
 $previousWouldHaveCollapsed = 'https://shop.example.com/store';
 mtucAud008F04_assert(
     $stored !== $previousWouldHaveCollapsed
         && MtUniCreditCanonicalShopUrlProvider::normalize($stored) === $stored,
-    'new implementation does not collapse exact CP identity'
+    'implementation does not rewrite host casing or strip explicit :443'
 );
 
 // ---------------------------------------------------------------------------
@@ -229,8 +235,8 @@ foreach ($rejects as $label => $url) {
 
 // config_ssl / config_url preference
 mtucAud008F04_assert(
-    $provider->resolve('https://shop.example.com/', 'http://other.example.com/') === 'https://shop.example.com/',
-    'resolve prefers non-empty config_ssl exactly'
+    $provider->resolve('https://shop.example.com/', 'http://other.example.com/') === 'https://shop.example.com',
+    'resolve prefers non-empty config_ssl and applies historical rtrim'
 );
 $httpOnly = mtucAud008F04_catch(function () use ($provider) {
     $provider->resolve('', 'http://shop.example.com');
@@ -243,9 +249,9 @@ $malformedSsl = mtucAud008F04_catch(function () use ($provider) {
 mtucAud008F04_assert($malformedSsl instanceof InvalidArgumentException, 'malformed config_ssl does not fall back');
 
 // ---------------------------------------------------------------------------
-// Login integration — exact identity through client (no rtrim)
+// Login integration — historical identity through client (trailing slash collapsed)
 // ---------------------------------------------------------------------------
-$exactIdentity = 'https://SHOP.Example.COM:443/store/';
+$exactIdentity = 'https://SHOP.Example.COM:443/store';
 $memoryDb = Phase4TestHarness::memoryDb();
 $db = new MtUniCreditDbAdapter($memoryDb, 'oc_');
 $settings = new MtUniCreditSettingStore($db, MtUniCreditConstants::MODULE_SETTINGS_CODE);
@@ -264,7 +270,7 @@ $client = new MtUniCreditControlPanelClient(
     $credentials,
     $tokens,
     $transport,
-    $exactIdentity,
+    MtUniCreditCanonicalShopUrlProvider::normalize($exactIdentity . '/'),
     Phase4TestHarness::TEST_STORE_ID,
     'https://cp-test.example.com/api/v1',
     null,
@@ -272,10 +278,10 @@ $client = new MtUniCreditControlPanelClient(
 );
 $client->login();
 $loginName = $transport->requests[0]['payload']['name'];
-mtucAud008F04_assert($loginName === $exactIdentity, 'login receives exact validated identity');
+mtucAud008F04_assert($loginName === $exactIdentity, 'login receives historical validated identity');
 mtucAud008F04_assert(
-    $loginName === MtUniCreditCanonicalShopUrlProvider::normalize($exactIdentity),
-    'login name matches provider result with no later rewrite'
+    $loginName === MtUniCreditCanonicalShopUrlProvider::normalize($exactIdentity . '/'),
+    'login name matches provider result for OpenCart trailing-slash config'
 );
 
 // Factory / harness path
@@ -302,8 +308,11 @@ $callbackBases = array(
 );
 foreach ($callbackBases as $base) {
     $validated = MtUniCreditCanonicalShopUrlProvider::normalize($base);
-    mtucAud008F04_assert($validated === $base, 'callback base identity preserved: ' . $base);
-    $callbackUrl = mtucAud008F04_cpCallbackBuild($base, 'index.php?route=extension/mt_uni_credit/module');
+    mtucAud008F04_assert(
+        $validated === rtrim($base, '/'),
+        'callback base uses historical identity: ' . $base
+    );
+    $callbackUrl = mtucAud008F04_cpCallbackBuild($validated, 'index.php?route=extension/mt_uni_credit/module');
     mtucAud008F04_assert(
         is_string($callbackUrl) && strpos($callbackUrl, 'index.php') !== false,
         'callback construction works: ' . $base

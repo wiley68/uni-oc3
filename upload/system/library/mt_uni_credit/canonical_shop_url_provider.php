@@ -1,23 +1,30 @@
 <?php
 
 /**
- * Validated CP-compatible shop base identity for login `name` (AUD-008-F04).
+ * Validated CP-compatible shop base identity for login `name` (AUD-008-F04 / RECOVERY-01).
  *
  * CP stores and compares Shop.name by exact string match (no CP-side URL rewrite).
- * Registration requires a literal `https://` prefix. This provider therefore:
+ * Registration requires a literal `https://` prefix.
+ *
+ * Historical / reference-uni-oc4 login identity collapses a single trailing `/`
+ * after validation (`rtrim`). OpenCart `config_ssl` / `HTTPS_CATALOG` almost always
+ * include that slash; shops registered under the working contract do not. Sending the
+ * raw trailing-slash form therefore fails `/auth/login` with 401.
+ *
+ * This provider therefore:
  *   - validates the configured storefront base URL against CP-compatible rules
- *   - preserves the exact spelling (after outer trim only)
- *   - does not collapse equivalent-looking URL forms
+ *   - preserves host/path/port spelling (no lowercasing, no port stripping)
+ *   - applies the historical trailing-slash identity (rtrim of trailing slash chars) only
  */
 final class MtUniCreditCanonicalShopUrlProvider
 {
     /**
-     * Validate a shop identity URL or fail closed.
+     * Validate a shop identity URL or fail closed, then apply historical trailing-slash identity.
      *
      * Empty / whitespace-only input returns empty string (not configured).
      * Non-empty invalid input throws InvalidArgumentException.
      *
-     * Outer whitespace is trimmed; the remaining string is returned unchanged when valid.
+     * Outer whitespace is trimmed before validation.
      *
      * @param string $url
      * @return string
@@ -76,8 +83,8 @@ final class MtUniCreditCanonicalShopUrlProvider
 
         self::assertSafePath(isset($parts['path']) ? (string) $parts['path'] : '');
 
-        // Representation-preserving: return the validated configured spelling.
-        return $url;
+        // Historical CP login identity (reference-uni-oc4 / pre-AUD-008 OC3): drop trailing '/'.
+        return rtrim($url, '/');
     }
 
     /**
@@ -158,7 +165,7 @@ final class MtUniCreditCanonicalShopUrlProvider
         foreach ($segments as $index => $segment) {
             $isTrailingEmpty = ($segment === '' && $index === ($count - 1));
             if ($isTrailingEmpty) {
-                // Trailing slash is a literal identity component — keep, do not rewrite.
+                // Trailing slash is allowed on input; normalize() rtrims it for login identity.
                 continue;
             }
             if ($segment === '' || $segment === '.' || $segment === '..') {
