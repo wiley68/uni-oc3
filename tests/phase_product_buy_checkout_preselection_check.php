@@ -295,6 +295,55 @@ mtucBuyPre_assert(
     'cookie: clear() expires/removes mt_uni_nav cookie'
 );
 
+// ---------------------------------------------------------------------------
+// Checkout entry activates from URL nav; later AJAX without nav uses guard
+// ---------------------------------------------------------------------------
+$sessionEntry = array();
+$navEntry = MtUniCreditProductBuyPreference::save($sessionEntry, array(
+    'store_id' => 0,
+    'product_id' => 42,
+    'scheme_key' => $schemeB,
+    'scheme_type' => 'promo',
+    'kop_code' => 'Z',
+    'months' => 6,
+    'filter_id' => 0,
+));
+$sessionObj->data = &$sessionEntry;
+$req->get = array('mt_uni_nav' => $navEntry);
+$req->post = array();
+$routeEntry = 'checkout/checkout';
+$dataEntry = array();
+$ctrl->onStorefrontNavigation($routeEntry, $dataEntry);
+mtucBuyPre_assert(
+    isset($sessionEntry[MtUniCreditProductBuyPreference::SESSION_KEY])
+        && (string) $sessionEntry[MtUniCreditProductBuyPreference::SESSION_KEY]['state']
+        === MtUniCreditProductBuyPreference::STATE_ACTIVE
+        && isset($sessionEntry[MtUniCreditProductBuyPreference::CHECKOUT_GUARD_KEY]),
+    'entry: checkout/checkout with mt_uni_nav activates Buy preference'
+);
+
+// Simulate Journal AJAX: no query/cookie token after entry activation.
+unset($_COOKIE[MtUniCreditProductBuyPreference::NAV_PARAM]);
+$req->get = array();
+$req->post = array();
+$sessionEntry['payment_methods'] = $methods;
+$sessionEntry['payment_method'] = $methods['cod'];
+$dataAjax = array();
+$ctrl->applyPaymentPreselect($dataAjax);
+$selAjax = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection(
+    $presenter,
+    $sessionEntry,
+    0,
+    MtUniCreditProductBuyPreference::requestNavigationId($req)
+);
+mtucBuyPre_assert(
+    isset($sessionEntry['payment_method']['code'])
+        && (string) $sessionEntry['payment_method']['code'] === 'mt_uni_credit'
+        && $selAjax['key'] === $schemeB
+        && $selAjax['source'] === 'product_buy',
+    'entry+ajax: after URL activation, AJAX without nav still preselects UniCredit + scheme B'
+);
+
 // Resume primary Buy session checks (URL nav + restored cookie).
 $_COOKIE[MtUniCreditProductBuyPreference::NAV_PARAM] = $navId;
 $sessionObj->data = &$session;

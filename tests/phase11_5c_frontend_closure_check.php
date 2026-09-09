@@ -325,7 +325,8 @@ $normalZero = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection(
 mtuc115cfe_assert($normalZero['source'] === 'checkout_default', 'CONSUME C: subsequent source checkout_default');
 mtuc115cfe_assert($normalZero['key'] === 'promo|Z|24', 'CONSUME C: subsequent 0% → 24 (old 5 ignored)');
 
-// AUD-018: missing navigation token must not inherit Buy preference
+// AUD-018: after activation, same-Checkout AJAX without token keeps Buy (guard).
+// A later Checkout entry without token clears (competing entry).
 $sessionGuardOnly = array();
 $navGuard = MtUniCreditProductBuyPreference::save($sessionGuardOnly, array(
     'store_id' => 0,
@@ -336,14 +337,30 @@ $navGuard = MtUniCreditProductBuyPreference::save($sessionGuardOnly, array(
     'months' => 5,
     'filter_id' => 1,
 ));
-MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection($presenterZero, $sessionGuardOnly, 0, $navGuard);
-$afterNoNav = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection($presenterZero, $sessionGuardOnly, 0, '');
-mtuc115cfe_assert($afterNoNav['key'] === 'promo|Z|24', 'CONSUME C2: Checkout without mt_uni_nav → default 24');
-mtuc115cfe_assert($afterNoNav['source'] === 'checkout_default', 'CONSUME C2: no Buy source without token');
+$presenterGuard = array(
+    'offers' => array(
+        'promo' => array(
+            'preferred_scheme_key' => 'promo|Z|24',
+            'schemes' => array(
+                mtuc115cfe_scheme('promo|Z|5', 5, MtUniCreditSchemePresentationCategory::ZERO_PROMO),
+                mtuc115cfe_scheme('promo|Z|24', 24, MtUniCreditSchemePresentationCategory::ZERO_PROMO),
+            ),
+        ),
+        'standard' => array('preferred_scheme_key' => '', 'schemes' => array()),
+    ),
+);
+MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection($presenterGuard, $sessionGuardOnly, 0, $navGuard);
+$afterNoNav = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection($presenterGuard, $sessionGuardOnly, 0, '');
+mtuc115cfe_assert($afterNoNav['key'] === 'promo|Z|5', 'CONSUME C2: AJAX without mt_uni_nav keeps Buy via guard');
+mtuc115cfe_assert($afterNoNav['source'] === 'product_buy', 'CONSUME C2: Buy source via guard');
 mtuc115cfe_assert(
     isset($sessionGuardOnly[MtUniCreditProductBuyPreference::SESSION_KEY]),
-    'CONSUME C2: missing token does not clear Tab A preference'
+    'CONSUME C2: missing AJAX token does not clear active preference'
 );
+MtUniCreditProductBuyPreference::onCheckoutEntryWithoutMatchingNav($sessionGuardOnly, '');
+$afterCompete = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection($presenterZero, $sessionGuardOnly, 0, '');
+mtuc115cfe_assert($afterCompete['key'] === 'promo|Z|24', 'CONSUME C2b: competing entry clears Buy → default 24');
+mtuc115cfe_assert($afterCompete['source'] === 'checkout_default', 'CONSUME C2b: checkout_default after clear');
 
 // Promo-only subsequent
 $sessionConsume2 = array();

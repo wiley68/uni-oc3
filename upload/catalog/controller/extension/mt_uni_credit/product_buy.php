@@ -81,10 +81,12 @@ class ControllerExtensionMtUniCreditProductBuy extends Controller
             return;
         }
 
-        // Checkout entry: competing navigation without matching token clears pending only.
+        // Checkout entry: activate Buy when mt_uni_nav matches (URL/cookie); else clear.
         if (MtUniCreditStorefrontRouteResolver::isCheckoutEntryRoute($current)) {
-            MtUniCreditProductBuyPreference::onCheckoutEntryWithoutMatchingNav(
+            $storeId = (int) $this->config->get('config_store_id');
+            MtUniCreditProductBuyPreference::onCheckoutEntry(
                 $this->session->data,
+                $storeId,
                 $navId
             );
 

@@ -177,10 +177,11 @@ final class MtUniCreditProductBuyPreference
     /**
      * Load preference for a Checkout request context.
      *
-     * AUD-018 F01: pending activates only when request navigation_id matches.
-     * Active is returned only when request navigation_id matches the stored identity.
-     * Missing/mismatched token → null (no session-wide inheritance). Active record
-     * is left intact so a parallel tab without the token cannot destroy Tab A.
+     * Activation (pending→active) requires a matching mt_uni_nav token (URL/cookie/body).
+     * After activation, same-Checkout AJAX may omit the token when CHECKOUT_GUARD matches
+     * (Journal SEO/AJAX often drops query params; OCMOD JS is not reliable).
+     * A later Checkout entry without a matching token clears the preference (see
+     * onCheckoutEntryWithoutMatchingNav) so Buy cannot stick across visits.
      *
      * @param array<string, mixed> $sessionData
      * @param int|null $storeId When set, store mismatch clears preference
@@ -220,12 +221,18 @@ final class MtUniCreditProductBuyPreference
             return null;
         }
 
-        // Token required — session guard alone is not authority for a new Checkout request.
-        if ($requestNavigationId === '' || !hash_equals($navigationId, $requestNavigationId)) {
-            return null;
-        }
+        $tokenMatches = $requestNavigationId !== ''
+            && hash_equals($navigationId, $requestNavigationId);
+        $guard = isset($sessionData[self::CHECKOUT_GUARD_KEY])
+            ? trim((string) $sessionData[self::CHECKOUT_GUARD_KEY])
+            : '';
+        $guardMatches = $guard !== '' && hash_equals($navigationId, $guard);
 
+        // Pending requires an explicit matching token to activate (URL/cookie on entry).
         if ($state === self::STATE_PENDING) {
+            if (!$tokenMatches) {
+                return null;
+            }
             $raw['state'] = self::STATE_ACTIVE;
             $sessionData[self::SESSION_KEY] = $raw;
             $sessionData[self::CHECKOUT_GUARD_KEY] = $navigationId;
@@ -233,16 +240,22 @@ final class MtUniCreditProductBuyPreference
             return $raw;
         }
 
-        // Active + matching request token: keep guard aligned and return preference.
-        $sessionData[self::CHECKOUT_GUARD_KEY] = $navigationId;
+        // Active: matching token, or same-Checkout AJAX with bound guard (token optional).
+        if ($tokenMatches) {
+            $sessionData[self::CHECKOUT_GUARD_KEY] = $navigationId;
 
-        return $raw;
+            return $raw;
+        }
+        if ($requestNavigationId === '' && $guardMatches) {
+            return $raw;
+        }
+
+        return null;
     }
 
     /**
-     * Competing Checkout entry without matching navigation token.
-     * Fail-closed: clear pending so it cannot activate later unexpectedly.
-     * Active is left intact (multi-tab isolation — Tab B must not destroy Tab A).
+     * Checkout entry without matching navigation token.
+     * Fail-closed: clear pending and active so Buy cannot stick to an unrelated visit.
      *
      * @param array<string, mixed> $sessionData
      * @param string $requestNavigationId
@@ -254,22 +267,42 @@ final class MtUniCreditProductBuyPreference
             return;
         }
         $raw = $sessionData[self::SESSION_KEY];
-        $state = (string) (isset($raw['state']) ? $raw['state'] : '');
         $navigationId = trim((string) (isset($raw['navigation_id']) ? $raw['navigation_id'] : ''));
         $requestNavigationId = trim((string) $requestNavigationId);
 
-        if ($state === self::STATE_PENDING) {
-            if (
-                $navigationId === ''
-                || $requestNavigationId === ''
-                || !hash_equals($navigationId, $requestNavigationId)
-            ) {
-                self::clear($sessionData);
-            }
-
-            return;
+        if (
+            $navigationId === ''
+            || $requestNavigationId === ''
+            || !hash_equals($navigationId, $requestNavigationId)
+        ) {
+            self::clear($sessionData);
         }
-        // Active without matching token: do not clear (Scenario C).
+    }
+
+    /**
+     * Checkout entry: activate when token matches; otherwise clear abandoned Buy.
+     *
+     * @param array<string, mixed> $sessionData
+     * @param int $storeId
+     * @param string $requestNavigationId
+     * @return array<string, mixed>|null Activated preference or null
+     */
+    public static function onCheckoutEntry(array &$sessionData, $storeId, $requestNavigationId)
+    {
+        $requestNavigationId = trim((string) $requestNavigationId);
+        if ($requestNavigationId === '') {
+            self::onCheckoutEntryWithoutMatchingNav($sessionData, '');
+
+            return null;
+        }
+
+        $preference = self::load($sessionData, (int) $storeId, $requestNavigationId);
+        if ($preference === null) {
+            // Token present but does not match stored Buy — drop stale handoff.
+            self::onCheckoutEntryWithoutMatchingNav($sessionData, '');
+        }
+
+        return $preference;
     }
 
     /**

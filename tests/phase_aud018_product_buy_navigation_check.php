@@ -211,19 +211,20 @@ $selOk = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection(
 );
 mtucAud018_assert($selOk['source'] === 'product_buy' && $selOk['key'] === 'standard|STD|12', 'F01 Checkout resolve with N');
 
-$selNone = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection(
+// Same-Checkout AJAX often omits mt_uni_nav (Journal); bound guard keeps Buy active.
+$selAjaxNoToken = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection(
     mtucAud018_presenter(),
     $session,
     0,
     ''
 );
 mtucAud018_assert(
-    $selNone['source'] === 'checkout_default' && $selNone['key'] === 'standard|STD|24',
-    'F01 Tab B normal Checkout without N → no Buy override'
+    $selAjaxNoToken['source'] === 'product_buy' && $selAjaxNoToken['key'] === 'standard|STD|12',
+    'F01 same-Checkout AJAX without N keeps Buy via guard'
 );
 mtucAud018_assert(
     isset($session[MtUniCreditProductBuyPreference::SESSION_KEY]),
-    'F01 Tab B without N does not clear Tab A active preference'
+    'F01 AJAX without N does not clear active preference'
 );
 
 $selOther = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection(
@@ -237,7 +238,7 @@ mtucAud018_assert(
     'F01 different token M → no Buy override'
 );
 
-// Same navigation refresh/AJAX
+// Same navigation refresh/AJAX with explicit token
 $selRefresh = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection(
     mtucAud018_presenter(),
     $session,
@@ -246,13 +247,32 @@ $selRefresh = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection(
 );
 mtucAud018_assert($selRefresh['source'] === 'product_buy', 'F01 same navigation refresh preserves');
 
-// Competing checkout entry clears pending only
+// Competing checkout entry clears pending
 $sessionPendingCompete = array();
 $navP = MtUniCreditProductBuyPreference::save($sessionPendingCompete, mtucAud018_saveFields());
+unset($navP);
 MtUniCreditProductBuyPreference::onCheckoutEntryWithoutMatchingNav($sessionPendingCompete, '');
 mtucAud018_assert(
     !isset($sessionPendingCompete[MtUniCreditProductBuyPreference::SESSION_KEY]),
     'F01 competing Checkout entry clears pending'
+);
+
+// Competing checkout entry also clears active (new visit without token)
+$sessionActiveCompete = $session;
+MtUniCreditProductBuyPreference::onCheckoutEntryWithoutMatchingNav($sessionActiveCompete, '');
+mtucAud018_assert(
+    !isset($sessionActiveCompete[MtUniCreditProductBuyPreference::SESSION_KEY]),
+    'F01 competing Checkout entry clears active Buy'
+);
+$selAfterCompete = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection(
+    mtucAud018_presenter(),
+    $sessionActiveCompete,
+    0,
+    ''
+);
+mtucAud018_assert(
+    $selAfterCompete['source'] === 'checkout_default',
+    'F01 after competing entry Buy no longer overrides'
 );
 
 // URL helper
