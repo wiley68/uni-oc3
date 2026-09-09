@@ -81,9 +81,11 @@ Homepage advertising may later use the catalog module/layout surface (decision D
 
 Install/uninstall ownership:
 
-- **Module** install/uninstall: `module_mt_uni_credit` settings only.
-- **Payment** install/uninstall: `payment_mt_uni_credit` settings only.
-- Neither uninstall removes financing/order evidence tables (none in Phase 1; preservation policy unchanged).
+- **Module install:** ensures persistence schema, writes `module_mt_uni_credit` defaults, registers/repairs managed UniCredit catalog events.
+- **Module uninstall:** removes managed UniCredit catalog events and deletes the exact `module_mt_uni_credit` setting group only. Payment settings stay untouched.
+- **Payment install:** ensures the same persistence schema (idempotent), writes `payment_mt_uni_credit` defaults, and may repair the same shared catalog events.
+- **Payment uninstall:** deletes the exact `payment_mt_uni_credit` setting group only. It does **not** remove shared module catalog events.
+- **Neither uninstall** drops, truncates, or purges UniCredit persistence tables / financing or audit evidence. Uninstall is not database cleanup.
 
 Do not store module-wide settings under `payment_mt_uni_credit_*`. Do not store payment-method settings under `module_mt_uni_credit_*`.
 
@@ -500,6 +502,10 @@ Fixture: `tests/fixtures/process1_contract.json`.
 
 No live SmartUCF request in Phase 0.
 
+### P1-000 — Process 1 privacy boundary
+
+**Process 1 transports neither EGN nor phone2.** Those fields exist only on the Process 2 path (encrypted locally; never on the CP create payload). Process 1 SmartUCF / CP generic payloads must not carry EGN or phone2.
+
 ### P1-001 — Prerequisites and certificate mode
 
 Prerequisites: local OC order, `cp_created`, validated snapshot, `uni_proces !== 1`.
@@ -680,26 +686,101 @@ Do not weaken privacy because OC3 is older.
 - Admin Orders list / homepage advertising: local DB / cache-only; no CP HTTP on page render.
 - Logs: identifiers, state, error class, HTTP status only — never secrets, keys, EGN, email, phone, address, raw payloads.
 
-### RETENTION-001 — Windows
+### RETENTION-001 — Windows (implemented)
 
-| Data                                    | Retention                                   |
-| --------------------------------------- | ------------------------------------------- |
-| Process 2 ciphertext                    | **180** days then redact                    |
-| Leasing presentation JSON               | **183** days (documented **target** policy) |
-| Diagnostic journal                      | **3 months**                                |
-| Inbound nonces                          | **900** seconds                             |
-| Operational attempt / order identifiers | keep unless later policy requires deletion  |
+| Data                                    | Retention                                                                                    |
+| --------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Process 2 ciphertext                    | **180** days via dedicated `process2_sensitive_created_at` (179/180 retained; 181 cleared)   |
+| Leasing presentation JSON               | **183** days via dedicated `leasing_presentation_created_at` (182/183 retained; 184 cleared) |
+| Diagnostic journal                      | **90 days** based on `created_at` (not calendar-month arithmetic); bounded cleanup           |
+| Inbound nonces                          | **900** seconds                                                                              |
+| Operational attempt / order identifiers | keep unless later policy requires deletion                                                   |
 
-Cleanup in bounded batches where implemented. Opportunistic Process 2 ciphertext redaction exists in the Process 2 lifecycle path.
+Cleanup uses dedicated immutable timestamps (**no `updated_at` fallback**). Batches are bounded. Attempt identity and recovery state remain; only the sensitive/presentation payloads are cleared at the policy boundary.
 
-> **Current audit note (DOC-032-03 / AUD-030):** Retention **enforcement** is under AUD-030 reconciliation.
-> Documented target policy (including 183-day leasing presentation cleanup and a complete cron/admin retention trigger)
-> and currently verified implemented cleanup **must remain distinguished** until that audit closes.
-> Do not claim the full stated retention policy is fully implemented in production code.
+Operator-facing summary: sensitive Process 2 data is retained through the configured **180-day** boundary; presentation evidence through the **183-day** boundary; diagnostic rows through **90 days**.
 
 ### RETENTION-002 — Uninstall
 
-Preserve financing/audit tables by default. Remove module settings and OCMOD registration. Separate explicit purge only if later required (D9).
+Preserve financing/audit persistence tables by default. Module uninstall removes managed UniCredit catalog events and the `module_mt_uni_credit` setting group. Payment uninstall removes only the `payment_mt_uni_credit` setting group and does **not** remove shared events. No ordinary `DROP TABLE` / `TRUNCATE`. Separate explicit purge only if later required (D9).
+
+---
+
+## K2. Installation / schema recovery (AUD-030)
+
+Installation is **idempotent**. Rerunning Module or Payment install after a partial failure is supported and retains existing persistence/evidence.
+
+On install:
+
+- missing tables are created
+- missing required columns / indexes / UNIQUE constraints are completed and verified
+- non-default `DB_PREFIX` is supported (inspection/DDL use the configured prefix only)
+- required DDL failure aborts installation visibly
+- required catalog-event registration failure aborts installation visibly
+- event ensure is retried on a subsequent install
+
+**Unsafe UNIQUE / duplicate-row case:** if a required UNIQUE cannot be restored because conflicting duplicate rows already exist, installation fails visibly. Operators must **not** automatically delete duplicate financial rows, and must **not** `DROP`/`TRUNCATE` UniCredit persistence tables as normal recovery. Investigate forensically, resolve conflicts, then rerun installation. There is no separate migration command beyond reinstall/ensure.
+
+---
+
+## K3. Release package identity and policy (AUD-031)
+
+Release package root:
+
+```text
+install.xml
+upload/
+```
+
+Build with `powershell -File scripts/package.ps1`. Do **not** manually zip the repository (`tests/`, `scripts/`, `docs/`, `.git/` must stay out of the artifact).
+
+Hardened packaging requirements:
+
+- source preflight rejects forbidden development/local/credential artifacts under `upload/`
+- package file manifest must exactly equal the approved source payload
+- each ZIP entry’s decompressed bytes are SHA256-compared to the source file
+- debug-failure and private-key content sentinels must pass
+
+### Frozen v2.0.2 release identity
+
+```text
+Source HEAD:
+c9203bbf78a103184077c401485293abf41876b7
+
+Artifact:
+CC_OpenCartv.3.x_UNI_v.2.0.2.ocmod.zip
+
+SHA256:
+F80655ED4E81BABDC56ED1FC5481C3DBDB487CDBBE280CDC2ACD68CE6CD53BA8
+```
+
+This pairing is the frozen **2.0.2** release identity. Do not treat an ad-hoc rebuild as the same frozen artifact unless HEAD and SHA256 both match.
+
+---
+
+## K4. Recovery / privacy operator invariants (AUD-032)
+
+### REC-001 — Cart clear (one-shot)
+
+Cart clear is durable and attempt-specific. It is a **one-shot** authority: an older successful attempt cannot regain authority to clear a newer cart. Do **not** manually reset `cart_clear_state` as a routine recovery action.
+
+### REC-002 — Prepared checkout selection
+
+Checkout submission authority is the **persisted prepared/validated** financing selection (scheme and first installment). Posted or recalculated alternatives are not authoritative during recovery. Do not recommend manually recalculating or replacing that selection.
+
+### REC-003 — Native order finalization
+
+Native order finalization/history is stateful and idempotent. An already-applied finalization must not be repeated. An uncertain/in-progress durable finalization state is **not** a blind manual retry candidate — do not prescribe repeated `addOrderHistory()` or manual status replay.
+
+### REC-004 — Ambiguous remote outcomes
+
+Unknown CP or SmartUCF outcome **≠** safe resend. Inspect durable local state and external CP/SmartUCF evidence first. Do not fresh-resend on ambiguity.
+
+### REC-005 — Process privacy (operator-facing)
+
+- Process 1 transports neither EGN nor phone2.
+- Process 2 may hold EGN/phone2 only under the approved bank/admin flow (encrypted locally).
+- Customer-facing content excludes EGN.
 
 ---
 

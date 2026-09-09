@@ -292,7 +292,9 @@ Phase 0 does not install the module. D1–D4 Phase 0 blockers are closed; remain
 
 ## Phase 1 remote checklist (admin skeleton)
 
-Build locally with `powershell -File scripts/package.ps1`, then install `dist/CC_OpenCartv.3.x_UNI_v.2.0.2.ocmod.zip` on the test shop. Record sanitized results only; do **not** mark PASS until each item is verified on the server.
+Build locally with `powershell -File scripts/package.ps1` (never hand-zip the repo). Install the frozen artifact `dist/CC_OpenCartv.3.x_UNI_v.2.0.2.ocmod.zip` on the test shop when verifying that release. Record sanitized results only; do **not** mark PASS until each item is verified on the server.
+
+**Frozen v2.0.2 identity:** source HEAD `c9203bbf78a103184077c401485293abf41876b7`; artifact SHA256 `F80655ED4E81BABDC56ED1FC5481C3DBDB487CDBBE280CDC2ACD68CE6CD53BA8`. Packaging enforces source preflight, exact approved-file manifest, per-file SHA256 byte integrity, and debug/private-key sentinels (see `docs/CONTRACTS.md` K3).
 
 ### Global
 
@@ -315,8 +317,8 @@ Build locally with `powershell -File scripts/package.ps1`, then install `dist/CC
 10. [ ] **Обнови данните от банката** visible; POST shows Phase 1 unavailable message (no CP call).
 11. [ ] **Изтегли журнал операции** visible; POST downloads empty/sanitized JSON (no Phase 9 persistence).
 12. [ ] UNICID required; secret behaviour correct; save/reload works.
-13. [ ] Module **Uninstall** removes only `module_mt_uni_credit` settings.
-14. [ ] Module **Reinstall** succeeds with idempotent defaults.
+13. [ ] Module **Uninstall** removes managed UniCredit catalog events and only the `module_mt_uni_credit` setting group (persistence tables retained).
+14. [ ] Module **Reinstall** succeeds with idempotent defaults / schema completion.
 
 ### Payment (`Extensions → Extensions → Payments`)
 
@@ -325,7 +327,7 @@ Build locally with `powershell -File scripts/package.ps1`, then install `dist/CC
 3. [ ] Payment **Modify** opens payment-only page (order status, geo zone, status, sort order).
 4. [ ] Fresh install: order status defaults to **Processing**.
 5. [ ] Manually changed order status persists after save and reopen.
-6. [ ] Payment **Uninstall/Reinstall** behaviour unchanged.
+6. [ ] Payment **Uninstall** removes only `payment_mt_uni_credit` settings and does **not** remove shared module catalog events; **Reinstall** remains idempotent.
 
 Optional evidence to attach (sanitized):
 
@@ -373,7 +375,7 @@ Expected Phase 2 tables only:
 
 Record engine, charset/collation (prefer InnoDB + utf8mb4; note if fallback required).
 
-**Uninstall policy:** Module/Payment uninstall removes extension **settings** only. Phase 2 tables are **preserved** (future financing evidence). No `DROP TABLE` on ordinary uninstall.
+**Uninstall policy:** Module uninstall removes managed UniCredit catalog events and the exact `module_mt_uni_credit` setting group. Payment uninstall removes only the exact `payment_mt_uni_credit` setting group and does **not** remove shared events. All UniCredit persistence tables / financing evidence are **preserved**. No `DROP TABLE` / `TRUNCATE` on ordinary uninstall.
 
 ### Admin Secret (Module settings)
 
@@ -446,7 +448,7 @@ Expected Phase 3 table:
 
 - `<DB_PREFIX>mt_uni_credit_shop_cache` — validated CP shop snapshot per `(store_id, unicid)` (`UNIQUE(store_id, unicid)`, expiry index)
 
-**Uninstall policy:** unchanged — extension uninstall removes **settings only**; Phase 2/3 tables are preserved.
+**Uninstall policy:** Module uninstall removes managed UniCredit catalog events + `module_mt_uni_credit` settings; Payment uninstall removes only `payment_mt_uni_credit` settings (shared events retained). Phase 2/3+ persistence tables are preserved. No ordinary `DROP`/`TRUNCATE`.
 
 ### Shop cache smoke (sanitized fixture)
 
@@ -1168,11 +1170,30 @@ Classifications: **VERIFIED** (local and/or accepted remote), **ACCEPTED EXCEPTI
 | R9  | `sucfOnlineSessionID` visibility in SmartUCF debug log    | VERIFIED (local redactor parity; operational support identifier — not a credential)      |
 | R10 | Journal / default storefront behaviour                    | VERIFIED (local asset/OCMOD patterns); remote theme matrix PENDING where not recorded    |
 
+### Frozen release identity (v2.0.2)
+
+```text
+Source HEAD: c9203bbf78a103184077c401485293abf41876b7
+Artifact:    CC_OpenCartv.3.x_UNI_v.2.0.2.ocmod.zip
+SHA256:      F80655ED4E81BABDC56ED1FC5481C3DBDB487CDBBE280CDC2ACD68CE6CD53BA8
+```
+
+Build only via `scripts/package.ps1`. Package root is `install.xml` + `upload/`. Manifest must equal the approved source set; ZIP bytes are SHA256-checked against source; debug-failure and private-key sentinels must pass.
+
+### Operator recovery reminders (see CONTRACTS K2–K4)
+
+- Partial install: rerun install is safe/idempotent; do not DROP/TRUNCATE persistence tables; do not auto-delete duplicate financial rows when UNIQUE restore fails.
+- Cart clear is attempt-specific one-shot authority — do not reset `cart_clear_state` routinely.
+- Prepared checkout selection (scheme + first installment) is authoritative for submission — do not substitute recalculated alternatives.
+- Native finalization is durable/idempotent — do not blind-replay `addOrderHistory()`.
+- Ambiguous CP/SmartUCF ≠ safe resend.
+- Process 1 transports neither EGN nor phone2.
+
 Coverage that is **not** claimed here:
 
 ```text
 automated full browser E2E suite
 real SMTP delivery proof as a release gate
 real MySQL/MariaDB multi-connection concurrency (F-033-02 → AUD-005/AUD-006)
-remote definitive Checkout broken-CP reject (ACCEPTED EXCEPTION)
+remote definitive Checkout broken-CP reject (ACCEPTED EXCEPTION — testability/runtime-verification exception, not product failure)
 ```
