@@ -4,7 +4,12 @@
  * Authoritative local bank-status transition policy (AUD-015 F01).
  *
  * P1 and P2 are alternative process outcomes, not ranked levels.
- * Inbound callbacks must not regress locally proven durable terminals.
+ * Named intermediate/stale inbound must not regress locally proven durable terminals.
+ *
+ * SmartUCF numeric operational codes (`^\d{1,3}$`) are later bank/application statuses.
+ * CP pushes them after successful P1/P2 (rank 100+code > submission terminals). Inbound
+ * callbacks may therefore advance durable submission outcomes to numeric codes without
+ * collapsing the named submission vocabulary itself.
  */
 final class MtUniCreditBankStatusTransitionPolicy
 {
@@ -40,8 +45,19 @@ final class MtUniCreditBankStatusTransitionPolicy
 
         $currentDurable = self::isDurableTerminal($current);
         $proposedDurable = self::isDurableTerminal($proposed);
+        $proposedNumeric = self::isNumericExternal($proposed);
 
-        // Durable terminal/success/failure must not be overwritten by intermediate/stale data.
+        // CP → shop operational sync: after local P1/P2/failure, accept SmartUCF numeric codes.
+        // Do not accept named intermediate regressions (cp_sent / smartucf_sent / …) here.
+        if (
+            $source === self::SOURCE_INBOUND_CALLBACK
+            && $currentDurable
+            && $proposedNumeric
+        ) {
+            return self::DECISION_ALLOW;
+        }
+
+        // Durable terminal/success/failure must not be overwritten by intermediate/stale named data.
         if ($currentDurable && !$proposedDurable) {
             return self::DECISION_REJECT;
         }
@@ -58,7 +74,7 @@ final class MtUniCreditBankStatusTransitionPolicy
 
         // Intermediate/numeric → durable terminal.
         // Local lifecycle always may advance. Inbound may also advance from intermediate,
-        // but never regress a durable (handled above).
+        // but never regress a durable with named intermediates (handled above).
         if (!$currentDurable && $proposedDurable) {
             return self::DECISION_ALLOW;
         }

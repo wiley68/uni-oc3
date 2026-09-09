@@ -391,23 +391,47 @@ function mtucAud015_run($lib)
         'F01-R1 42→42 NO-OP'
     );
 
-    // Durable must still reject overwrite by numeric
-    $durableReject = array(
-        array('P1→42', MtUniCreditBankStatus::SENT_PROCESS1),
-        array('P2→42', MtUniCreditBankStatus::SENT_PROCESS2),
-        array('FS→42', MtUniCreditBankStatus::SEND_FAILED_SMARTUCF),
-        array('FC→42', MtUniCreditBankStatus::SEND_FAILED_CP),
+    // Inbound SmartUCF numeric operational codes may advance past durable submission terminals.
+    // Local lifecycle must still reject durable → numeric (submission vocabulary stays owned locally).
+    $durableInboundNumeric = array(
+        array('P1→42 inbound', MtUniCreditBankStatus::SENT_PROCESS1),
+        array('P2→42 inbound', MtUniCreditBankStatus::SENT_PROCESS2),
+        array('FS→42 inbound', MtUniCreditBankStatus::SEND_FAILED_SMARTUCF),
+        array('FC→42 inbound', MtUniCreditBankStatus::SEND_FAILED_CP),
     );
     $oidDur = 15180;
-    foreach ($durableReject as $i => $case) {
+    foreach ($durableInboundNumeric as $i => $case) {
         $memory = new Phase2MemoryDb();
         $repo = mtucAud015_repo($memory, $storeId, $oidDur + $i);
         mtucAud015_write($repo, $storeId, $oidDur + $i, $case[1], '', $local);
-        $rej = mtucAud015_write($repo, $storeId, $oidDur + $i, $numericFrom, 'stale numeric', $inbound);
+        $advNum = mtucAud015_write($repo, $storeId, $oidDur + $i, $numericFrom, 'External 42', $inbound);
         $row = $repo->findByOrderId($storeId, $oidDur + $i);
         mtucAud015_assert(
-            $rej !== null
-                && empty($rej['applied'])
+            $advNum !== null
+                && !empty($advNum['applied'])
+                && $row !== null
+                && (string) $row['status_id'] === $numericFrom
+                && (string) $row['status_label'] === 'External 42',
+            'F01-R1 ' . $case[0] . ' applied'
+        );
+    }
+
+    $oidLocalReject = 15185;
+    $durableLocalReject = array(
+        array('P1→42 local', MtUniCreditBankStatus::SENT_PROCESS1),
+        array('P2→42 local', MtUniCreditBankStatus::SENT_PROCESS2),
+        array('FS→42 local', MtUniCreditBankStatus::SEND_FAILED_SMARTUCF),
+        array('FC→42 local', MtUniCreditBankStatus::SEND_FAILED_CP),
+    );
+    foreach ($durableLocalReject as $i => $case) {
+        $memory = new Phase2MemoryDb();
+        $repo = mtucAud015_repo($memory, $storeId, $oidLocalReject + $i);
+        mtucAud015_write($repo, $storeId, $oidLocalReject + $i, $case[1], '', $local);
+        $rejLocal = mtucAud015_write($repo, $storeId, $oidLocalReject + $i, $numericFrom, 'local numeric', $local);
+        $row = $repo->findByOrderId($storeId, $oidLocalReject + $i);
+        mtucAud015_assert(
+            $rejLocal !== null
+                && empty($rejLocal['applied'])
                 && $row !== null
                 && (string) $row['status_id'] === $case[1],
             'F01-R1 ' . $case[0] . ' blocked'
