@@ -442,6 +442,12 @@ mtuc115cfe_assert(
     'CONSUME: storefront buy_guard event registered'
 );
 mtuc115cfe_assert(
+    isset($codes['mt_uni_credit_buy_payment_view'])
+        && $codes['mt_uni_credit_buy_payment_view']
+        === 'extension/mt_uni_credit/product_buy/onPaymentMethodView',
+    'CONSUME: Buy payment_method view preselect event registered'
+);
+mtuc115cfe_assert(
     !isset($codes['mt_uni_credit_buy_guard_cart'])
         && !isset($codes['mt_uni_credit_buy_guard_product'])
         && !isset($codes['mt_uni_credit_buy_guard_home']),

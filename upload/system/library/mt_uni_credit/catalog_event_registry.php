@@ -74,6 +74,12 @@ final class MtUniCreditCatalogEventRegistry
                 'trigger' => 'catalog/controller/*/before',
                 'action' => 'extension/mt_uni_credit/product_buy/onStorefrontNavigation',
             ),
+            // Product Buy payment preselect without depending on payment_method.php OCMOD.
+            array(
+                'code' => 'mt_uni_credit_buy_payment_view',
+                'trigger' => 'catalog/view/checkout/payment_method/before',
+                'action' => 'extension/mt_uni_credit/product_buy/onPaymentMethodView',
+            ),
         );
     }
 }

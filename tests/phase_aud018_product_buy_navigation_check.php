@@ -149,11 +149,11 @@ mtucAud018_assert(
 mtucAud018_assert(
     strpos($installXml, 'mt_uni_credit:buy_nav') !== false
         && strpos($installXml, 'sessionStorage') !== false
+        && strpos($installXml, 'writeNavCookie') !== false
+        && strpos($installXml, 'payment[_-]method') !== false
         && strpos($installXml, 'XMLHttpRequest') !== false
-        && strpos($installXml, 'ajaxPrefilter') !== false
-        && strpos($installXml, 'tries >= 200') !== false
         && strpos($installXml, 'if (!nav || !window.jQuery)') === false,
-    'F01 static: Checkout OCMOD mt_uni_nav via XHR + bounded jQuery wait'
+    'F01 static: buy_nav cookie + XHR + Journal SEO URL match'
 );
 mtucAud018_assert(
     strpos($routeSrc, 'isUnrelatedStorefrontRoute') !== false
@@ -162,8 +162,10 @@ mtucAud018_assert(
 );
 mtucAud018_assert(
     strpos($registrySrc, 'mt_uni_credit_buy_guard_storefront') !== false
-        && strpos($registrySrc, 'controller/*/before') !== false,
-    'F02 static: wildcard storefront buy_guard event'
+        && strpos($registrySrc, 'controller/*/before') !== false
+        && strpos($registrySrc, 'mt_uni_credit_buy_payment_view') !== false
+        && strpos($registrySrc, 'onPaymentMethodView') !== false,
+    'F02 static: wildcard buy_guard + payment_method view events'
 );
 
 // ---------------------------------------------------------------------------

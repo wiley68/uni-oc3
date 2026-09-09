@@ -1229,6 +1229,29 @@
                 response.redirect ||
                 $root.attr("data-checkout-url") ||
                 "index.php?route=checkout/checkout";
+              var navToken =
+                (response.navigation_id && String(response.navigation_id)) || "";
+              if (navToken) {
+                try {
+                  var cookieParts = [
+                    "mt_uni_nav=" + encodeURIComponent(navToken),
+                    "path=/",
+                    "max-age=1800",
+                    "SameSite=Lax",
+                  ];
+                  if (
+                    window.location &&
+                    window.location.protocol === "https:"
+                  ) {
+                    cookieParts.push("Secure");
+                  }
+                  document.cookie = cookieParts.join("; ");
+                  window.sessionStorage.setItem(
+                    "mt_uni_credit_buy_nav",
+                    navToken,
+                  );
+                } catch (cookieErr) {}
+              }
               var form = productFormData();
               $.ajax({
                 url: "index.php?route=checkout/cart/add",

@@ -107,7 +107,29 @@
     if (url.indexOf('route=extension/payment/mt_uni_credit') !== -1) {
       return true;
     }
+    /* Journal SEO / pretty Checkout paths (no route= query). */
+    if (/checkout\/(checkout|payment_method|payment_address|shipping_|confirm|login|register|guest)/i.test(url)) {
+      return true;
+    }
+    if (/extension\/payment\/mt_uni_credit/i.test(url)) {
+      return true;
+    }
+    if (/payment[_-]method/i.test(url)) {
+      return true;
+    }
     return false;
+  }
+  function writeNavCookie(nav) {
+    if (!nav) {
+      return;
+    }
+    try {
+      var parts = [PARAM + '=' + encodeURIComponent(nav), 'path=/', 'max-age=1800', 'SameSite=Lax'];
+      if (window.location && window.location.protocol === 'https:') {
+        parts.push('Secure');
+      }
+      document.cookie = parts.join('; ');
+    } catch (eCookie) {}
   }
   function appendNav(url, nav) {
     url = String(url || '');
@@ -124,6 +146,7 @@
   if (!nav) {
     return;
   }
+  writeNavCookie(nav);
   /* Primary: native XHR hook — works before deferred/footer jQuery (Journal). */
   try {
     if (window.XMLHttpRequest && window.XMLHttpRequest.prototype && !window.XMLHttpRequest.prototype.__mtucBuyNavOpen) {

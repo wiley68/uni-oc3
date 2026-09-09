@@ -110,12 +110,16 @@ final class MtUniCreditProductBuyPreference
     }
 
     /**
-     * Issue short-lived HttpOnly cookie so Checkout AJAX carries mt_uni_nav without JS.
+     * Issue short-lived cookie so Checkout AJAX carries mt_uni_nav without theme JS.
+     *
+     * Uses both PHP setcookie (when headers allow) and optional OpenCart Response
+     * Set-Cookie header — OC JSON responses often already started the buffer.
      *
      * @param string $navigationId
+     * @param object|null $response OpenCart response with addHeader()
      * @return void
      */
-    public static function issueNavigationCookie($navigationId)
+    public static function issueNavigationCookie($navigationId, $response = null)
     {
         $navigationId = trim((string) $navigationId);
         if (!self::isValidNavigationId($navigationId)) {
@@ -123,17 +127,32 @@ final class MtUniCreditProductBuyPreference
         }
 
         $_COOKIE[self::NAV_PARAM] = $navigationId;
-        if (headers_sent()) {
-            return;
+
+        $parts = array(
+            self::NAV_PARAM . '=' . rawurlencode($navigationId),
+            'Path=/',
+            'Max-Age=' . (int) self::TTL_SECONDS,
+            'SameSite=Lax',
+        );
+        if (self::cookieSecure()) {
+            $parts[] = 'Secure';
+        }
+        // Not HttpOnly: storefront JS may also mirror the token (DSK-style); PHP still reads $_COOKIE.
+        $header = implode('; ', $parts);
+
+        if (is_object($response) && method_exists($response, 'addHeader')) {
+            $response->addHeader('Set-Cookie: ' . $header);
         }
 
-        setcookie(self::NAV_PARAM, $navigationId, array(
-            'expires' => time() + self::TTL_SECONDS,
-            'path' => '/',
-            'secure' => self::cookieSecure(),
-            'httponly' => true,
-            'samesite' => 'Lax',
-        ));
+        if (!headers_sent()) {
+            setcookie(self::NAV_PARAM, $navigationId, array(
+                'expires' => time() + self::TTL_SECONDS,
+                'path' => '/',
+                'secure' => self::cookieSecure(),
+                'httponly' => false,
+                'samesite' => 'Lax',
+            ));
+        }
     }
 
     /**
@@ -152,7 +171,7 @@ final class MtUniCreditProductBuyPreference
             'expires' => time() - 3600,
             'path' => '/',
             'secure' => self::cookieSecure(),
-            'httponly' => true,
+            'httponly' => false,
             'samesite' => 'Lax',
         ));
     }

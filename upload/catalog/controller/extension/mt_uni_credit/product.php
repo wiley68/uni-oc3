@@ -166,6 +166,8 @@ class ControllerExtensionMtUniCreditProduct extends Controller
                 'filter_id' => (int) $this->posted('filter_id', 0),
                 'scheme_key' => $schemeKey,
             ));
+            // Re-issue via OC Response headers (PHP setcookie alone is unreliable after OC bootstrap).
+            MtUniCreditProductBuyPreference::issueNavigationCookie($navigationId, $this->response);
 
             $checkoutUrl = MtUniCreditProductBuyPreference::appendNavigationToCheckoutUrl(
                 $this->url->link('checkout/checkout', '', true),

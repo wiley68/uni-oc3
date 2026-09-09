@@ -57,6 +57,50 @@ class ControllerExtensionMtUniCreditProductBuy extends Controller
     }
 
     /**
+     * catalog/view/checkout/payment_method/before
+     *
+     * Applies Product Buy payment preselect and syncs Twig $data['code'] so the
+     * radio is checked even when payment_method.php OCMOD did not apply.
+     *
+     * @param string $route
+     * @param array $data
+     * @param string $code
+     * @return void
+     */
+    public function onPaymentMethodView(&$route, &$data, &$code)
+    {
+        unset($code);
+        if ((string) $route !== 'checkout/payment_method') {
+            return;
+        }
+        if (!isset($this->session->data) || !is_array($this->session->data)) {
+            return;
+        }
+        if (
+            !isset($this->session->data['payment_methods'])
+            || !is_array($this->session->data['payment_methods'])
+        ) {
+            return;
+        }
+
+        $storeId = (int) $this->config->get('config_store_id');
+        $navId = MtUniCreditProductBuyPreference::requestNavigationId($this->request);
+        MtUniCreditProductBuyPreference::applyPaymentIfAvailable(
+            $this->session->data,
+            $this->session->data['payment_methods'],
+            $storeId,
+            $navId
+        );
+
+        if (!is_array($data)) {
+            return;
+        }
+        if (isset($this->session->data['payment_method']['code'])) {
+            $data['code'] = (string) $this->session->data['payment_method']['code'];
+        }
+    }
+
+    /**
      * Catalog controller before: Product Buy lifecycle route policy (AUD-018 F01/F02).
      * Must return null so Loader does not replace the controller output.
      *

@@ -100,7 +100,7 @@ final class Mtuc11EventFakeDb
                 || stripos($sql, 'mt_uni_credit_mail_order') !== false
                 || stripos($sql, 'mt_uni_credit_admin_order') !== false
                 || stripos($sql, 'mt_uni_credit_home') !== false
-                || stripos($sql, 'mt_uni_credit_buy_guard') !== false
+                || stripos($sql, 'mt_uni_credit_buy_') !== false
             ) {
                 $keepIn = array();
                 if (preg_match('/NOT IN \(([^)]+)\)/', $sql, $mIn)) {
@@ -116,7 +116,7 @@ final class Mtuc11EventFakeDb
                         || (strpos($code, 'mt_uni_credit_mail_order') === 0)
                         || (strpos($code, 'mt_uni_credit_admin_order') === 0)
                         || (strpos($code, 'mt_uni_credit_home') === 0)
-                        || (strpos($code, 'mt_uni_credit_buy_guard') === 0);
+                        || (strpos($code, 'mt_uni_credit_buy_') === 0);
                     if (!$isManaged) {
                         return true;
                     }
@@ -139,7 +139,7 @@ final class Mtuc11EventFakeDb
 // 1) Event registry — catalog event defs + Phase 11 OC3 triggers/actions
 // ---------------------------------------------------------------------------
 $defs = MtUniCreditCatalogEventRegistry::definitions();
-mtuc11_assert(count($defs) === 11, 'events: exactly 11 definitions');
+mtuc11_assert(count($defs) === 12, 'events: exactly 12 definitions');
 
 $byCode = array();
 foreach ($defs as $def) {
@@ -171,6 +171,10 @@ $expected = array(
         'trigger' => 'catalog/controller/*/before',
         'action' => 'extension/mt_uni_credit/product_buy/onStorefrontNavigation',
     ),
+    'mt_uni_credit_buy_payment_view' => array(
+        'trigger' => 'catalog/view/checkout/payment_method/before',
+        'action' => 'extension/mt_uni_credit/product_buy/onPaymentMethodView',
+    ),
 );
 foreach ($expected as $code => $pair) {
     mtuc11_assert(isset($byCode[$code]), 'events: registry has ' . $code);
@@ -193,13 +197,13 @@ foreach ($expected as $code => $pair) {
 $fakeDb = new Mtuc11EventFakeDb();
 $repair = MtUniCreditInstaller::ensureCatalogEvents($fakeDb);
 mtuc11_assert(!empty($repair['healthy']), 'events: ensureCatalogEvents healthy');
-mtuc11_assert((int) $repair['inserted'] === 11, 'events: ensure inserts 11');
-mtuc11_assert(count($fakeDb->rows) === 11, 'events: 11 rows after ensure');
+mtuc11_assert((int) $repair['inserted'] === 12, 'events: ensure inserts 12');
+mtuc11_assert(count($fakeDb->rows) === 12, 'events: 12 rows after ensure');
 $health = MtUniCreditCatalogEventHealth::report($fakeDb, 'oc_');
 mtuc11_assert(!empty($health['ok']), 'events: health ok after ensure');
 
 $repairAgain = MtUniCreditInstaller::ensureCatalogEvents($fakeDb);
-mtuc11_assert(count($fakeDb->rows) === 11, 'events: repeated ensure no duplicates');
+mtuc11_assert(count($fakeDb->rows) === 12, 'events: repeated ensure no duplicates');
 mtuc11_assert((int) $repairAgain['inserted'] === 0, 'events: repeated ensure inserts 0');
 mtuc11_assert(!empty($repairAgain['healthy']), 'events: repeated ensure still healthy');
 
