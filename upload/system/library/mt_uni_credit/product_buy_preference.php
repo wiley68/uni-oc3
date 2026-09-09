@@ -8,6 +8,11 @@
  * - active while request (or same-navigation AJAX) carries that navigation_id
  * - session guard alone does not grant preference to an unrelated Checkout
  *
+ * Transport (manual-release):
+ * 1. Query/body `mt_uni_nav` (redirect + optional OCMOD/JS)
+ * 2. HttpOnly cookie `mt_uni_nav` issued on Buy stash — browser sends it on all
+ *    same-origin Checkout AJAX without theme OCMOD / jQuery. Cleared with preference.
+ *
  * Final submit authority is unchanged (explicit scheme_key only).
  */
 final class MtUniCreditProductBuyPreference
@@ -17,7 +22,7 @@ final class MtUniCreditProductBuyPreference
     /** Session guard binding preference.navigation_id after proven activation. */
     const CHECKOUT_GUARD_KEY = 'mt_uni_credit_buy_checkout_guard';
 
-    /** Request query/post parameter carrying the Buy→Checkout navigation token. */
+    /** Request query/post/cookie name carrying the Buy→Checkout navigation token. */
     const NAV_PARAM = 'mt_uni_nav';
 
     const FLOW = 'product_buy';
@@ -68,33 +73,88 @@ final class MtUniCreditProductBuyPreference
             'created_at' => time(),
         );
 
+        self::issueNavigationCookie($navigationId);
+
         return $navigationId;
     }
 
     /**
-     * Extract navigation token from request get/post (association token only).
+     * Extract navigation token from request get/post/cookie (association token only).
+     *
+     * Priority: POST → GET → cookie. Cookie is the reliable Checkout AJAX transport
+     * when theme OCMOD cannot inject JS (Journal / missing checkout.twig anchor).
      *
      * @param object|null $request OpenCart request with ->get / ->post arrays
      * @return string
      */
     public static function requestNavigationId($request)
     {
-        if (!is_object($request)) {
-            return '';
-        }
         $fromGet = '';
         $fromPost = '';
-        if (isset($request->get) && is_array($request->get) && isset($request->get[self::NAV_PARAM])) {
-            $fromGet = trim((string) $request->get[self::NAV_PARAM]);
+        if (is_object($request)) {
+            if (isset($request->get) && is_array($request->get) && isset($request->get[self::NAV_PARAM])) {
+                $fromGet = trim((string) $request->get[self::NAV_PARAM]);
+            }
+            if (isset($request->post) && is_array($request->post) && isset($request->post[self::NAV_PARAM])) {
+                $fromPost = trim((string) $request->post[self::NAV_PARAM]);
+            }
         }
-        if (isset($request->post) && is_array($request->post) && isset($request->post[self::NAV_PARAM])) {
-            $fromPost = trim((string) $request->post[self::NAV_PARAM]);
-        }
-        if ($fromPost !== '') {
+        if ($fromPost !== '' && self::isValidNavigationId($fromPost)) {
             return $fromPost;
         }
+        if ($fromGet !== '' && self::isValidNavigationId($fromGet)) {
+            return $fromGet;
+        }
 
-        return $fromGet;
+        return self::navigationIdFromCookie();
+    }
+
+    /**
+     * Issue short-lived HttpOnly cookie so Checkout AJAX carries mt_uni_nav without JS.
+     *
+     * @param string $navigationId
+     * @return void
+     */
+    public static function issueNavigationCookie($navigationId)
+    {
+        $navigationId = trim((string) $navigationId);
+        if (!self::isValidNavigationId($navigationId)) {
+            return;
+        }
+
+        $_COOKIE[self::NAV_PARAM] = $navigationId;
+        if (headers_sent()) {
+            return;
+        }
+
+        setcookie(self::NAV_PARAM, $navigationId, array(
+            'expires' => time() + self::TTL_SECONDS,
+            'path' => '/',
+            'secure' => self::cookieSecure(),
+            'httponly' => true,
+            'samesite' => 'Lax',
+        ));
+    }
+
+    /**
+     * Expire and drop the Buy navigation cookie (after use / invalidation).
+     *
+     * @return void
+     */
+    public static function clearNavigationCookie()
+    {
+        unset($_COOKIE[self::NAV_PARAM]);
+        if (headers_sent()) {
+            return;
+        }
+
+        setcookie(self::NAV_PARAM, '', array(
+            'expires' => time() - 3600,
+            'path' => '/',
+            'secure' => self::cookieSecure(),
+            'httponly' => true,
+            'samesite' => 'Lax',
+        ));
     }
 
     /**
@@ -106,7 +166,7 @@ final class MtUniCreditProductBuyPreference
     {
         $checkoutUrl = trim((string) $checkoutUrl);
         $navigationId = trim((string) $navigationId);
-        if ($checkoutUrl === '' || $navigationId === '' || !preg_match('/^[a-f0-9]+$/i', $navigationId)) {
+        if ($checkoutUrl === '' || !self::isValidNavigationId($navigationId)) {
             return $checkoutUrl;
         }
         $sep = (strpos($checkoutUrl, '?') === false) ? '?' : '&';
@@ -269,6 +329,7 @@ final class MtUniCreditProductBuyPreference
     public static function clear(array &$sessionData)
     {
         unset($sessionData[self::SESSION_KEY], $sessionData[self::CHECKOUT_GUARD_KEY]);
+        self::clearNavigationCookie();
     }
 
     /**
@@ -332,6 +393,46 @@ final class MtUniCreditProductBuyPreference
         }
 
         self::clear($sessionData);
+    }
+
+    /**
+     * @param string $navigationId
+     * @return bool
+     */
+    public static function isValidNavigationId($navigationId)
+    {
+        return (bool) preg_match('/^[a-f0-9]+$/i', trim((string) $navigationId));
+    }
+
+    /**
+     * @return string
+     */
+    private static function navigationIdFromCookie()
+    {
+        if (!isset($_COOKIE[self::NAV_PARAM])) {
+            return '';
+        }
+        $fromCookie = trim((string) $_COOKIE[self::NAV_PARAM]);
+        if ($fromCookie === '' || !self::isValidNavigationId($fromCookie)) {
+            return '';
+        }
+
+        return $fromCookie;
+    }
+
+    /**
+     * @return bool
+     */
+    private static function cookieSecure()
+    {
+        if (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') {
+            return true;
+        }
+        if (isset($_SERVER['SERVER_PORT']) && (int) $_SERVER['SERVER_PORT'] === 443) {
+            return true;
+        }
+
+        return false;
     }
 
     /**

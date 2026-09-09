@@ -208,6 +208,7 @@ mtucBuyPre_assert(
 
 // Lost-nav gate (pre-fix symptom): without token neither payment nor scheme Buy wins.
 $lost = $session;
+unset($_COOKIE[MtUniCreditProductBuyPreference::NAV_PARAM]);
 $methods = array(
     'cod' => array('code' => 'cod', 'title' => 'Cash', 'sort_order' => 1),
     'mt_uni_credit' => array('code' => 'mt_uni_credit', 'title' => 'UniCredit', 'sort_order' => 2),
@@ -244,6 +245,61 @@ $registry->set('config', new class {
     }
 });
 $ctrl = new ControllerExtensionMtUniCreditProductBuy($registry);
+
+// Cookie transport: no GET/POST nav, but cookie carries navigation_id (DSK-style).
+$sessionCookie = array();
+$navCookie = MtUniCreditProductBuyPreference::save($sessionCookie, array(
+    'store_id' => 0,
+    'product_id' => 42,
+    'scheme_key' => $schemeB,
+    'scheme_type' => 'promo',
+    'kop_code' => 'Z',
+    'months' => 6,
+    'filter_id' => 0,
+));
+mtucBuyPre_assert(
+    isset($_COOKIE[MtUniCreditProductBuyPreference::NAV_PARAM])
+        && (string) $_COOKIE[MtUniCreditProductBuyPreference::NAV_PARAM] === $navCookie,
+    'cookie: Buy stash issues mt_uni_nav cookie'
+);
+$reqCookieOnly = new stdClass();
+$reqCookieOnly->get = array();
+$reqCookieOnly->post = array();
+mtucBuyPre_assert(
+    MtUniCreditProductBuyPreference::requestNavigationId($reqCookieOnly) === $navCookie,
+    'cookie: requestNavigationId reads cookie when GET/POST empty'
+);
+
+$sessionCookie['payment_methods'] = $methods;
+$sessionObj->data = &$sessionCookie;
+$req->get = array();
+$req->post = array();
+$dataCookie = array();
+$ctrl->applyPaymentPreselect($dataCookie);
+$selCookie = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection(
+    $presenter,
+    $sessionCookie,
+    0,
+    MtUniCreditProductBuyPreference::requestNavigationId($req)
+);
+mtucBuyPre_assert(
+    isset($sessionCookie['payment_method']['code'])
+        && (string) $sessionCookie['payment_method']['code'] === 'mt_uni_credit'
+        && $selCookie['key'] === $schemeB
+        && $selCookie['source'] === 'product_buy',
+    'cookie: Checkout AJAX without query nav still preselects UniCredit + scheme B'
+);
+MtUniCreditProductBuyPreference::clear($sessionCookie);
+mtucBuyPre_assert(
+    !isset($_COOKIE[MtUniCreditProductBuyPreference::NAV_PARAM]),
+    'cookie: clear() expires/removes mt_uni_nav cookie'
+);
+
+// Resume primary Buy session checks (URL nav + restored cookie).
+$_COOKIE[MtUniCreditProductBuyPreference::NAV_PARAM] = $navId;
+$sessionObj->data = &$session;
+$req->get = array('mt_uni_nav' => $navId);
+$req->post = array();
 
 $session['payment_methods'] = $methods;
 $data = array();
@@ -388,7 +444,7 @@ mtucBuyPre_assert(
     'later: after leave Buy lifecycle, UniCredit/scheme B not restored'
 );
 
-// Competing checkout entry without nav clears pending
+// Competing checkout entry without any nav transport clears pending
 $sessionCompete = array();
 MtUniCreditProductBuyPreference::save($sessionCompete, array(
     'store_id' => 0,
@@ -399,15 +455,17 @@ MtUniCreditProductBuyPreference::save($sessionCompete, array(
     'months' => 6,
     'filter_id' => 0,
 ));
+unset($_COOKIE[MtUniCreditProductBuyPreference::NAV_PARAM]);
 $sessionObj->data = &$sessionCompete;
 $req->get = array();
+$req->post = array();
 $route = 'checkout/checkout';
 $dataCompete = array();
 $ctrlCompete = new ControllerExtensionMtUniCreditProductBuy($registry);
 $ctrlCompete->onStorefrontNavigation($route, $dataCompete);
 mtucBuyPre_assert(
     !isset($sessionCompete[MtUniCreditProductBuyPreference::SESSION_KEY]),
-    'lifecycle: competing Checkout entry without nav clears pending Buy'
+    'lifecycle: competing Checkout entry without nav/cookie clears pending Buy'
 );
 
 // Buy itself must remain preference-only (no CP/SmartUCF in stash controller source)

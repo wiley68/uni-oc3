@@ -136,9 +136,10 @@ mtucAud018_assert(
     'F01 static: NAV_PARAM mt_uni_nav present'
 );
 mtucAud018_assert(
-    strpos($prefSrc, 'requestNavigationId') !== false
-        && strpos($prefSrc, 'appendNavigationToCheckoutUrl') !== false,
-    'F01 static: request + redirect helpers'
+    strpos($prefSrc, 'issueNavigationCookie') !== false
+        && strpos($prefSrc, 'clearNavigationCookie') !== false
+        && strpos($prefSrc, 'navigationIdFromCookie') !== false,
+    'F01 static: mt_uni_nav cookie transport helpers'
 );
 mtucAud018_assert(
     strpos($productSrc, 'appendNavigationToCheckoutUrl') !== false
