@@ -9,6 +9,7 @@
  * - exact Buy scheme beats normal Checkout default ranking
  * - normal Checkout without Buy does not force UniCredit
  * - same-nav refresh retains both; stale/unrelated paths do not
+ * - realistic request sequence: Buy → Checkout entry → nested common/* → payment AJAX
  *
  * Run: php tests/phase_product_buy_checkout_preselection_check.php
  */
@@ -322,7 +323,32 @@ mtucBuyPre_assert(
     'entry: checkout/checkout with mt_uni_nav activates Buy preference'
 );
 
-// Simulate Journal AJAX: no query/cookie token after entry activation.
+// Realistic OC3 Checkout page render: nested layout controllers fire via Loader
+// AFTER checkout/checkout activation (common/header|footer|column_*|cart).
+// Pre-fix: these were classified unrelated and wiped preference before payment AJAX.
+$nestedLayout = array(
+    'common/column_left',
+    'common/column_right',
+    'common/content_top',
+    'common/content_bottom',
+    'common/footer',
+    'common/header',
+    'common/cart',
+);
+foreach ($nestedLayout as $layoutRoute) {
+    $layoutData = array();
+    $ctrl->onStorefrontNavigation($layoutRoute, $layoutData);
+}
+mtucBuyPre_assert(
+    isset($sessionEntry[MtUniCreditProductBuyPreference::SESSION_KEY])
+        && (string) $sessionEntry[MtUniCreditProductBuyPreference::SESSION_KEY]['state']
+        === MtUniCreditProductBuyPreference::STATE_ACTIVE
+        && isset($sessionEntry[MtUniCreditProductBuyPreference::CHECKOUT_GUARD_KEY])
+        && (string) $sessionEntry[MtUniCreditProductBuyPreference::CHECKOUT_GUARD_KEY] === $navEntry,
+    'request-seq: nested common/* after Checkout entry preserve activated Buy preference'
+);
+
+// Simulate Journal AJAX: no query/cookie token after entry activation + nested layout.
 unset($_COOKIE[MtUniCreditProductBuyPreference::NAV_PARAM]);
 $req->get = array();
 $req->post = array();
@@ -342,6 +368,56 @@ mtucBuyPre_assert(
         && $selAjax['key'] === $schemeB
         && $selAjax['source'] === 'product_buy',
     'entry+ajax: after URL activation, AJAX without nav still preselects UniCredit + scheme B'
+);
+
+// REQUEST 4: payment_method AJAX rebuild (same navigation, no token).
+$routePay = 'checkout/payment_method';
+$dataPayNav = array();
+$ctrl->onStorefrontNavigation($routePay, $dataPayNav);
+$sessionEntry['payment_method'] = $methods['cod'];
+$viewData = array('code' => 'cod');
+$viewRoute = 'checkout/payment_method';
+$viewCode = '';
+$ctrl->onPaymentMethodView($viewRoute, $viewData, $viewCode);
+$selPay = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection(
+    $presenter,
+    $sessionEntry,
+    0,
+    ''
+);
+mtucBuyPre_assert(
+    isset($sessionEntry['payment_method']['code'])
+        && (string) $sessionEntry['payment_method']['code'] === 'mt_uni_credit'
+        && (string) $viewData['code'] === 'mt_uni_credit'
+        && $selPay['key'] === $schemeB
+        && $selPay['source'] === 'product_buy',
+    'request-seq: payment_method rebuild keeps UniCredit radio + exact scheme B'
+);
+
+// Exit invalidation: leave Buy Checkout for unrelated browsing → preference gone.
+$routeLeave = 'product/category';
+$dataLeave = array();
+$ctrl->onStorefrontNavigation($routeLeave, $dataLeave);
+mtucBuyPre_assert(
+    !isset($sessionEntry[MtUniCreditProductBuyPreference::SESSION_KEY])
+        && !isset($sessionEntry[MtUniCreditProductBuyPreference::CHECKOUT_GUARD_KEY]),
+    'request-seq: unrelated leave after Buy Checkout clears preference'
+);
+$sessionEntry['payment_methods'] = $methods;
+$sessionEntry['payment_method'] = $methods['cod'];
+$dataAfterLeave = array();
+$ctrl->applyPaymentPreselect($dataAfterLeave);
+$selAfterLeave = MtUniCreditCheckoutSchemeSelection::resolveInitialSchemeSelection(
+    $presenter,
+    $sessionEntry,
+    0,
+    ''
+);
+mtucBuyPre_assert(
+    (string) $sessionEntry['payment_method']['code'] === 'cod'
+        && $selAfterLeave['key'] === $schemeA
+        && $selAfterLeave['source'] === 'checkout_default',
+    'request-seq: fresh ordinary Checkout after leave does not inherit Buy preference'
 );
 
 // Resume primary Buy session checks (URL nav + restored cookie).

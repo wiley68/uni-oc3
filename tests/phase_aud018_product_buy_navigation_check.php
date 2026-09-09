@@ -157,7 +157,8 @@ mtucAud018_assert(
 );
 mtucAud018_assert(
     strpos($routeSrc, 'isUnrelatedStorefrontRoute') !== false
-        && strpos($routeSrc, 'isCheckoutLifecycleRoute') !== false,
+        && strpos($routeSrc, 'isCheckoutLifecycleRoute') !== false
+        && strpos($routeSrc, 'isLayoutFragmentRoute') !== false,
     'F02 static: route classifier helpers'
 );
 mtucAud018_assert(
@@ -358,6 +359,57 @@ foreach (array('product/category', 'product/search', 'information/information', 
     mtucAud018_assert(
         !isset($tmp[MtUniCreditProductBuyPreference::SESSION_KEY]),
         'F02 clearOnUnrelatedStorefront clears active (' . $route . ')'
+    );
+}
+
+// Nested layout fragments (Loader chrome) must NOT clear Buy preference.
+$layoutFragments = array(
+    'common/header',
+    'common/footer',
+    'common/column_left',
+    'common/column_right',
+    'common/content_top',
+    'common/content_bottom',
+    'common/cart',
+);
+foreach ($layoutFragments as $route) {
+    mtucAud018_assert(
+        MtUniCreditStorefrontRouteResolver::isLayoutFragmentRoute($route),
+        'F02 layout fragment class: ' . $route
+    );
+    mtucAud018_assert(
+        !MtUniCreditStorefrontRouteResolver::isUnrelatedStorefrontRoute($route),
+        'F02 layout fragment not unrelated: ' . $route
+    );
+}
+mtucAud018_assert(
+    !MtUniCreditStorefrontRouteResolver::isLayoutFragmentRoute('common/home'),
+    'F02 common/home is homepage, not layout fragment'
+);
+mtucAud018_assert(
+    MtUniCreditStorefrontRouteResolver::isHomepageRoute('common/home'),
+    'F02 common/home remains homepage clear target'
+);
+
+// Realistic Checkout render: activate then nested common/* must preserve.
+$sessionNested = array();
+$navNested = MtUniCreditProductBuyPreference::save($sessionNested, mtucAud018_saveFields());
+MtUniCreditProductBuyPreference::onCheckoutEntry($sessionNested, 0, $navNested);
+mtucAud018_assert(
+    isset($sessionNested[MtUniCreditProductBuyPreference::SESSION_KEY])
+        && (string) $sessionNested[MtUniCreditProductBuyPreference::SESSION_KEY]['state']
+        === MtUniCreditProductBuyPreference::STATE_ACTIVE,
+    'F02 nested fixture activated'
+);
+foreach ($layoutFragments as $route) {
+    $tmpNested = $sessionNested;
+    // Mimic controller policy: layout fragments do not clear.
+    if (MtUniCreditStorefrontRouteResolver::isUnrelatedStorefrontRoute($route)) {
+        MtUniCreditProductBuyPreference::clearOnUnrelatedStorefront($tmpNested);
+    }
+    mtucAud018_assert(
+        isset($tmpNested[MtUniCreditProductBuyPreference::SESSION_KEY]),
+        'F02 nested common/* preserve after Checkout activation: ' . $route
     );
 }
 

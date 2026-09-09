@@ -6,6 +6,9 @@
  * AUD-018 F02: classify routes so active Buy preference clears on unrelated browsing
  * without breaking Buy stash → cart/add → Checkout, or Checkout AJAX.
  *
+ * Nested common/* layout fragments (header/footer/columns/cart chrome) are NOT
+ * unrelated browsing — OC3 fires them via Loader during Checkout page render.
+ *
  * Checkout / extension preservation is an explicit allowlist (not checkout/* or extension/*).
  */
 final class MtUniCreditStorefrontRouteResolver
@@ -188,6 +191,29 @@ final class MtUniCreditStorefrontRouteResolver
     }
 
     /**
+     * Nested layout / chrome controllers fired by Loader during a page render.
+     *
+     * OC3 Checkout (and most catalog pages) load common/header|footer|column_*|cart
+     * via load->controller(). Those nested routes fire the catalog controller
+     * wildcard before-event but are NOT storefront browsing — clearing Buy
+     * preference here wipes activation before payment_method AJAX runs.
+     *
+     * common/home remains a homepage clear target (handled separately).
+     *
+     * @param mixed $route
+     * @return bool
+     */
+    public static function isLayoutFragmentRoute($route)
+    {
+        $route = self::currentRoute($route);
+        if ($route === '' || self::isHomepageRoute($route)) {
+            return false;
+        }
+
+        return strpos($route, 'common/') === 0;
+    }
+
+    /**
      * Unrelated storefront browsing that must terminate an active Buy lifecycle.
      *
      * @param mixed $route
@@ -208,6 +234,10 @@ final class MtUniCreditStorefrontRouteResolver
         if (self::isProductPageRoute($route)) {
             return false;
         }
+        // Nested layout loads during page render — not browsing.
+        if (self::isLayoutFragmentRoute($route)) {
+            return false;
+        }
         // Cart page / home are explicit clear targets (handled by caller).
         if (self::isCartPageRoute($route) || self::isHomepageRoute($route)) {
             return true;
@@ -219,9 +249,6 @@ final class MtUniCreditStorefrontRouteResolver
             return true;
         }
         if (strpos($route, 'account/') === 0) {
-            return true;
-        }
-        if (strpos($route, 'common/') === 0) {
             return true;
         }
         // Unrelated extension/* and checkout/* (not on allowlist) clear active preference.

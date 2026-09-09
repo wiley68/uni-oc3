@@ -125,6 +125,12 @@ class ControllerExtensionMtUniCreditProductBuy extends Controller
             return;
         }
 
+        // Nested layout (header/footer/cart chrome): preserve. These fire via
+        // Loader during Checkout render and must not wipe an activated Buy preference.
+        if (MtUniCreditStorefrontRouteResolver::isLayoutFragmentRoute($current)) {
+            return;
+        }
+
         // Checkout entry: activate Buy when mt_uni_nav matches (URL/cookie); else clear.
         if (MtUniCreditStorefrontRouteResolver::isCheckoutEntryRoute($current)) {
             $storeId = (int) $this->config->get('config_store_id');
