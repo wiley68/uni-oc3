@@ -441,8 +441,10 @@ mtuc115cfe_assert(
 );
 mtuc115cfe_assert(
     strpos($installXml, 'mt_uni_credit:buy_nav') !== false
-        && strpos($installXml, 'mt_uni_nav') !== false,
-    'AUD-018: OCMOD propagates mt_uni_nav on Checkout'
+        && strpos($installXml, 'mt_uni_nav') !== false
+        && strpos($installXml, 'XMLHttpRequest') !== false
+        && strpos($installXml, 'if (!nav || !window.jQuery)') === false,
+    'AUD-018: OCMOD propagates mt_uni_nav on Checkout (XHR-safe)'
 );
 mtuc115cfe_assert(
     is_file(

@@ -147,8 +147,12 @@ mtucAud018_assert(
 );
 mtucAud018_assert(
     strpos($installXml, 'mt_uni_credit:buy_nav') !== false
-        && strpos($installXml, 'sessionStorage') !== false,
-    'F01 static: Checkout OCMOD ajaxPrefilter for mt_uni_nav'
+        && strpos($installXml, 'sessionStorage') !== false
+        && strpos($installXml, 'XMLHttpRequest') !== false
+        && strpos($installXml, 'ajaxPrefilter') !== false
+        && strpos($installXml, 'tries >= 200') !== false
+        && strpos($installXml, 'if (!nav || !window.jQuery)') === false,
+    'F01 static: Checkout OCMOD mt_uni_nav via XHR + bounded jQuery wait'
 );
 mtucAud018_assert(
     strpos($routeSrc, 'isUnrelatedStorefrontRoute') !== false

@@ -96,29 +96,80 @@
       return '';
     }
   }
+  function isCheckoutTransportUrl(url) {
+    url = String(url || '');
+    if (!url) {
+      return false;
+    }
+    if (url.indexOf('route=checkout/') !== -1) {
+      return true;
+    }
+    if (url.indexOf('route=extension/payment/mt_uni_credit') !== -1) {
+      return true;
+    }
+    return false;
+  }
+  function appendNav(url, nav) {
+    url = String(url || '');
+    if (!url || !nav || url.indexOf(PARAM + '=') !== -1 || !isCheckoutTransportUrl(url)) {
+      return url;
+    }
+    return url + (url.indexOf('?') === -1 ? '?' : '&') + PARAM + '=' + encodeURIComponent(nav);
+  }
   var fromUrl = readQuery();
   if (fromUrl) {
     store(fromUrl);
   }
   var nav = fromUrl || load();
-  if (!nav || !window.jQuery) {
+  if (!nav) {
     return;
   }
-  window.jQuery.ajaxPrefilter(function (options) {
-    var url = String(options && options.url ? options.url : '');
-    if (url.indexOf('route=checkout/') === -1 && url.indexOf('route=extension/payment/mt_uni_credit') === -1) {
+  /* Primary: native XHR hook — works before deferred/footer jQuery (Journal). */
+  try {
+    if (window.XMLHttpRequest && window.XMLHttpRequest.prototype && !window.XMLHttpRequest.prototype.__mtucBuyNavOpen) {
+      var nativeOpen = window.XMLHttpRequest.prototype.open;
+      window.XMLHttpRequest.prototype.open = function (method, url) {
+        if (typeof url === 'string') {
+          arguments[1] = appendNav(url, nav);
+        }
+        return nativeOpen.apply(this, arguments);
+      };
+      window.XMLHttpRequest.prototype.__mtucBuyNavOpen = true;
+    }
+  } catch (eXhr) {}
+  /* Secondary: jQuery ajaxPrefilter once available (POST body + redundancy). */
+  function installJqueryPrefilter($) {
+    if (!$ || typeof $.ajaxPrefilter !== 'function' || $.__mtucBuyNavPrefilter) {
       return;
     }
-    if (url.indexOf(PARAM + '=') !== -1) {
-      return;
-    }
-    options.url = url + (url.indexOf('?') === -1 ? '?' : '&') + PARAM + '=' + encodeURIComponent(nav);
-    if (options.data && typeof options.data === 'string' && options.data.indexOf(PARAM + '=') === -1) {
-      options.data += (options.data.length ? '&' : '') + PARAM + '=' + encodeURIComponent(nav);
-    } else if (options.data && typeof options.data === 'object' && options.data[PARAM] == null) {
-      options.data[PARAM] = nav;
-    }
-  });
+    $.__mtucBuyNavPrefilter = true;
+    $.ajaxPrefilter(function (options) {
+      var url = String(options && options.url ? options.url : '');
+      if (!isCheckoutTransportUrl(url) || url.indexOf(PARAM + '=') !== -1) {
+        return;
+      }
+      options.url = appendNav(url, nav);
+      if (options.data && typeof options.data === 'string' && options.data.indexOf(PARAM + '=') === -1) {
+        options.data += (options.data.length ? '&' : '') + PARAM + '=' + encodeURIComponent(nav);
+      } else if (options.data && typeof options.data === 'object' && options.data[PARAM] == null) {
+        options.data[PARAM] = nav;
+      }
+    });
+  }
+  if (window.jQuery) {
+    installJqueryPrefilter(window.jQuery);
+  } else {
+    var tries = 0;
+    var timer = window.setInterval(function () {
+      tries += 1;
+      if (window.jQuery) {
+        window.clearInterval(timer);
+        installJqueryPrefilter(window.jQuery);
+      } else if (tries >= 200) {
+        window.clearInterval(timer);
+      }
+    }, 50);
+  }
 })();
 //--></script>
 ]]></add>
