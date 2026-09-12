@@ -72,8 +72,18 @@ final class Phase5TestHarness
         $clock = new MtUniCreditPersistenceClock(function () use ($now) {
             return (int) $now;
         });
-        $cache = new MtUniCreditShopCacheRepository($db, $clock);
-        $cache->replaceValidated($storeId, Phase4TestHarness::TEST_UNICID, mtuc4_valid_shop_snapshot());
+        // Production shape: sanitize cache + encrypt SmartUCF pair into dedicated settings.
+        $persistence = new MtUniCreditShopCachePersistence(
+            new MtUniCreditShopCacheRepository($db, $clock),
+            new MtUniCreditShopConfigurationSnapshotValidator(),
+            MtUniCreditBootstrap::smartucfCredentialsRepositoryFromDb($db),
+            new MtUniCreditShopCachePersistenceLock($db)
+        );
+        $persistence->replaceValidatedSnapshot(
+            (int) $storeId,
+            Phase4TestHarness::TEST_UNICID,
+            mtuc4_valid_shop_snapshot()
+        );
     }
 
     /**

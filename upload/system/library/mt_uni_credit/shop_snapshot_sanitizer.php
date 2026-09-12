@@ -51,25 +51,42 @@ final class MtUniCreditShopSnapshotSanitizer
     );
 
     /**
+     * Partition SmartUCF credentials from the shop snapshot.
+     *
+     * Pair states:
+     * - absent: neither uni_user nor uni_password keys present → preserve stored pair
+     * - complete: both keys present as non-empty strings → replace stored pair
+     * - invalid: any other presence/type/empty combination → reject (no mutation)
+     *
      * @param array<string, mixed> $shopData
-     * @return array{sanitized: array<string, mixed>, smartucf_user: string|null, smartucf_password: string|null}
+     * @return array{
+     *   sanitized: array<string, mixed>,
+     *   pair_state: string,
+     *   smartucf_user: string|null,
+     *   smartucf_password: string|null
+     * }
      */
     public static function partitionSensitiveFields(array $shopData)
     {
+        $userPresent = array_key_exists('uni_user', $shopData);
+        $passwordPresent = array_key_exists('uni_password', $shopData);
+        $pairState = 'absent';
         $smartucfUser = null;
         $smartucfPassword = null;
 
-        if (isset($shopData['uni_user']) && is_string($shopData['uni_user'])) {
-            $trimmed = trim($shopData['uni_user']);
-            if ($trimmed !== '') {
-                $smartucfUser = $trimmed;
-            }
-        }
-
-        if (isset($shopData['uni_password']) && is_string($shopData['uni_password'])) {
-            $trimmed = trim($shopData['uni_password']);
-            if ($trimmed !== '') {
-                $smartucfPassword = $trimmed;
+        if ($userPresent || $passwordPresent) {
+            $userOk = $userPresent
+                && is_string($shopData['uni_user'])
+                && trim($shopData['uni_user']) !== '';
+            $passwordOk = $passwordPresent
+                && is_string($shopData['uni_password'])
+                && trim($shopData['uni_password']) !== '';
+            if ($userPresent && $passwordPresent && $userOk && $passwordOk) {
+                $pairState = 'complete';
+                $smartucfUser = trim($shopData['uni_user']);
+                $smartucfPassword = trim($shopData['uni_password']);
+            } else {
+                $pairState = 'invalid';
             }
         }
 
@@ -78,6 +95,7 @@ final class MtUniCreditShopSnapshotSanitizer
 
         return array(
             'sanitized' => $sanitized,
+            'pair_state' => $pairState,
             'smartucf_user' => $smartucfUser,
             'smartucf_password' => $smartucfPassword,
         );

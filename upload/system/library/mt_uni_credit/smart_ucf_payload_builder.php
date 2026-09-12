@@ -28,8 +28,8 @@ final class MtUniCreditSmartUcfPayloadBuilder
         $currencyIso = isset($order['currency_code']) ? (string) $order['currency_code'] : '';
 
         $payload = array(
-            'user' => (string) (isset($shop['uni_user']) ? $shop['uni_user'] : ''),
-            'pass' => (string) (isset($shop['uni_password']) ? $shop['uni_password'] : ''),
+            'user' => isset($shop['uni_user']) && is_string($shop['uni_user']) ? trim($shop['uni_user']) : '',
+            'pass' => isset($shop['uni_password']) && is_string($shop['uni_password']) ? trim($shop['uni_password']) : '',
             'orderNo' => (string) $localOrderId,
             'clientFirstName' => $this->clean(isset($order['firstname']) ? (string) $order['firstname'] : ''),
             'clientLastName' => $this->clean(isset($order['lastname']) ? (string) $order['lastname'] : ''),
@@ -43,6 +43,10 @@ final class MtUniCreditSmartUcfPayloadBuilder
             'monthlyPayment' => $this->formatAmount($calculation->monthlyInstallment),
             'items' => $this->buildItems($orderProducts, $shop, $currencyIso),
         );
+
+        if ($payload['user'] === '' || $payload['pass'] === '') {
+            throw new InvalidArgumentException('SmartUCF credentials incomplete.');
+        }
 
         foreach (array_keys($payload) as $key) {
             if (preg_match('/egn|phone2/i', (string) $key)) {

@@ -299,8 +299,13 @@ function mtucAud025F01_runFailureCase(array $stack, $priorUser, $priorPassword, 
 {
     mtucAud025F01_seedCacheOnly($stack, $priorCache);
 
-    if ($priorUser !== null || $priorPassword !== null) {
+    // Pair contract: only a complete prior pair (or neither) may be seeded.
+    if ($priorUser !== null && $priorPassword !== null) {
         $stack['creds']->savePair($stack['storeId'], $priorUser, $priorPassword);
+    } elseif ($priorUser !== null || $priorPassword !== null) {
+        throw new InvalidArgumentException(
+            'AUD-025 failure cases may seed only a complete SmartUCF credential pair or neither side.'
+        );
     }
     mtucAud025F01_assertCredPresence($stack, $priorUser, $priorPassword, $caseLabel . ' before');
 
@@ -374,27 +379,23 @@ mtucAud025F01_runFailureCase(
 );
 
 // -------------------------------------------------------------------------
-// Failure with user-only previous state
+// Partial prior pairs are rejected by the repository (no mixed-state seeding)
 // -------------------------------------------------------------------------
-mtucAud025F01_runFailureCase(
-    mtucAud025F01_stack(),
-    'ONLY-U',
-    null,
-    'cache-x-useronly@example.test',
-    array('fail_cache' => true),
-    'prior user-only / cache fail'
+$partialUserEx = mtucAud025F01_catch(function () {
+    $stack = mtucAud025F01_stack();
+    $stack['creds']->savePair($stack['storeId'], 'ONLY-U', null);
+});
+mtucAud025F01_assert(
+    $partialUserEx instanceof MtUniCreditPersistenceValidationException,
+    'prior user-only: savePair rejected'
 );
-
-// -------------------------------------------------------------------------
-// Failure with password-only previous state
-// -------------------------------------------------------------------------
-mtucAud025F01_runFailureCase(
-    mtucAud025F01_stack(),
-    null,
-    'ONLY-P',
-    'cache-x-passonly@example.test',
-    array('fail_cache' => true),
-    'prior password-only / cache fail'
+$partialPassEx = mtucAud025F01_catch(function () {
+    $stack = mtucAud025F01_stack();
+    $stack['creds']->savePair($stack['storeId'], null, 'ONLY-P');
+});
+mtucAud025F01_assert(
+    $partialPassEx instanceof MtUniCreditPersistenceValidationException,
+    'prior password-only: savePair rejected'
 );
 
 // -------------------------------------------------------------------------
@@ -458,10 +459,10 @@ mtucAud025F01_runFailureCase(
 mtucAud025F01_runFailureCase(
     mtucAud025F01_stack(),
     'MIX-U',
-    null,
+    'MIX-P',
     'cache-x-after-password-mixed@example.test',
     array('fail_cache' => true),
-    'fail after password write / prior user-only'
+    'fail after password write / prior both'
 );
 
 // -------------------------------------------------------------------------

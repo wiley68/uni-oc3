@@ -50,14 +50,18 @@ final class MtUniCreditShopProcessContext
             $user = $credentials->getUser((int) $storeId);
             $password = $credentials->getPassword((int) $storeId);
         } catch (Exception $exception) {
+            unset($shop['uni_user'], $shop['uni_password']);
+
             return $shop;
         }
-        if (is_string($user) && $user !== '') {
-            $shop['uni_user'] = $user;
+        // Pair semantics: hydrate both or neither — never a one-sided shop snapshot.
+        if (!is_string($user) || $user === '' || !is_string($password) || $password === '') {
+            unset($shop['uni_user'], $shop['uni_password']);
+
+            return $shop;
         }
-        if (is_string($password) && $password !== '') {
-            $shop['uni_password'] = $password;
-        }
+        $shop['uni_user'] = $user;
+        $shop['uni_password'] = $password;
 
         return $shop;
     }

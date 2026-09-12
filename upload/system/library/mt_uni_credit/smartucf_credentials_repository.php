@@ -33,21 +33,26 @@ final class MtUniCreditSmartucfCredentialsRepository
             return;
         }
 
-        if ($user !== null) {
-            $this->settings->set(
-                $storeId,
-                MtUniCreditConstants::MODULE_SETTING_SMARTUCF_USER,
-                $this->cipher->encrypt($user)
+        if (!is_string($user) || trim($user) === '' || !is_string($password) || trim($password) === '') {
+            throw new MtUniCreditPersistenceValidationException(
+                'SmartUCF credential pair requires both non-empty username and password.'
             );
         }
 
-        if ($password !== null) {
-            $this->settings->set(
-                $storeId,
-                MtUniCreditConstants::MODULE_SETTING_SMARTUCF_PASSWORD,
-                $this->cipher->encrypt($password)
-            );
-        }
+        // Encrypt both before any setting write so a cipher failure cannot leave a half pair.
+        $encryptedUser = $this->cipher->encrypt(trim($user));
+        $encryptedPassword = $this->cipher->encrypt(trim($password));
+
+        $this->settings->set(
+            $storeId,
+            MtUniCreditConstants::MODULE_SETTING_SMARTUCF_USER,
+            $encryptedUser
+        );
+        $this->settings->set(
+            $storeId,
+            MtUniCreditConstants::MODULE_SETTING_SMARTUCF_PASSWORD,
+            $encryptedPassword
+        );
     }
 
     /**

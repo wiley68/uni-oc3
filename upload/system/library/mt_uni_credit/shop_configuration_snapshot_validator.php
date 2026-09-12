@@ -429,7 +429,16 @@ final class MtUniCreditShopConfigurationSnapshotValidator
     private function validateProcess1SmartUcf(array $shopData)
     {
         $process2 = ((int) (isset($shopData['uni_proces']) ? $shopData['uni_proces'] : 0)) === 1;
+        $userPresent = array_key_exists('uni_user', $shopData);
+        $passwordPresent = array_key_exists('uni_password', $shopData);
+
         if ($process2) {
+            // Process 2: both absent preserves stored pair; any presence requires a complete valid pair.
+            if ($userPresent || $passwordPresent) {
+                $this->requireNonEmptySmartUcfCredential($shopData, 'uni_user');
+                $this->requireNonEmptySmartUcfCredential($shopData, 'uni_password');
+            }
+
             return;
         }
 
@@ -438,6 +447,10 @@ final class MtUniCreditShopConfigurationSnapshotValidator
         $applicationKey = $isTest ? 'uni_test_application' : 'uni_production_application';
 
         foreach (array($serviceKey, $applicationKey, 'uni_user', 'uni_password') as $key) {
+            if ($key === 'uni_user' || $key === 'uni_password') {
+                $this->requireNonEmptySmartUcfCredential($shopData, $key);
+                continue;
+            }
             if (!array_key_exists($key, $shopData) || !is_string($shopData[$key]) || trim($shopData[$key]) === '') {
                 $this->add($key, 'required');
             }
@@ -451,6 +464,28 @@ final class MtUniCreditShopConfigurationSnapshotValidator
             if (!is_string($shopData[$key])) {
                 $this->add($key, 'invalid_type');
             }
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $shopData
+     * @param string $key
+     * @return void
+     */
+    private function requireNonEmptySmartUcfCredential(array $shopData, $key)
+    {
+        if (!array_key_exists($key, $shopData)) {
+            $this->add($key, 'required');
+
+            return;
+        }
+        if (!is_string($shopData[$key])) {
+            $this->add($key, 'invalid_type');
+
+            return;
+        }
+        if (trim($shopData[$key]) === '') {
+            $this->add($key, 'required');
         }
     }
 

@@ -58,6 +58,8 @@ final class MtUniCreditSmartUcfSessionClient
             $application = $this->endpointPolicy->assertTrustedApplicationBase($this->applicationUrl($shop));
             $payload = $this->payloadBuilder->build($shop, $order, $orderProducts, $calculation, $localOrderId);
             $json = json_encode($payload, JSON_UNESCAPED_UNICODE);
+            // Drop the associative payload; $json is the only transient wire copy needed.
+            unset($payload);
             if ($json === false) {
                 throw new RuntimeException('SmartUCF payload could not be encoded as JSON.');
             }

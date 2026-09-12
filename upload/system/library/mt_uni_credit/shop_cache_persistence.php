@@ -65,6 +65,11 @@ final class MtUniCreditShopCachePersistence
 
         $this->validator->validate($shopData, $unicid);
         $partition = MtUniCreditShopSnapshotSanitizer::partitionSensitiveFields($shopData);
+        if ($partition['pair_state'] === 'invalid') {
+            throw new MtUniCreditPersistenceValidationException(
+                'SmartUCF credential pair is incomplete or invalid.'
+            );
+        }
 
         if (!$this->persistenceLock->acquire($storeId, $unicid)) {
             throw new MtUniCreditPersistenceException('Shop cache replacement is busy.');
@@ -72,24 +77,21 @@ final class MtUniCreditShopCachePersistence
 
         $lockHeld = true;
         $persistedOk = false;
-        $credentialMutation = false;
+        $credentialMutation = $partition['pair_state'] === 'complete';
         $previousCredentialState = null;
 
         try {
-            $credentialMutation = $partition['smartucf_password'] !== null || $partition['smartucf_user'] !== null;
             $previousCredentialState = $credentialMutation
                 ? $this->smartucfCredentials->capturePairState($storeId)
                 : null;
 
             try {
-                if ($partition['smartucf_password'] !== null) {
+                if ($credentialMutation) {
                     $this->smartucfCredentials->savePair(
                         $storeId,
                         $partition['smartucf_user'],
                         $partition['smartucf_password']
                     );
-                } elseif ($partition['smartucf_user'] !== null) {
-                    $this->smartucfCredentials->savePair($storeId, $partition['smartucf_user'], null);
                 }
 
                 $this->cache->replaceValidated($storeId, $unicid, $partition['sanitized']);

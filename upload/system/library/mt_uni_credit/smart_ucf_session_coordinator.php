@@ -12,6 +12,7 @@ final class MtUniCreditSmartUcfSessionCoordinator
 {
     const ERROR_CERTIFICATE_INVALID = 'smartucf_certificate_invalid';
     const ERROR_CREDENTIALS_SYNC_FAILED = 'smartucf_credentials_sync_failed';
+    const ERROR_CREDENTIALS_INCOMPLETE = 'smartucf_credentials_incomplete';
 
     /** Recoverable: SmartUCF already succeeded; CP PATCH /orders/status did not. */
     const ERROR_CP_BANK_STATUS_SYNC_PENDING = 'cp_bank_status_sync_pending';
@@ -217,6 +218,25 @@ final class MtUniCreditSmartUcfSessionCoordinator
             return $known;
         }
 
+        // Fail closed before certificate work or claim when SmartUCF credentials are incomplete.
+        if (!$this->shopHasCompleteSmartUcfCredentials($shop)) {
+            $errorClass = self::ERROR_CREDENTIALS_INCOMPLETE;
+            $this->logEvent(MtUniCreditPhase9LifecycleLog::EVENT_SMARTUCF_RESULT, array(
+                'kind' => 'failed',
+                'error_class' => $errorClass,
+            ));
+            try {
+                $this->lifecycle->markFailed($attemptId, $errorClass, true);
+            } catch (Throwable $ignored) {
+            }
+
+            return MtUniCreditSmartUcfCoordinationResult::failed(
+                self::CUSTOMER_FAILED,
+                true,
+                $errorClass
+            );
+        }
+
         $certPath = null;
         $keyPath = null;
         $passphrase = '';
@@ -379,6 +399,22 @@ final class MtUniCreditSmartUcfSessionCoordinator
             (string) $session['redirect_url'],
             (string) $session['session_id']
         );
+    }
+
+    /**
+     * Complete decrypted SmartUCF pair required before any session network call.
+     *
+     * @param array<string, mixed> $shop
+     * @return bool
+     */
+    private function shopHasCompleteSmartUcfCredentials(array $shop)
+    {
+        $user = isset($shop['uni_user']) && is_string($shop['uni_user']) ? trim($shop['uni_user']) : '';
+        $password = isset($shop['uni_password']) && is_string($shop['uni_password'])
+            ? trim($shop['uni_password'])
+            : '';
+
+        return $user !== '' && $password !== '';
     }
 
     /**
