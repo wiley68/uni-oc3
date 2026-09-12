@@ -64,7 +64,7 @@ final class MtUniCreditCheckoutFinancingSubmissionService
     public function submit(array $input)
     {
         $storeId = (int) (isset($input['store_id']) ? $input['store_id'] : -1);
-        $orderId = (int) (isset($input['order_id']) ? $input['order_id'] : 0);
+        $orderId = MtUniCreditShopOrderId::tryNormalize(isset($input['order_id']) ? $input['order_id'] : null);
         $order = isset($input['order']) && is_array($input['order']) ? $input['order'] : null;
         $orderProducts = isset($input['order_products']) && is_array($input['order_products'])
             ? $input['order_products']
@@ -270,7 +270,7 @@ final class MtUniCreditCheckoutFinancingSubmissionService
 
     /**
      * @param int $storeId
-     * @param int $orderId
+     * @param string $orderId Canonical shop order id
      * @param array<string, mixed>|null $order
      * @param array<int, array<string, mixed>> $orderProducts
      * @param MtUniCreditCartContext|null $cartContext
@@ -280,10 +280,11 @@ final class MtUniCreditCheckoutFinancingSubmissionService
     private function revalidate($storeId, $orderId, $order, array $orderProducts, $cartContext, array $input = array())
     {
         MtUniCreditStoreScope::requireStoreId($storeId);
-        if ($orderId <= 0 || !is_array($order)) {
+        if (!is_string($orderId) || $orderId === '' || !is_array($order)) {
             return array('error' => 'order_missing');
         }
-        if ((int) (isset($order['order_id']) ? $order['order_id'] : 0) !== $orderId) {
+        $orderCanonical = MtUniCreditShopOrderId::tryNormalize(isset($order['order_id']) ? $order['order_id'] : null);
+        if ($orderCanonical === null || $orderCanonical !== $orderId) {
             return array('error' => 'order_missing');
         }
         if ((int) (isset($order['store_id']) ? $order['store_id'] : -1) !== (int) $storeId) {
@@ -422,14 +423,14 @@ final class MtUniCreditCheckoutFinancingSubmissionService
      * Durable local bank status after lifecycle (empty when none).
      *
      * @param int $storeId
-     * @param int $orderId
+     * @param string $orderId Canonical shop order id
      * @return string
      */
     private function resolveBankStatusId($storeId, $orderId)
     {
         $storeId = (int) $storeId;
-        $orderId = (int) $orderId;
-        if ($storeId < 0 || $orderId <= 0) {
+        $orderId = MtUniCreditShopOrderId::tryNormalize($orderId);
+        if ($storeId < 0 || $orderId === null) {
             return '';
         }
         try {
@@ -450,22 +451,22 @@ final class MtUniCreditCheckoutFinancingSubmissionService
      * No CP PATCH (no remote CP order). Returns true only when durable status is proven.
      *
      * @param int $storeId
-     * @param int $orderId
+     * @param string $orderId Canonical shop order id
      * @return bool
      */
     private function persistCheckoutCpFailureBankStatus($storeId, $orderId)
     {
         $storeId = (int) $storeId;
-        $orderId = (int) $orderId;
-        if ($storeId < 0 || $orderId <= 0) {
+        $orderId = MtUniCreditShopOrderId::tryNormalize($orderId);
+        if ($storeId < 0 || $orderId === null) {
             return false;
         }
         try {
             $status = MtUniCreditBankStatus::controlPanelFailure(false);
             $repo = MtUniCreditProcess1ServiceFactory::bankStatuses($this->attempts->database());
-            $updated = $repo->updateByOrderIdentifier(
+            $updated = $repo->upsertAuthorizedLocal(
                 $storeId,
-                (string) $orderId,
+                $orderId,
                 $status['status_id'],
                 $status['status_label'],
                 MtUniCreditBankStatusTransitionPolicy::SOURCE_LOCAL_LIFECYCLE

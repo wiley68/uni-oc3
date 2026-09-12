@@ -3,6 +3,9 @@
 /**
  * Persists module bank status callbacks scoped by store + local order.
  *
+ * Inbound path: FinancingOrderResolver (UNICID financing ownership, no payment_code fallback).
+ * Local lifecycle: upsertAuthorizedLocal for already-authorized attempt handoffs.
+ *
  * AUD-015 F01: transitions enforced by MtUniCreditBankStatusTransitionPolicy via
  * atomic conditional UPDATE (CAS) — not unconditional last-write-wins.
  * Native OpenCart order history / mail are never touched here.
@@ -15,27 +18,30 @@ final class MtUniCreditOrderBankStatusRepository
     /** @var MtUniCreditPersistenceClock */
     private $clock;
 
-    /** @var MtUniCreditOrderOwnershipResolver */
-    private $ownership;
+    /** @var MtUniCreditFinancingOrderResolver */
+    private $resolver;
 
     /**
      * @param MtUniCreditDbAdapter $db
      * @param MtUniCreditPersistenceClock|null $clock
-     * @param MtUniCreditOrderOwnershipResolver|null $ownership
+     * @param MtUniCreditFinancingOrderResolver|null $resolver
      */
-    public function __construct(MtUniCreditDbAdapter $db, $clock = null, $ownership = null)
+    public function __construct(MtUniCreditDbAdapter $db, $clock = null, $resolver = null)
     {
         $this->db = $db;
         $this->clock = $clock instanceof MtUniCreditPersistenceClock
             ? $clock
             : new MtUniCreditPersistenceClock();
-        $this->ownership = $ownership instanceof MtUniCreditOrderOwnershipResolver
-            ? $ownership
-            : new MtUniCreditOrderOwnershipResolver($db);
+        $this->resolver = $resolver instanceof MtUniCreditFinancingOrderResolver
+            ? $resolver
+            : new MtUniCreditFinancingOrderResolver($db, $this->clock);
     }
 
     /**
+     * CP inbound bank-status update (UNICID + financing ownership).
+     *
      * @param int $storeId
+     * @param string $unicid
      * @param string $orderReference
      * @param string $statusId
      * @param string $statusLabel inbound/display hint; named codes are canonicalized server-side
@@ -44,37 +50,107 @@ final class MtUniCreditOrderBankStatusRepository
      */
     public function updateByOrderIdentifier(
         $storeId,
+        $unicid,
         $orderReference,
         $statusId,
         $statusLabel,
         $source = MtUniCreditBankStatusTransitionPolicy::SOURCE_INBOUND_CALLBACK
     ) {
         MtUniCreditStoreScope::requireStoreId($storeId);
-        $orderReference = trim($orderReference);
-        $statusId = strtolower(trim($statusId));
+        $orderReference = trim((string) $orderReference);
+        $statusId = strtolower(trim((string) $statusId));
         $statusLabel = trim((string) $statusLabel);
         $source = MtUniCreditBankStatusTransitionPolicy::normalizeSource($source);
-        if ($orderReference === '' || $statusId === '') {
+        if ($orderReference === '' || $statusId === '' || $statusLabel === '') {
             return null;
         }
         if (!MtUniCreditBankStatusTransitionPolicy::isRecognizedStatusId($statusId)) {
             return null;
         }
 
-        $orderId = $this->ownership->resolveAuthorizedOrderId($storeId, $orderReference);
-        if ($orderId === null) {
+        $resolved = $this->resolver->resolve($storeId, (string) $unicid, $orderReference);
+        if ($resolved === null) {
             return null;
         }
 
+        $canonicalOrderId = (string) $resolved['order_id'];
+
+        return $this->applyStatusWrite(
+            $storeId,
+            $canonicalOrderId,
+            $canonicalOrderId,
+            $statusId,
+            $statusLabel,
+            $source
+        );
+    }
+
+    /**
+     * Local-only bank status write for proven module handoffs (already authorized by attempt).
+     *
+     * @param int $storeId
+     * @param int|string $orderId Native OC3 int or canonical string
+     * @param string $statusId
+     * @param string $statusLabel
+     * @param string $source
+     * @return array<string, mixed>|null
+     */
+    public function upsertAuthorizedLocal(
+        $storeId,
+        $orderId,
+        $statusId,
+        $statusLabel,
+        $source = MtUniCreditBankStatusTransitionPolicy::SOURCE_LOCAL_LIFECYCLE
+    ) {
+        MtUniCreditStoreScope::requireStoreId($storeId);
+        $canonicalOrderId = MtUniCreditShopOrderId::tryNormalize($orderId);
+        $statusId = strtolower(trim((string) $statusId));
+        $statusLabel = trim((string) $statusLabel);
+        $source = MtUniCreditBankStatusTransitionPolicy::normalizeSource($source);
+        if ($canonicalOrderId === null || $statusId === '' || $statusLabel === '') {
+            return null;
+        }
+        if (!MtUniCreditBankStatusTransitionPolicy::isRecognizedStatusId($statusId)) {
+            return null;
+        }
+
+        return $this->applyStatusWrite(
+            $storeId,
+            $canonicalOrderId,
+            $canonicalOrderId,
+            $statusId,
+            $statusLabel,
+            $source
+        );
+    }
+
+    /**
+     * @param int $storeId
+     * @param string $orderId Canonical shop order id
+     * @param string $orderReference Same canonical string (VARCHAR(64) column)
+     * @param string $statusId
+     * @param string $statusLabel
+     * @param string $source
+     * @return array<string, mixed>|null
+     */
+    private function applyStatusWrite($storeId, $orderId, $orderReference, $statusId, $statusLabel, $source)
+    {
         $canonicalLabel = MtUniCreditBankStatus::resolveLabel($statusId, $statusLabel);
         $updatedAt = $this->clock->formatUtc($this->clock->now());
         $table = $this->tableName();
+        $orderIdSql = MtUniCreditShopOrderId::sqlQuoted($this->db, $orderId);
 
         $existing = $this->findByOrderId($storeId, $orderId);
         $currentId = $existing !== null ? (string) $existing['status_id'] : '';
         $decision = MtUniCreditBankStatusTransitionPolicy::decide($currentId, $statusId, $source);
 
         if ($decision === MtUniCreditBankStatusTransitionPolicy::DECISION_REJECT) {
+            if ($this->isIncompatibleTerminalSentPair($currentId, $statusId)) {
+                throw new MtUniCreditOrderBankStatusSemanticConflictException(
+                    'Incompatible terminal bank status progression.'
+                );
+            }
+
             return $this->resultPayload($orderReference, $orderId, $existing, false);
         }
 
@@ -91,7 +167,7 @@ final class MtUniCreditOrderBankStatusRepository
                         . " `order_reference` = '" . $this->db->escape($orderReference) . "',"
                         . " `updated_at` = '" . $this->db->escape($updatedAt) . "'"
                         . " WHERE `store_id` = " . (int) $storeId
-                        . " AND `order_id` = " . (int) $orderId
+                        . " AND `order_id` = " . $orderIdSql
                         . " AND `status_id` = '" . $this->db->escape($statusId) . "'"
                 );
                 $existing = $this->findByOrderId($storeId, $orderId);
@@ -109,8 +185,9 @@ final class MtUniCreditOrderBankStatusRepository
             }
             // Concurrent insert may have won with a different status — re-apply policy.
             if ((string) $after['status_id'] !== $statusId) {
-                return $this->updateByOrderIdentifier(
+                return $this->applyStatusWrite(
                     $storeId,
+                    $orderId,
                     $orderReference,
                     $statusId,
                     $canonicalLabel,
@@ -145,7 +222,7 @@ final class MtUniCreditOrderBankStatusRepository
                 . " `status_label` = '" . $this->db->escape($canonicalLabel) . "',"
                 . " `updated_at` = '" . $this->db->escape($updatedAt) . "'"
                 . " WHERE `store_id` = " . (int) $storeId
-                . " AND `order_id` = " . (int) $orderId
+                . " AND `order_id` = " . $orderIdSql
                 . " AND `status_id` IN (" . implode(',', $inList) . ")"
         );
 
@@ -155,24 +232,36 @@ final class MtUniCreditOrderBankStatusRepository
             return $this->resultPayload($orderReference, $orderId, $after, true);
         }
 
+        // Race lost — if durable P1↔P2 conflict won, surface semantic conflict.
+        $persistedId = $after !== null ? (string) $after['status_id'] : $currentId;
+        if ($this->isIncompatibleTerminalSentPair($persistedId, $statusId) && $persistedId !== $statusId) {
+            throw new MtUniCreditOrderBankStatusSemanticConflictException(
+                'Incompatible terminal bank status progression.'
+            );
+        }
+
         // Race lost or policy now rejects — return durable current without regression.
         return $this->resultPayload($orderReference, $orderId, $after !== null ? $after : $existing, false);
     }
 
     /**
      * @param int $storeId
-     * @param int $orderId
+     * @param int|string $orderId
      * @return array<string, mixed>|null
      */
     public function findByOrderId($storeId, $orderId)
     {
         MtUniCreditStoreScope::requireStoreId($storeId);
+        $canonicalOrderId = MtUniCreditShopOrderId::tryNormalize($orderId);
+        if ($canonicalOrderId === null) {
+            return null;
+        }
         $table = $this->tableName();
         $result = $this->db->query(
             "SELECT `order_id`, `order_reference`, `status_id`, `status_label`, `updated_at`"
                 . " FROM `{$table}`"
                 . " WHERE `store_id` = " . (int) $storeId
-                . " AND `order_id` = " . (int) $orderId
+                . " AND `order_id` = " . MtUniCreditShopOrderId::sqlQuoted($this->db, $canonicalOrderId)
                 . " LIMIT 1"
         );
 
@@ -180,8 +269,12 @@ final class MtUniCreditOrderBankStatusRepository
             return null;
         }
 
+        $rowOrderId = MtUniCreditShopOrderId::tryNormalize(
+            isset($result->row['order_id']) ? $result->row['order_id'] : null
+        );
+
         return array(
-            'order_id' => (int) $result->row['order_id'],
+            'order_id' => $rowOrderId !== null ? $rowOrderId : $canonicalOrderId,
             'order_reference' => (string) $result->row['order_reference'],
             'status_id' => (string) $result->row['status_id'],
             'status_label' => (string) $result->row['status_label'],
@@ -190,8 +283,41 @@ final class MtUniCreditOrderBankStatusRepository
     }
 
     /**
+     * Alias used by inbound debug ownership checks.
+     *
      * @param int $storeId
-     * @param int $orderId
+     * @param int|string $orderId
+     * @return array<string, mixed>|null
+     */
+    public function findCurrentStatus($storeId, $orderId)
+    {
+        return $this->findByOrderId($storeId, $orderId);
+    }
+
+    /**
+     * @param string $currentStatusId
+     * @param string $newStatusId
+     * @return bool
+     */
+    private function isIncompatibleTerminalSentPair($currentStatusId, $newStatusId)
+    {
+        if ($currentStatusId === '') {
+            return false;
+        }
+
+        $terminals = array(
+            MtUniCreditBankStatus::SENT_PROCESS1,
+            MtUniCreditBankStatus::SENT_PROCESS2,
+        );
+
+        return in_array($currentStatusId, $terminals, true)
+            && in_array($newStatusId, $terminals, true)
+            && $currentStatusId !== $newStatusId;
+    }
+
+    /**
+     * @param int $storeId
+     * @param string $orderId
      * @param string $orderReference
      * @param string $statusId
      * @param string $statusLabel
@@ -208,7 +334,7 @@ final class MtUniCreditOrderBankStatusRepository
                 . " (`store_id`, `order_id`, `order_reference`, `status_id`, `status_label`, `updated_at`)"
                 . " VALUES ("
                 . (int) $storeId . ","
-                . (int) $orderId . ","
+                . " " . MtUniCreditShopOrderId::sqlQuoted($this->db, $orderId) . ","
                 . " '" . $this->db->escape($orderReference) . "',"
                 . " '" . $this->db->escape($statusId) . "',"
                 . " '" . $this->db->escape($statusLabel) . "',"
@@ -221,7 +347,7 @@ final class MtUniCreditOrderBankStatusRepository
 
     /**
      * @param string $orderReference
-     * @param int $orderId
+     * @param string $orderId Canonical shop order id
      * @param array<string, mixed>|null $row
      * @param bool $changed
      * @return array<string, mixed>
@@ -234,9 +360,11 @@ final class MtUniCreditOrderBankStatusRepository
             $statusLabel = MtUniCreditBankStatus::resolveLabel($statusId, $statusLabel);
         }
 
+        $nativeHint = MtUniCreditShopOrderId::tryNativeOc3OrderId($orderId);
+
         return array(
-            'order_id' => $orderReference,
-            'oc_order_id' => $orderId,
+            'order_id' => (string) $orderId,
+            'oc_order_id' => $nativeHint,
             'status' => $statusLabel,
             'status_id' => $statusId,
             'oc_order_state_changed' => false,

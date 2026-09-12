@@ -186,6 +186,7 @@ final class Phase7TestHarness
             'login' => Phase4TestHarness::loginSuccessPayload(),
             'order' => array(
                 'success' => true,
+                'error' => null,
                 'message' => 'created',
                 'data' => array('id' => 555001),
             ),

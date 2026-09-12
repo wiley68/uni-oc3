@@ -195,7 +195,7 @@ final class Phase2MemoryDb
     }
 
     /**
-     * @param int $orderId
+     * @param int|string $orderId Canonical shop order id or native-capable int
      * @param int $storeId
      * @param string $paymentCode
      * @param mixed $paymentMethod
@@ -203,12 +203,22 @@ final class Phase2MemoryDb
      */
     public function seedOrder($orderId, $storeId, $paymentCode = 'mt_uni_credit', $paymentMethod = '')
     {
-        $this->orders[(int) $orderId] = array(
-            'order_id' => (int) $orderId,
+        $canonical = MtUniCreditShopOrderId::tryNormalize($orderId);
+        $native = $canonical !== null ? MtUniCreditShopOrderId::tryNativeOc3OrderId($canonical) : null;
+        $row = array(
+            'order_id' => $canonical !== null ? $canonical : $orderId,
             'store_id' => (int) $storeId,
             'payment_code' => (string) $paymentCode,
             'payment_method' => $paymentMethod,
         );
+        if ($native !== null) {
+            $this->orders[$native] = $row;
+        } elseif ($canonical !== null) {
+            // Oversized vs native INT UNSIGNED: keep string key (no PHP int cast).
+            $this->orders[$canonical] = $row;
+        } else {
+            $this->orders[(string) $orderId] = $row;
+        }
     }
 
     /**
@@ -605,14 +615,18 @@ final class Phase2MemoryDb
         }
 
         $row = $this->operationOrderClaims[$key];
-        $orderId = (int) $this->extractWhereInt($sql, 'order_id');
+        $orderIdSet = $this->extractSetValue($sql, 'order_id');
+        if ($orderIdSet === '') {
+            $orderIdSet = $this->extractWhereOrderId($sql, 'order_id');
+        }
+        $orderId = $this->normalizeStoredOrderId($orderIdSet);
         $state = $this->extractSetValue($sql, 'state');
         $updatedAt = $this->extractSetValue($sql, 'updated_at');
 
-        $existingOrderId = isset($row['order_id']) && $row['order_id'] !== null && $row['order_id'] !== ''
-            ? (int) $row['order_id']
-            : 0;
-        if ($existingOrderId > 0 && $existingOrderId !== $orderId) {
+        $existingOrderId = $this->normalizeStoredOrderId(
+            isset($row['order_id']) ? $row['order_id'] : null
+        );
+        if ($existingOrderId !== null && !$this->orderIdsEqual($existingOrderId, $orderId)) {
             return $this->emptyResult();
         }
 
@@ -942,6 +956,89 @@ final class Phase2MemoryDb
     }
 
     /**
+     * UniPayment canonical order_id: quoted string preferred; legacy unquoted int accepted.
+     *
+     * @param string $sql
+     * @param string $column
+     * @return string
+     */
+    private function extractWhereOrderId($sql, $column = 'order_id')
+    {
+        if (preg_match('/`' . preg_quote($column, '/') . '`\s*=\s*\'([^\']*)\'/', $sql, $matches)) {
+            return (string) $matches[1];
+        }
+        if (preg_match('/`' . preg_quote($column, '/') . '`\s*=\s*(\d+)/', $sql, $matches)) {
+            return (string) $matches[1];
+        }
+        if (preg_match('/(?:^|\\s)' . preg_quote($column, '/') . '\\s*=\\s*\'([^\']*)\'/', $sql, $matches)) {
+            return (string) $matches[1];
+        }
+        if (preg_match('/(?:^|\\s)' . preg_quote($column, '/') . '\\s*=\\s*(\\d+)/', $sql, $matches)) {
+            return (string) $matches[1];
+        }
+
+        return '';
+    }
+
+    /**
+     * @param mixed $value
+     * @return string|null
+     */
+    private function normalizeStoredOrderId($value)
+    {
+        if ($value === null) {
+            return null;
+        }
+        if (is_int($value)) {
+            return $value > 0 ? (string) $value : null;
+        }
+        $string = trim((string) $value);
+        if ($string === '' || strtoupper($string) === 'NULL') {
+            return null;
+        }
+
+        return $string;
+    }
+
+    /**
+     * @param mixed $left
+     * @param mixed $right
+     * @return bool
+     */
+    private function orderIdsEqual($left, $right)
+    {
+        $a = $this->normalizeStoredOrderId($left);
+        $b = $this->normalizeStoredOrderId($right);
+        if ($a === null || $b === null) {
+            return false;
+        }
+
+        return $a === $b;
+    }
+
+    /**
+     * Parse IN (...) list entries that may be quoted strings or bare ints.
+     *
+     * @param string $listSql
+     * @return array<int, string>
+     */
+    private function parseOrderIdInList($listSql)
+    {
+        $ids = array();
+        if (preg_match_all('/\'([^\']+)\'|(\d+)/', $listSql, $matches, PREG_SET_ORDER)) {
+            foreach ($matches as $match) {
+                if (isset($match[1]) && $match[1] !== '') {
+                    $ids[] = (string) $match[1];
+                } elseif (isset($match[2]) && $match[2] !== '') {
+                    $ids[] = (string) $match[2];
+                }
+            }
+        }
+
+        return $ids;
+    }
+
+    /**
      * @param string $sql
      * @param string $column
      * @return string
@@ -1131,7 +1228,10 @@ final class Phase2MemoryDb
         $normalized = preg_replace('/\s+ON DUPLICATE KEY UPDATE.+$/is', '', $sql);
         $fields = $this->parseInsertValues($normalized);
         $storeId = (int) $fields['store_id'];
-        $orderId = (int) $fields['order_id'];
+        $orderId = $this->normalizeStoredOrderId(isset($fields['order_id']) ? $fields['order_id'] : null);
+        if ($orderId === null) {
+            throw new Exception('order_bank_status requires order_id');
+        }
         $key = $storeId . '|' . $orderId;
         $existing = isset($this->orderBankStatus[$key]);
         if ($existing && $hasNoopDuplicate) {
@@ -1163,7 +1263,7 @@ final class Phase2MemoryDb
     private function updateOrderBankStatus($sql)
     {
         $storeId = (int) $this->extractWhereInt($sql, 'store_id');
-        $orderId = (int) $this->extractWhereInt($sql, 'order_id');
+        $orderId = $this->extractWhereOrderId($sql, 'order_id');
         $key = $storeId . '|' . $orderId;
         if (!isset($this->orderBankStatus[$key])) {
             $this->affected = 0;
@@ -1225,7 +1325,7 @@ final class Phase2MemoryDb
         $this->diagnosticLogs[$id] = array(
             'diagnostic_debug_log_id' => $id,
             'store_id' => (int) $fields['store_id'],
-            'order_id' => (int) $fields['order_id'],
+            'order_id' => $this->normalizeStoredOrderId(isset($fields['order_id']) ? $fields['order_id'] : null),
             'entry_point' => (string) $fields['entry_point'],
             'event_code' => (string) $fields['event_code'],
             'http_status' => isset($fields['http_status']) && strtoupper((string) $fields['http_status']) !== 'NULL'
@@ -1296,11 +1396,7 @@ final class Phase2MemoryDb
         $storeId = (int) $this->extractWhereInt($sql, 'store_id');
         if (preg_match('/`order_id`\s+IN\s*\(([^)]+)\)/i', $sql, $inMatch)) {
             $rows = array();
-            foreach (preg_split('/\s*,\s*/', $inMatch[1]) as $part) {
-                $orderId = (int) trim($part);
-                if ($orderId <= 0) {
-                    continue;
-                }
+            foreach ($this->parseOrderIdInList($inMatch[1]) as $orderId) {
                 $key = $storeId . '|' . $orderId;
                 if (isset($this->orderBankStatus[$key])) {
                     $rows[] = $this->orderBankStatus[$key];
@@ -1314,7 +1410,7 @@ final class Phase2MemoryDb
             );
         }
 
-        $orderId = (int) $this->extractWhereInt($sql, 'order_id');
+        $orderId = $this->extractWhereOrderId($sql, 'order_id');
         $key = $storeId . '|' . $orderId;
         if (!isset($this->orderBankStatus[$key])) {
             return $this->emptyResult();
@@ -1362,10 +1458,10 @@ final class Phase2MemoryDb
             );
         }
 
-        $orderId = (int) $this->extractWhereInt($sql, 'order_id');
+        $orderId = $this->extractWhereOrderId($sql, 'order_id');
         $matched = array();
         foreach ($this->diagnosticLogs as $row) {
-            if ((int) $row['store_id'] !== $storeId || (int) $row['order_id'] !== $orderId) {
+            if ((int) $row['store_id'] !== $storeId || !$this->orderIdsEqual($row['order_id'], $orderId)) {
                 continue;
             }
             $matched[] = $row;
@@ -1415,15 +1511,79 @@ final class Phase2MemoryDb
     {
         $fields = $this->parseInsertValues($sql);
         $storeId = (int) $fields['store_id'];
-        $orderId = isset($fields['order_id']) ? (int) $fields['order_id'] : 0;
+        $orderId = $this->normalizeStoredOrderId(isset($fields['order_id']) ? $fields['order_id'] : null);
         foreach ($this->financingAttempts as $row) {
-            if ((int) $row['store_id'] === $storeId && (int) $row['order_id'] === $orderId && $orderId > 0) {
+            if ((int) $row['store_id'] === $storeId && $this->orderIdsEqual($row['order_id'], $orderId) && $orderId !== null) {
                 throw new Exception('Duplicate entry \'uniq_mt_uni_credit_store_order\' for key 1062');
             }
         }
 
         $id = $this->nextFinancingAttemptId++;
-        $this->financingAttempts[$id] = array(
+        $this->financingAttempts[$id] = $this->defaultFinancingAttemptRow($id, $fields, $storeId, $orderId);
+        $this->affected = 1;
+
+        return $this->emptyResult();
+    }
+
+    /**
+     * Test helper: seed a financing_attempt row, optionally bypassing unique (store_id, order_id).
+     * Use bypass only for ambiguous-ownership defense-in-depth fixtures.
+     *
+     * @param array<string, mixed> $overrides
+     * @param bool $bypassUnique
+     * @return array<string, mixed>
+     */
+    public function seedFinancingAttempt(array $overrides = array(), $bypassUnique = false)
+    {
+        $storeId = isset($overrides['store_id']) ? (int) $overrides['store_id'] : 0;
+        $orderId = isset($overrides['order_id'])
+            ? $this->normalizeStoredOrderId($overrides['order_id'])
+            : null;
+        if (!$bypassUnique && $storeId > 0 && $orderId !== null) {
+            foreach ($this->financingAttempts as $row) {
+                if ((int) $row['store_id'] === $storeId && $this->orderIdsEqual($row['order_id'], $orderId)) {
+                    throw new Exception('Duplicate entry \'uniq_mt_uni_credit_store_order\' for key 1062');
+                }
+            }
+        }
+
+        $id = $this->nextFinancingAttemptId++;
+        $now = gmdate('Y-m-d H:i:s');
+        $fields = array_merge(array(
+            'entry_point' => 'checkout',
+            'operation_key_hash' => hash('sha256', 'seed-op-' . $id),
+            'selection_hash' => hash('sha256', 'seed-sel-' . $id),
+            'request_fingerprint' => hash('sha256', 'seed-fp-' . $id),
+            'state' => MtUniCreditFinancingAttemptState::CP_CREATED,
+            'unicid' => '123e4567-e89b-12d3-a456-426614174000',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ), $overrides);
+
+        $row = $this->defaultFinancingAttemptRow($id, $fields, $storeId, $orderId);
+        foreach ($overrides as $key => $value) {
+            if ($key === 'order_id') {
+                $row[$key] = $this->normalizeStoredOrderId($value);
+            } else {
+                $row[$key] = $value;
+            }
+        }
+        $row['attempt_id'] = $id;
+        $this->financingAttempts[$id] = $row;
+
+        return $row;
+    }
+
+    /**
+     * @param int $id
+     * @param array<string, mixed> $fields
+     * @param int $storeId
+     * @param string|null $orderId
+     * @return array<string, mixed>
+     */
+    private function defaultFinancingAttemptRow($id, array $fields, $storeId, $orderId)
+    {
+        return array(
             'attempt_id' => $id,
             'store_id' => $storeId,
             'entry_point' => (string) $fields['entry_point'],
@@ -1463,12 +1623,14 @@ final class Phase2MemoryDb
             'cart_clear_state' => MtUniCreditCartClearStates::NOT_APPLIED,
             'cart_clear_claimed_at' => null,
             'cart_clear_applied_at' => null,
+            'cp_status_sync_state' => MtUniCreditControlPanelStatusSyncStates::NOT_NEEDED,
+            'cp_status_sync_status_id' => null,
+            'cp_status_sync_status' => null,
+            'cp_status_sync_error_class' => null,
+            'cp_status_sync_updated_at' => null,
             'created_at' => (string) $fields['created_at'],
             'updated_at' => (string) $fields['updated_at'],
         );
-        $this->affected = 1;
-
-        return $this->emptyResult();
     }
 
     /**
@@ -1650,6 +1812,13 @@ final class Phase2MemoryDb
             }
         }
 
+        // Durable CP status sync CAS predicates (compareAndSet*).
+        if (!$this->matchesCpStatusSyncCasPredicates($sql, $row)) {
+            $this->affected = 0;
+
+            return $this->emptyResult();
+        }
+
         $stringColumns = array(
             'state',
             'updated_at',
@@ -1679,16 +1848,22 @@ final class Phase2MemoryDb
             'cart_clear_state',
             'cart_clear_claimed_at',
             'cart_clear_applied_at',
+            'cp_status_sync_state',
+            'cp_status_sync_status_id',
+            'cp_status_sync_status',
+            'cp_status_sync_error_class',
+            'cp_status_sync_updated_at',
+            'unicid',
         );
         foreach ($stringColumns as $column) {
             if (stripos($sql, '`' . $column . '` = NULL') !== false) {
                 $row[$column] = null;
                 continue;
             }
-            $value = $this->extractSetValue($sql, $column);
-            if ($value !== '') {
-                $row[$column] = $value;
+            if (!preg_match('/`' . preg_quote($column, '/') . '`\s*=\s*\'/', $sql)) {
+                continue;
             }
+            $row[$column] = $this->extractSetValue($sql, $column);
         }
 
         if (preg_match('/`control_panel_order_id`\\s*=\\s*(\\d+)/', $sql, $cpMatch)) {
@@ -1717,6 +1892,59 @@ final class Phase2MemoryDb
         $this->affected = 1;
 
         return $this->emptyResult();
+    }
+
+    /**
+     * Evaluate cp_status_sync_* CAS WHERE clauses from ControlPanelStatusSyncRepository.
+     *
+     * @param string $sql
+     * @param array<string, mixed> $row
+     * @return bool
+     */
+    private function matchesCpStatusSyncCasPredicates($sql, array $row)
+    {
+        if (strpos($sql, 'cp_status_sync_') === false) {
+            return true;
+        }
+
+        if (preg_match("/AND `cp_status_sync_state` = '([^']*)'/", $sql, $stateMatch)) {
+            $current = isset($row['cp_status_sync_state'])
+                ? (string) $row['cp_status_sync_state']
+                : MtUniCreditControlPanelStatusSyncStates::NOT_NEEDED;
+            if ($current !== $stateMatch[1]) {
+                return false;
+            }
+        }
+
+        foreach (array('cp_status_sync_status_id', 'cp_status_sync_status') as $column) {
+            if (preg_match(
+                '/AND \\(`' . preg_quote($column, '/') . '` IS NULL OR `' . preg_quote($column, '/') . "` = ''\\)/",
+                $sql
+            )) {
+                $value = isset($row[$column]) ? $row[$column] : null;
+                if ($value !== null && $value !== '') {
+                    return false;
+                }
+                continue;
+            }
+            if (preg_match('/`' . preg_quote($column, '/') . "` <=> '([^']*)'/", $sql, $nullSafeMatch)) {
+                $expected = (string) $nullSafeMatch[1];
+                $actual = isset($row[$column]) ? $row[$column] : null;
+                $actualString = ($actual === null) ? null : (string) $actual;
+                if ($actualString !== $expected) {
+                    return false;
+                }
+                continue;
+            }
+            if (preg_match("/AND `" . preg_quote($column, '/') . "` = '([^']*)'/", $sql, $eqMatch)) {
+                $actual = isset($row[$column]) ? (string) $row[$column] : '';
+                if ($actual !== $eqMatch[1]) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -1805,14 +2033,36 @@ final class Phase2MemoryDb
         }
 
         $storeId = (int) $this->extractWhereInt($sql, 'store_id');
-        $orderId = (int) $this->extractWhereInt($sql, 'order_id');
-        foreach ($this->financingAttempts as $row) {
-            if ((int) $row['store_id'] === $storeId && (int) $row['order_id'] === $orderId) {
-                return $this->singleRow($row);
-            }
+        $orderId = $this->extractWhereOrderId($sql, 'order_id');
+        $unicid = null;
+        if (preg_match("/`unicid`\\s*=\\s*'((?:\\\\'|[^'])*)'/", $sql, $unicidMatch)) {
+            $unicid = str_replace("\\'", "'", (string) $unicidMatch[1]);
         }
 
-        return $this->emptyResult();
+        $matched = array();
+        foreach ($this->financingAttempts as $row) {
+            if ((int) $row['store_id'] !== $storeId || !$this->orderIdsEqual($row['order_id'], $orderId)) {
+                continue;
+            }
+            if ($unicid !== null && (string) (isset($row['unicid']) ? $row['unicid'] : '') !== $unicid) {
+                continue;
+            }
+            $matched[] = $row;
+        }
+
+        if ($matched === array()) {
+            return $this->emptyResult();
+        }
+
+        if (count($matched) === 1 || preg_match('/\\bLIMIT\\s+1\\b/i', $sql)) {
+            return $this->singleRow($matched[0]);
+        }
+
+        return (object) array(
+            'num_rows' => count($matched),
+            'row' => $matched[0],
+            'rows' => $matched,
+        );
     }
 
     /**

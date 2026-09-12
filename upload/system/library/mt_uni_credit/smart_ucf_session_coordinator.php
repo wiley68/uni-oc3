@@ -3,9 +3,10 @@
 /**
  * Coordinates Process 1 SmartUCF session create with durable lifecycle transitions.
  *
- * After confirmed SmartUCF success (or definitive remote reject), persists local bank
- * status and PATCHes Control Panel `/orders/status` using the shop order_id.
- * CP PATCH failure after SmartUCF success is recoverable — SmartUCF stays created.
+ * After confirmed SmartUCF success (or definitive remote reject), admits a durable CP
+ * status-sync target, writes local bank status, then PATCHes Control Panel `/orders/status`
+ * via the status sync service (shop order_id). CP PATCH failure after SmartUCF success is
+ * recoverable — SmartUCF stays created and the pending target is retained.
  */
 final class MtUniCreditSmartUcfSessionCoordinator
 {
@@ -48,6 +49,9 @@ final class MtUniCreditSmartUcfSessionCoordinator
     /** @var MtUniCreditControlPanelClient|null */
     private $controlPanel;
 
+    /** @var MtUniCreditControlPanelStatusSyncService|null */
+    private $statusSync;
+
     /** @var MtUniCreditPhase9LifecycleLog|null */
     private $phase9Log;
 
@@ -57,8 +61,8 @@ final class MtUniCreditSmartUcfSessionCoordinator
     /** @var int */
     private $logStoreId = 0;
 
-    /** @var int */
-    private $logOrderId = 0;
+    /** @var string Canonical shop order id for diagnostics (empty when unset) */
+    private $logOrderId = '';
 
     /** @var string */
     private $logEntryPoint = '';
@@ -79,6 +83,7 @@ final class MtUniCreditSmartUcfSessionCoordinator
      * @param MtUniCreditSmartUcfPayloadBuilder|null $payloadBuilder
      * @param MtUniCreditCertificateSynchronizer|null $certificateSynchronizer
      * @param MtUniCreditControlPanelClient|null $controlPanel
+     * @param MtUniCreditControlPanelStatusSyncService|null $statusSync
      */
     public function __construct(
         MtUniCreditSmartUcfLifecycleRepository $lifecycle,
@@ -89,7 +94,8 @@ final class MtUniCreditSmartUcfSessionCoordinator
         $certificateValidator = null,
         $payloadBuilder = null,
         $certificateSynchronizer = null,
-        $controlPanel = null
+        $controlPanel = null,
+        $statusSync = null
     ) {
         if (!is_object($client) || !method_exists($client, 'createSession')) {
             throw new InvalidArgumentException('SmartUCF client must provide createSession().');
@@ -117,6 +123,9 @@ final class MtUniCreditSmartUcfSessionCoordinator
         $this->controlPanel = $controlPanel instanceof MtUniCreditControlPanelClient
             ? $controlPanel
             : null;
+        $this->statusSync = $statusSync instanceof MtUniCreditControlPanelStatusSyncService
+            ? $statusSync
+            : null;
         $this->phase9Log = null;
         $this->diagnosticJournal = null;
     }
@@ -142,7 +151,8 @@ final class MtUniCreditSmartUcfSessionCoordinator
             $this->diagnosticJournal = $journal;
         }
         $this->logStoreId = (int) $storeId;
-        $this->logOrderId = (int) $orderId;
+        $canonicalLogOrder = MtUniCreditShopOrderId::tryNormalize($orderId);
+        $this->logOrderId = $canonicalLogOrder !== null ? $canonicalLogOrder : '';
         $this->logEntryPoint = (string) $entryPoint;
         $this->logAttemptId = (int) $attemptId;
         $this->logCpOrderId = (int) $cpOrderId;
@@ -157,6 +167,7 @@ final class MtUniCreditSmartUcfSessionCoordinator
      * @param int|string $localOrderId
      * @param int|string $cpOrderId Control Panel internal id (diagnostics only; PATCH uses shop order_id)
      * @param MtUniCreditOrderBankStatusRepository|null $bankStatuses
+     * @param string $authoritativeShopUnicid Current shop module UNICID (credentials), never attempt-row UNICID
      * @return MtUniCreditSmartUcfCoordinationResult
      */
     public function run(
@@ -167,10 +178,14 @@ final class MtUniCreditSmartUcfSessionCoordinator
         MtUniCreditCalculationResult $calculation,
         $localOrderId,
         $cpOrderId,
-        $bankStatuses = null
+        $bankStatuses = null,
+        $authoritativeShopUnicid = ''
     ) {
         $attemptId = (int) $attemptId;
         $storeId = (int) (isset($order['store_id']) ? $order['store_id'] : 0);
+        $authoritativeShopUnicid = is_string($authoritativeShopUnicid)
+            ? trim($authoritativeShopUnicid)
+            : '';
 
         if (MtUniCreditShopConfigurationFlags::isSecondaryProcess($shop)) {
             $this->logEvent(MtUniCreditPhase9LifecycleLog::EVENT_SKIP, array('reason' => 'process2'));
@@ -188,9 +203,15 @@ final class MtUniCreditSmartUcfSessionCoordinator
         }
         $known = $this->resultFromState($row);
         if ($known !== null) {
-            // Replay of proven SmartUCF success: never re-create session; reconcile bank status.
+            // Replay of proven SmartUCF success: never re-create session; restore local then PATCH.
             if ($known->isCreated()) {
-                $this->persistProcess1BankStatus($attemptId, $storeId, $localOrderId, $bankStatuses);
+                $this->reconcileProcess1BankStatusOnReplay(
+                    $attemptId,
+                    $storeId,
+                    $localOrderId,
+                    $authoritativeShopUnicid,
+                    $bankStatuses
+                );
             }
 
             return $known;
@@ -266,7 +287,13 @@ final class MtUniCreditSmartUcfSessionCoordinator
             $fromLatest = $this->resultFromState($latest);
             if ($fromLatest !== null) {
                 if ($fromLatest->isCreated()) {
-                    $this->persistProcess1BankStatus($attemptId, $storeId, $localOrderId, $bankStatuses);
+                    $this->reconcileProcess1BankStatusOnReplay(
+                        $attemptId,
+                        $storeId,
+                        $localOrderId,
+                        $authoritativeShopUnicid,
+                        $bankStatuses
+                    );
                 }
 
                 return $fromLatest;
@@ -389,7 +416,7 @@ final class MtUniCreditSmartUcfSessionCoordinator
      */
     private function recordSupportEvent($eventCode, $httpStatus, array $extra = array())
     {
-        if (!$this->diagnosticJournal instanceof MtUniCreditDiagnosticJournal || $this->logOrderId <= 0) {
+        if (!$this->diagnosticJournal instanceof MtUniCreditDiagnosticJournal || $this->logOrderId === '') {
             return;
         }
         $this->diagnosticJournal->record(
@@ -420,7 +447,7 @@ final class MtUniCreditSmartUcfSessionCoordinator
      */
     private function recordSmartUcfSupport($eventCode, $endpoint, $request, $response, $httpStatus, $transportError)
     {
-        if (!$this->diagnosticJournal instanceof MtUniCreditDiagnosticJournal || $this->logOrderId <= 0) {
+        if (!$this->diagnosticJournal instanceof MtUniCreditDiagnosticJournal || $this->logOrderId === '') {
             return;
         }
         $this->diagnosticJournal->recordSmartUcfSession(
@@ -551,13 +578,7 @@ final class MtUniCreditSmartUcfSessionCoordinator
         } catch (Throwable $ignored) {
         }
         if ($classification->errorClass() === MtUniCreditSmartUcfFailureClassification::CLASS_REMOTE_REJECT) {
-            $this->persistBankStatusPair(
-                $attemptId,
-                $storeId,
-                $localOrderId,
-                MtUniCreditBankStatus::smartUcfFailure(),
-                $bankStatuses
-            );
+            $this->persistFailureBankStatus($attemptId, $storeId, $localOrderId, $bankStatuses);
         }
 
         return MtUniCreditSmartUcfCoordinationResult::failed(
@@ -568,9 +589,10 @@ final class MtUniCreditSmartUcfSessionCoordinator
     }
 
     /**
-     * After proven SmartUCF Process 1 success: local + CP bank_sent_process1.
-     * CP PATCH uses the shop order_id (same as POST /orders), not the CP internal id.
-     * CP failure leaves SmartUCF success durable and marks a recoverable sync pending class.
+     * After proven SmartUCF Process 1 success:
+     * admit durable pending target → local bank_sent_process1 → PATCH from target.
+     * On CONFLICT: stop with no local mutation and no PATCH.
+     * Local write failure: log and keep pending target (do not swallow silently).
      *
      * @param int $attemptId
      * @param int $storeId
@@ -580,17 +602,102 @@ final class MtUniCreditSmartUcfSessionCoordinator
      */
     private function persistProcess1BankStatus($attemptId, $storeId, $localOrderId, $bankStatuses)
     {
+        if (!$this->statusSync instanceof MtUniCreditControlPanelStatusSyncService) {
+            return;
+        }
+
         $status = MtUniCreditBankStatus::process1Sent();
-        $cpSynced = $this->persistBankStatusPair($attemptId, $storeId, $localOrderId, $status, $bankStatuses);
-        if (!$cpSynced) {
-            // Support journal already recorded cp_status_patch_failed inside persistBankStatusPair.
+        $shopOrderId = MtUniCreditShopOrderId::tryNormalize($localOrderId);
+        if ($shopOrderId === null) {
+            error_log(
+                'mt_uni_credit: Process 1 durable target blocked by non-canonical order_id'
+                    . ' attempt_id=' . (int) $attemptId
+                    . ' order_id=' . (string) $localOrderId
+            );
+
+            return;
+        }
+        $attemptId = (int) $attemptId;
+        $storeId = (int) $storeId;
+
+        $decision = $this->statusSync->admitTarget(
+            $attemptId,
+            $status['status_id'],
+            $status['status_label']
+        );
+        if (
+            $decision === MtUniCreditControlPanelStatusSyncService::CONFLICT
+            || $decision === MtUniCreditControlPanelStatusSyncService::REJECT
+        ) {
+            error_log(
+                'mt_uni_credit: Process 1 durable target admission blocked'
+                    . ' decision=' . $decision
+                    . ' attempt_id=' . $attemptId
+                    . ' status_id=' . $status['status_id']
+            );
+
+            return;
+        }
+
+        if ($decision === MtUniCreditControlPanelStatusSyncService::SAME) {
+            $existing = $this->statusSync->readPersistedTarget($attemptId);
+            if (
+                $existing === null
+                || !$this->isExactCanonicalProcess1Target(
+                    isset($existing['status_id']) ? $existing['status_id'] : null,
+                    isset($existing['status']) ? $existing['status'] : null
+                )
+            ) {
+                error_log(
+                    'mt_uni_credit: Process 1 durable SAME admission without exact P1 target'
+                        . ' attempt_id=' . $attemptId
+                );
+
+                return;
+            }
+        }
+
+        try {
+            $this->writeLocalBankStatus($storeId, $localOrderId, $status, $bankStatuses);
+        } catch (Throwable $exception) {
+            error_log(
+                'mt_uni_credit: Process 1 local bank status write failed'
+                    . ' attempt_id=' . $attemptId
+                    . ' store_id=' . $storeId
+                    . ' order_id=' . $shopOrderId
+                    . ' class=' . get_class($exception)
+                    . ' (pending CP target retained)'
+            );
+
+            return;
+        }
+
+        $syncState = $this->statusSync->retryPending($attemptId, $shopOrderId);
+        if (
+            $syncState === MtUniCreditControlPanelStatusSyncStates::PENDING
+            || $syncState === MtUniCreditControlPanelStatusSyncStates::TERMINAL_FAILED
+        ) {
             error_log(
                 'mt_uni_credit: ' . self::ERROR_CP_BANK_STATUS_SYNC_PENDING
-                    . ' attempt_id=' . (int) $attemptId
-                    . ' store_id=' . (int) $storeId
-                    . ' order_id=' . substr((string) $localOrderId, 0, 13)
-                    . ' control_panel_order_id=' . (int) $this->logCpOrderId
+                    . ' attempt_id=' . $attemptId
+                    . ' store_id=' . $storeId
+                    . ' order_id=' . $shopOrderId
                     . ' status_id=' . $status['status_id']
+                    . ' sync_state=' . $syncState
+            );
+            $this->recordSupportEvent(
+                MtUniCreditDiagnosticJournal::EVENT_CP_STATUS_PATCH_FAILED,
+                null,
+                array(
+                    'bank_status' => $status['status_id'],
+                    'sync_state' => $syncState,
+                )
+            );
+        } else {
+            $this->recordSupportEvent(
+                MtUniCreditDiagnosticJournal::EVENT_CP_STATUS_PATCH_SUCCESS,
+                null,
+                array('bank_status' => $status['status_id'])
             );
         }
     }
@@ -599,79 +706,376 @@ final class MtUniCreditSmartUcfSessionCoordinator
      * @param int $attemptId
      * @param int $storeId
      * @param int|string $localOrderId
-     * @param array{status_id: string, status_label: string} $status
      * @param MtUniCreditOrderBankStatusRepository|null $bankStatuses
-     * @return bool true when Control Panel PATCH succeeded (local write may still have succeeded)
+     * @return void
      */
-    private function persistBankStatusPair($attemptId, $storeId, $localOrderId, array $status, $bankStatuses)
+    private function persistFailureBankStatus($attemptId, $storeId, $localOrderId, $bankStatuses)
     {
-        $shopOrderId = substr((string) $localOrderId, 0, 13);
+        if (!$this->statusSync instanceof MtUniCreditControlPanelStatusSyncService) {
+            return;
+        }
+
+        $status = MtUniCreditBankStatus::smartUcfFailure();
+        $shopOrderId = MtUniCreditShopOrderId::tryNormalize($localOrderId);
+        if ($shopOrderId === null) {
+            return;
+        }
+        $attemptId = (int) $attemptId;
+
+        $decision = $this->statusSync->admitTarget(
+            $attemptId,
+            $status['status_id'],
+            $status['status_label']
+        );
+        if (
+            $decision === MtUniCreditControlPanelStatusSyncService::CONFLICT
+            || $decision === MtUniCreditControlPanelStatusSyncService::REJECT
+        ) {
+            error_log(
+                'mt_uni_credit: SmartUCF failure durable target admission blocked'
+                    . ' decision=' . $decision
+                    . ' attempt_id=' . $attemptId
+            );
+
+            return;
+        }
+
+        try {
+            $this->writeLocalBankStatus($storeId, $localOrderId, $status, $bankStatuses);
+        } catch (Throwable $exception) {
+            error_log(
+                'mt_uni_credit: SmartUCF failure local bank status write failed'
+                    . ' attempt_id=' . $attemptId
+                    . ' class=' . get_class($exception)
+                    . ' (pending CP target retained)'
+            );
+
+            return;
+        }
+
+        $this->statusSync->retryPending($attemptId, $shopOrderId);
+    }
+
+    /**
+     * Replay after SmartUCF created: persisted CP target is the sole authority.
+     *
+     * Requires an exact canonical Process 1 target (status_id + status text).
+     * Ordinary replay never synthesizes a missing target.
+     * When sync is not_needed, a separately guarded explicit recovery may run.
+     * Local terminal fact must exist before any PATCH.
+     *
+     * @param int $attemptId
+     * @param int $storeId
+     * @param int|string $localOrderId
+     * @param string $authoritativeUnicid
+     * @param MtUniCreditOrderBankStatusRepository|null $bankStatuses
+     * @return void
+     */
+    private function reconcileProcess1BankStatusOnReplay(
+        $attemptId,
+        $storeId,
+        $localOrderId,
+        $authoritativeUnicid,
+        $bankStatuses
+    ) {
+        if (!$this->statusSync instanceof MtUniCreditControlPanelStatusSyncService) {
+            return;
+        }
+
+        $canonical = MtUniCreditBankStatus::process1Sent();
+        $shopOrderId = MtUniCreditShopOrderId::tryNormalize($localOrderId);
+        if ($shopOrderId === null) {
+            error_log(
+                'mt_uni_credit: Process 1 replay blocked by non-canonical order_id'
+                    . ' attempt_id=' . (int) $attemptId
+                    . ' order_id=' . (string) $localOrderId
+            );
+
+            return;
+        }
+        $attemptId = (int) $attemptId;
+        $storeId = (int) $storeId;
+        $target = $this->statusSync->readPersistedTarget($attemptId);
+
+        if ($target === null) {
+            return;
+        }
+
+        $state = (string) (isset($target['state'])
+            ? $target['state']
+            : MtUniCreditControlPanelStatusSyncStates::NOT_NEEDED);
+        $statusId = isset($target['status_id']) ? $target['status_id'] : null;
+        $statusText = isset($target['status']) ? $target['status'] : null;
+
+        // Ordinary replay never synthesizes from not_needed — explicit recovery is separate.
+        if ($state === MtUniCreditControlPanelStatusSyncStates::NOT_NEEDED || $state === '') {
+            error_log(
+                'mt_uni_credit: Process 1 ordinary replay detected missing CP sync target'
+                    . ' attempt_id=' . $attemptId
+                    . ' store_id=' . $storeId
+                    . ' order_id=' . $shopOrderId
+                    . '; invoking guarded post-SmartUCF recovery'
+            );
+            $this->recoverMissingProcess1TargetAfterCreatedSmartUcf(
+                $attemptId,
+                $storeId,
+                $localOrderId,
+                $authoritativeUnicid,
+                $bankStatuses
+            );
+
+            return;
+        }
+
+        if ($state === MtUniCreditControlPanelStatusSyncStates::TERMINAL_FAILED) {
+            error_log(
+                'mt_uni_credit: Process 1 replay blocked by terminal_failed sync target'
+                    . ' attempt_id=' . $attemptId
+                    . ' status_id=' . (string) $statusId
+                    . ' error_class=' . (string) (isset($target['error_class']) ? $target['error_class'] : '')
+            );
+
+            return;
+        }
+
+        if (!$this->isExactCanonicalProcess1Target($statusId, $statusText)) {
+            error_log(
+                'mt_uni_credit: Process 1 replay blocked by incomplete/conflicting durable target'
+                    . ' attempt_id=' . $attemptId
+                    . ' status_id=' . (string) $statusId
+                    . ' status=' . (string) $statusText
+            );
+
+            return;
+        }
+
+        if (
+            $state !== MtUniCreditControlPanelStatusSyncStates::PENDING
+            && $state !== MtUniCreditControlPanelStatusSyncStates::CONFIRMED
+        ) {
+            return;
+        }
+
+        try {
+            $this->writeLocalBankStatus($storeId, $localOrderId, $canonical, $bankStatuses);
+        } catch (Throwable $exception) {
+            error_log(
+                'mt_uni_credit: Process 1 replay local bank status write failed'
+                    . ' attempt_id=' . $attemptId
+                    . ' store_id=' . $storeId
+                    . ' order_id=' . $shopOrderId
+                    . ' class=' . get_class($exception)
+                    . ' (pending CP target retained; PATCH skipped)'
+            );
+
+            return;
+        }
+
+        if ($state === MtUniCreditControlPanelStatusSyncStates::CONFIRMED) {
+            // Local restored; CP already confirmed — never send a second PATCH.
+            return;
+        }
+
+        $syncState = $this->statusSync->retryPending($attemptId, $shopOrderId);
+        if (
+            $syncState === MtUniCreditControlPanelStatusSyncStates::PENDING
+            || $syncState === MtUniCreditControlPanelStatusSyncStates::TERMINAL_FAILED
+        ) {
+            error_log(
+                'mt_uni_credit: ' . self::ERROR_CP_BANK_STATUS_SYNC_PENDING
+                    . ' attempt_id=' . $attemptId
+                    . ' store_id=' . $storeId
+                    . ' order_id=' . $shopOrderId
+                    . ' status_id=' . $canonical['status_id']
+                    . ' sync_state=' . $syncState
+            );
+        }
+    }
+
+    /**
+     * Explicit post-SmartUCF / pre-target crash recovery.
+     *
+     * Invoked from production created-state replay only after ordinary path detects not_needed.
+     * Admits a missing P1 target only when durable SmartUCF success + exact ownership are proven.
+     *
+     * @param int $attemptId
+     * @param int $storeId
+     * @param int|string $localOrderId
+     * @param string $authoritativeUnicid
+     * @param MtUniCreditOrderBankStatusRepository|null $bankStatuses
+     * @return bool true when a P1 target was admitted and local fact restored (PATCH may still be pending)
+     */
+    public function recoverMissingProcess1TargetAfterCreatedSmartUcf(
+        $attemptId,
+        $storeId,
+        $localOrderId,
+        $authoritativeUnicid,
+        $bankStatuses = null
+    ) {
+        if (!$this->statusSync instanceof MtUniCreditControlPanelStatusSyncService) {
+            return false;
+        }
+
+        $attemptId = (int) $attemptId;
+        $storeId = (int) $storeId;
+        $row = $this->lifecycle->findByAttempt($attemptId);
+        if ($row === null) {
+            return false;
+        }
+        if (
+            (string) (isset($row['smartucf_state']) ? $row['smartucf_state'] : '')
+            !== MtUniCreditSmartUcfLifecycleStates::CREATED
+        ) {
+            return false;
+        }
+        if ((int) (isset($row['store_id']) ? $row['store_id'] : -1) !== $storeId) {
+            return false;
+        }
+
+        $storedOrder = MtUniCreditShopOrderId::tryNormalize(isset($row['order_id']) ? $row['order_id'] : null);
+        $localOrder = MtUniCreditShopOrderId::tryNormalize($localOrderId);
+        if ($storedOrder === null || $localOrder === null || $storedOrder !== $localOrder) {
+            error_log(
+                'mt_uni_credit: Process 1 missing-target recovery blocked by order identity mismatch'
+                    . ' attempt_id=' . $attemptId
+                    . ' stored_order_id=' . (string) (isset($row['order_id']) ? $row['order_id'] : '')
+                    . ' local_order_id=' . (string) $localOrderId
+            );
+
+            return false;
+        }
+
+        $attemptUnicid = trim((string) (isset($row['unicid']) ? $row['unicid'] : ''));
+        $ownedUnicid = trim((string) $authoritativeUnicid);
+        if ($attemptUnicid === '' || $ownedUnicid === '' || !hash_equals($attemptUnicid, $ownedUnicid)) {
+            error_log(
+                'mt_uni_credit: Process 1 missing-target recovery blocked by UNICID ownership'
+                    . ' attempt_id=' . $attemptId
+            );
+
+            return false;
+        }
+
+        $process2State = (string) (isset($row['process2_state'])
+            ? $row['process2_state']
+            : MtUniCreditProcessTwoLifecycleStates::NOT_STARTED);
+        if (
+            $process2State !== MtUniCreditProcessTwoLifecycleStates::NOT_STARTED
+            && $process2State !== ''
+        ) {
+            error_log(
+                'mt_uni_credit: Process 1 missing-target recovery blocked by Process 2 lifecycle state'
+                    . ' attempt_id=' . $attemptId
+                    . ' process2_state=' . $process2State
+            );
+
+            return false;
+        }
+
+        $target = $this->statusSync->readPersistedTarget($attemptId);
+        if ($target === null) {
+            return false;
+        }
+
+        $state = (string) (isset($target['state'])
+            ? $target['state']
+            : MtUniCreditControlPanelStatusSyncStates::NOT_NEEDED);
+        $statusId = isset($target['status_id']) ? $target['status_id'] : null;
+        $statusText = isset($target['status']) ? $target['status'] : null;
+
+        // Only the exact post-SmartUCF / pre-admission crash window.
+        if (
+            $state !== MtUniCreditControlPanelStatusSyncStates::NOT_NEEDED
+            || $statusId !== null
+            || $statusText !== null
+        ) {
+            return false;
+        }
+
         if ($bankStatuses instanceof MtUniCreditOrderBankStatusRepository) {
-            try {
-                $bankStatuses->updateByOrderIdentifier(
-                    $storeId,
-                    $shopOrderId,
-                    $status['status_id'],
-                    $status['status_label'],
-                    MtUniCreditBankStatusTransitionPolicy::SOURCE_LOCAL_LIFECYCLE
+            $local = $bankStatuses->findByOrderId($storeId, $localOrderId);
+            $localStatusId = is_array($local) ? (string) (isset($local['status_id']) ? $local['status_id'] : '') : '';
+            if ($localStatusId === MtUniCreditBankStatus::SENT_PROCESS2) {
+                error_log(
+                    'mt_uni_credit: Process 1 missing-target recovery blocked by local Process 2 fact'
+                        . ' attempt_id=' . $attemptId
+                        . ' order_id=' . (string) $localOrderId
                 );
-            } catch (Throwable $ignored) {
+
+                return false;
             }
         }
 
-        if (!$this->controlPanel instanceof MtUniCreditControlPanelClient) {
+        $this->persistProcess1BankStatus($attemptId, $storeId, $localOrderId, $bankStatuses);
+
+        $after = $this->statusSync->readPersistedTarget($attemptId);
+        if ($after === null) {
             return false;
         }
 
-        $this->logEvent(MtUniCreditPhase9LifecycleLog::EVENT_SMARTUCF_RESULT, array(
-            'kind' => 'cp_status_sync_begin',
-            'bank_status' => $status['status_id'],
-            'attempt_id' => (int) $attemptId,
-        ));
+        return $this->isExactCanonicalProcess1Target(
+            isset($after['status_id']) ? $after['status_id'] : null,
+            isset($after['status']) ? $after['status'] : null
+        );
+    }
 
-        try {
-            // CP looks up by shop order_id from create payload — never the CP internal PK.
-            $this->controlPanel->updateOrderStatus(
-                $shopOrderId,
-                $status['status_label'],
-                $status['status_id']
-            );
-            $this->logEvent(MtUniCreditPhase9LifecycleLog::EVENT_SMARTUCF_RESULT, array(
-                'kind' => 'cp_status_sync_success',
-                'bank_status' => $status['status_id'],
-            ));
-            $this->recordSupportEvent(
-                MtUniCreditDiagnosticJournal::EVENT_CP_STATUS_PATCH_SUCCESS,
-                null,
-                array('bank_status' => $status['status_id'])
-            );
+    /**
+     * Canonical shop order id for identity binding (positive decimal, max 13 digits, no truncation).
+     *
+     * @param mixed $value
+     * @return string|null
+     */
+    private function canonicalOrderId($value)
+    {
+        return MtUniCreditShopOrderId::tryNormalize($value);
+    }
 
-            return true;
-        } catch (Throwable $exception) {
-            $this->logEvent(MtUniCreditPhase9LifecycleLog::EVENT_SMARTUCF_RESULT, array(
-                'kind' => 'cp_status_sync_failure',
-                'bank_status' => $status['status_id'],
-                'error_class' => get_class($exception),
-            ));
-            $patchHttp = ($exception instanceof MtUniCreditCpHttpException) ? $exception->getStatusCode() : null;
-            $this->recordSupportEvent(
-                MtUniCreditDiagnosticJournal::EVENT_CP_STATUS_PATCH_FAILED,
-                $patchHttp,
-                array(
-                    'bank_status' => $status['status_id'],
-                    'error_class' => get_class($exception),
-                )
-            );
-            error_log(
-                'mt_uni_credit: Control Panel bank status PATCH failed: '
-                    . get_class($exception)
-                    . ' attempt_id=' . (int) $attemptId
-                    . ' order_id=' . $shopOrderId
-                    . ' control_panel_order_id=' . (int) $this->logCpOrderId
-                    . ' status_id=' . $status['status_id']
-            );
+    /**
+     * @param string|null $statusId
+     * @param string|null $statusText
+     * @return bool
+     */
+    private function isExactCanonicalProcess1Target($statusId, $statusText)
+    {
+        $canonical = MtUniCreditBankStatus::process1Sent();
 
-            return false;
+        return $statusId === $canonical['status_id']
+            && $statusText === $canonical['status_label'];
+    }
+
+    /**
+     * Local bank status write for proven module handoffs. Failures must not be swallowed
+     * on the target-first path — callers catch and skip PATCH while retaining pending target.
+     *
+     * @param int $storeId
+     * @param int|string $localOrderId
+     * @param array{status_id: string, status_label: string} $status
+     * @param MtUniCreditOrderBankStatusRepository|null $bankStatuses
+     * @return void
+     */
+    private function writeLocalBankStatus($storeId, $localOrderId, array $status, $bankStatuses)
+    {
+        if (!$bankStatuses instanceof MtUniCreditOrderBankStatusRepository) {
+            throw new RuntimeException('Process 1 local bank status repository unavailable.');
+        }
+
+        $updated = $bankStatuses->upsertAuthorizedLocal(
+            (int) $storeId,
+            $localOrderId,
+            $status['status_id'],
+            $status['status_label'],
+            MtUniCreditBankStatusTransitionPolicy::SOURCE_LOCAL_LIFECYCLE
+        );
+        if ($updated === null) {
+            throw new RuntimeException('Process 1 local bank status write returned null.');
+        }
+
+        $verified = $bankStatuses->findByOrderId((int) $storeId, $localOrderId);
+        if (
+            $verified === null
+            || (string) $verified['status_id'] !== (string) $status['status_id']
+        ) {
+            throw new RuntimeException('Process 1 local bank status write not durable.');
         }
     }
 }

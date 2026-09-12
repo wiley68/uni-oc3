@@ -20,9 +20,14 @@ final class MtUniCreditProcess1ServiceFactory
             : new MtUniCreditSmartUcfSessionClient();
         $sync = null;
         $cp = null;
+        $statusSync = null;
         if ($controlPanelClient instanceof MtUniCreditControlPanelClient) {
             $cp = $controlPanelClient;
             $sync = new MtUniCreditCertificateSynchronizer($controlPanelClient);
+            $statusSync = new MtUniCreditControlPanelStatusSyncService(
+                new MtUniCreditControlPanelStatusSyncRepository($db, $clock),
+                $controlPanelClient
+            );
         }
 
         return new MtUniCreditSmartUcfSessionCoordinator(
@@ -34,7 +39,8 @@ final class MtUniCreditProcess1ServiceFactory
             null,
             null,
             $sync,
-            $cp
+            $cp,
+            $statusSync
         );
     }
 

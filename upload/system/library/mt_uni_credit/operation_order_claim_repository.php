@@ -80,14 +80,14 @@ final class MtUniCreditOperationOrderClaimRepository
      * @param int $storeId
      * @param string $entryPoint
      * @param string $operationKeyHash
-     * @param int $orderId
+     * @param int|string $orderId Native OC3 int or canonical string
      * @return array<string, mixed>
      */
     public function bindOrderId($storeId, $entryPoint, $operationKeyHash, $orderId)
     {
         $this->requireStoreEntryHash($storeId, $entryPoint, $operationKeyHash);
-        $orderId = (int) $orderId;
-        if ($orderId <= 0) {
+        $canonicalOrderId = MtUniCreditShopOrderId::tryNormalize($orderId);
+        if ($canonicalOrderId === null) {
             throw new MtUniCreditPersistenceValidationException(
                 'Operation order claim requires a positive order_id.'
             );
@@ -101,29 +101,30 @@ final class MtUniCreditOperationOrderClaimRepository
         }
 
         $boundOrderId = isset($existing['order_id']) && $existing['order_id'] !== null && $existing['order_id'] !== ''
-            ? (int) $existing['order_id']
-            : 0;
-        if ($boundOrderId > 0 && $boundOrderId !== $orderId) {
+            ? MtUniCreditShopOrderId::tryNormalize($existing['order_id'])
+            : null;
+        if ($boundOrderId !== null && $boundOrderId !== $canonicalOrderId) {
             throw new MtUniCreditPersistenceValidationException(
                 'Operation order claim is already bound to a different order.'
             );
         }
 
-        if ($boundOrderId === $orderId && (string) $existing['state'] === self::STATE_ORDER_CREATED) {
+        if ($boundOrderId === $canonicalOrderId && (string) $existing['state'] === self::STATE_ORDER_CREATED) {
             return $existing;
         }
 
         $now = $this->clock->formatUtc($this->clock->now());
         $table = $this->tableName();
+        $orderIdSql = MtUniCreditShopOrderId::sqlQuoted($this->db, $canonicalOrderId);
         $this->db->query(
             "UPDATE `{$table}` SET"
-                . " `order_id` = " . (int) $orderId . ","
+                . " `order_id` = " . $orderIdSql . ","
                 . " `state` = '" . $this->db->escape(self::STATE_ORDER_CREATED) . "',"
                 . " `updated_at` = '" . $this->db->escape($now) . "'"
                 . " WHERE `store_id` = " . (int) $storeId
                 . " AND `entry_point` = '" . $this->db->escape($entryPoint) . "'"
                 . " AND `operation_key_hash` = '" . $this->db->escape($operationKeyHash) . "'"
-                . " AND (`order_id` IS NULL OR `order_id` = " . (int) $orderId . ")"
+                . " AND (`order_id` IS NULL OR `order_id` = " . $orderIdSql . ")"
         );
 
         if ($this->db->countAffected() < 1) {
@@ -132,7 +133,7 @@ final class MtUniCreditOperationOrderClaimRepository
             if (
                 $reloaded !== null
                 && isset($reloaded['order_id'])
-                && (int) $reloaded['order_id'] === $orderId
+                && MtUniCreditShopOrderId::tryNormalize($reloaded['order_id']) === $canonicalOrderId
             ) {
                 return $reloaded;
             }

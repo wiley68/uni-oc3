@@ -16,6 +16,19 @@ final class MtUniCreditControlPanelOrderLifecycleService
 
     const CUSTOMER_CONFLICT_MESSAGE = 'Поръчката вече съществува в системата за финансиране, но данните не съвпадат. Моля, не изпращайте отново — свържете се с магазина.';
 
+    /**
+     * Positive allowlist of definitive non-retryable CP machine codes on create.
+     * Only canonical failures with these codes become TERMINAL_FAILED.
+     *
+     * @var array<int, string>
+     */
+    private static $terminalCreateErrorCodes = array(
+        'invalid_payload',
+        'semantic_conflict',
+        'unsupported_status',
+        'order_not_found',
+    );
+
     /** @var MtUniCreditFinancingAttemptRepository */
     private $attempts;
 
@@ -92,11 +105,11 @@ final class MtUniCreditControlPanelOrderLifecycleService
         $lockOwnerToken
     ) {
         $storeId = (int) $attempt['store_id'];
-        $orderId = (int) $attempt['order_id'];
+        $orderId = MtUniCreditShopOrderId::tryNormalize(isset($attempt['order_id']) ? $attempt['order_id'] : null);
         $operationKeyHash = (string) $attempt['operation_key_hash'];
         $attemptId = (int) $attempt['attempt_id'];
 
-        if ($orderId <= 0 || $attemptId <= 0) {
+        if ($orderId === null || $attemptId <= 0) {
             return MtUniCreditControlPanelOrderSubmissionResult::fail(
                 MtUniCreditControlPanelErrorClass::RECOVERY_FAILED,
                 false
@@ -156,7 +169,13 @@ final class MtUniCreditControlPanelOrderLifecycleService
         }
 
         $storeId = (int) $row['store_id'];
-        $orderId = (int) $row['order_id'];
+        $orderId = MtUniCreditShopOrderId::tryNormalize(isset($row['order_id']) ? $row['order_id'] : null);
+        if ($orderId === null) {
+            return MtUniCreditControlPanelOrderSubmissionResult::fail(
+                MtUniCreditControlPanelErrorClass::RECOVERY_FAILED,
+                false
+            );
+        }
         $entryPoint = isset($row['entry_point']) ? (string) $row['entry_point'] : MtUniCreditOperationEntryPoint::CHECKOUT;
         if (!MtUniCreditOperationEntryPoint::isValid($entryPoint)) {
             $entryPoint = MtUniCreditOperationEntryPoint::CHECKOUT;
@@ -366,24 +385,26 @@ final class MtUniCreditControlPanelOrderLifecycleService
                 $shop
             );
         } catch (MtUniCreditCpAuthenticationException $exception) {
+            // Post-send canonical 401 is ambiguous for create — no blind re-POST.
             $this->attempts->persistFailure(
                 $attemptId,
                 MtUniCreditControlPanelErrorClass::AUTH_FAILED,
-                MtUniCreditFinancingAttemptState::CP_FAILED_RETRYABLE
+                MtUniCreditFinancingAttemptState::CP_OUTCOME_UNKNOWN
             );
             $this->recordCpCreateDiagnostic(
                 $storeId,
                 $orderId,
                 $entryPoint,
-                MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_REJECTED,
+                MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_OUTCOME_UNKNOWN,
                 401,
                 array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::AUTH_FAILED)
             );
 
             return MtUniCreditControlPanelOrderSubmissionResult::fail(
                 MtUniCreditControlPanelErrorClass::AUTH_FAILED,
-                true,
-                401
+                false,
+                401,
+                true
             );
         } catch (MtUniCreditCpTimeoutException $exception) {
             $this->attempts->persistFailure(
@@ -428,80 +449,7 @@ final class MtUniCreditControlPanelOrderLifecycleService
                 true
             );
         } catch (MtUniCreditCpHttpException $exception) {
-            $status = $exception->getStatusCode();
-            if ($status === 409) {
-                // CP idempotency: an order already exists for (shop_id, order_id) with a
-                // conflicting semantic payload — not "no CP order".
-                $this->attempts->persistFailure(
-                    $attemptId,
-                    MtUniCreditControlPanelErrorClass::CONFLICT,
-                    MtUniCreditFinancingAttemptState::CP_EXISTING_CONFLICT
-                );
-                $this->recordCpCreateDiagnostic(
-                    $storeId,
-                    $orderId,
-                    $entryPoint,
-                    MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_REJECTED,
-                    409,
-                    array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::CONFLICT)
-                );
-
-                return MtUniCreditControlPanelOrderSubmissionResult::fail(
-                    MtUniCreditControlPanelErrorClass::CONFLICT,
-                    false,
-                    409,
-                    false,
-                    self::CUSTOMER_CONFLICT_MESSAGE
-                );
-            }
-            if ($status >= 400 && $status < 500) {
-                // AUD-014 F02: only rate-limit (429) stays recoverable/retryable.
-                // Definitive client rejections (incl. HTTP 422) are non-recoverable and
-                // terminal_failed so Checkout may authorize native finalization once.
-                $recoverable = ($status === 429);
-                $failureState = $recoverable
-                    ? MtUniCreditFinancingAttemptState::CP_FAILED_RETRYABLE
-                    : MtUniCreditFinancingAttemptState::TERMINAL_FAILED;
-                $this->attempts->persistFailure(
-                    $attemptId,
-                    MtUniCreditControlPanelErrorClass::REJECTED,
-                    $failureState
-                );
-                $this->recordCpCreateDiagnostic(
-                    $storeId,
-                    $orderId,
-                    $entryPoint,
-                    MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_REJECTED,
-                    $status,
-                    array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::REJECTED)
-                );
-
-                return MtUniCreditControlPanelOrderSubmissionResult::fail(
-                    MtUniCreditControlPanelErrorClass::REJECTED,
-                    $recoverable,
-                    $status
-                );
-            }
-            $this->attempts->persistFailure(
-                $attemptId,
-                MtUniCreditControlPanelErrorClass::TRANSPORT_FAILED,
-                MtUniCreditFinancingAttemptState::CP_OUTCOME_UNKNOWN
-            );
-            $this->recordCpCreateDiagnostic(
-                $storeId,
-                $orderId,
-                $entryPoint,
-                MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_OUTCOME_UNKNOWN,
-                $status,
-                array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::TRANSPORT_FAILED)
-            );
-
-            return MtUniCreditControlPanelOrderSubmissionResult::fail(
-                MtUniCreditControlPanelErrorClass::TRANSPORT_FAILED,
-                false,
-                $status,
-                true
-            );
+            return $this->handleCreateHttpFailure($attemptId, $storeId, $orderId, $entryPoint, $exception);
         } catch (MtUniCreditCpUncertainResponseException $exception) {
             // Post-send response defect (malformed success shape, oversized body, …).
             // errorClass remains INVALID_RESPONSE diagnostically; attempt is outcome-unknown.
@@ -526,15 +474,25 @@ final class MtUniCreditControlPanelOrderLifecycleService
                 true
             );
         } catch (MtUniCreditCpInvalidPayloadException $exception) {
-            // Pre-send / local payload-style defects that still use this exception type.
+            // Malformed success / identity echo mismatch after HTTP 2xx → outcome_unknown.
             $this->attempts->persistFailure(
                 $attemptId,
                 MtUniCreditControlPanelErrorClass::INVALID_RESPONSE,
-                MtUniCreditFinancingAttemptState::CP_FAILED_RETRYABLE
+                MtUniCreditFinancingAttemptState::CP_OUTCOME_UNKNOWN
+            );
+            $this->recordCpCreateDiagnostic(
+                $storeId,
+                $orderId,
+                $entryPoint,
+                MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_OUTCOME_UNKNOWN,
+                null,
+                array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::INVALID_RESPONSE)
             );
 
             return MtUniCreditControlPanelOrderSubmissionResult::fail(
                 MtUniCreditControlPanelErrorClass::INVALID_RESPONSE,
+                false,
+                null,
                 true
             );
         } catch (MtUniCreditCpMalformedJsonException $exception) {
@@ -543,6 +501,14 @@ final class MtUniCreditControlPanelOrderLifecycleService
                 $attemptId,
                 MtUniCreditControlPanelErrorClass::INVALID_RESPONSE,
                 MtUniCreditFinancingAttemptState::CP_OUTCOME_UNKNOWN
+            );
+            $this->recordCpCreateDiagnostic(
+                $storeId,
+                $orderId,
+                $entryPoint,
+                MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_OUTCOME_UNKNOWN,
+                null,
+                array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::INVALID_RESPONSE)
             );
 
             return MtUniCreditControlPanelOrderSubmissionResult::fail(
@@ -593,7 +559,15 @@ final class MtUniCreditControlPanelOrderLifecycleService
         $entryPoint = $row !== null && isset($row['entry_point'])
             ? (string) $row['entry_point']
             : MtUniCreditOperationEntryPoint::CHECKOUT;
-        $localOrderId = (int) (isset($order['order_id']) ? $order['order_id'] : 0);
+        $localOrderId = MtUniCreditShopOrderId::tryNormalize(
+            isset($order['order_id']) ? $order['order_id'] : (isset($row['order_id']) ? $row['order_id'] : null)
+        );
+        if ($localOrderId === null) {
+            return MtUniCreditControlPanelOrderSubmissionResult::fail(
+                MtUniCreditControlPanelErrorClass::RECOVERY_FAILED,
+                false
+            );
+        }
         $rawProces = MtUniCreditShopProcessContext::rawUniProces($shop);
         $normalized = MtUniCreditShopProcessContext::normalized($shop);
         $log = $this->resolvePhase9Log();
@@ -686,7 +660,8 @@ final class MtUniCreditControlPanelOrderLifecycleService
                 $calculation,
                 $localOrderId,
                 $cpId,
-                $this->resolveBankStatuses()
+                $this->resolveBankStatuses(),
+                $this->client->getConfiguredUnicid()
             );
         } catch (Exception $exception) {
             $log->record($storeId, $localOrderId, $entryPoint, MtUniCreditPhase9LifecycleLog::EVENT_SMARTUCF_RESULT, array_merge(
@@ -962,12 +937,13 @@ final class MtUniCreditControlPanelOrderLifecycleService
     private function recordCpCreateDiagnostic($storeId, $orderId, $entryPoint, $eventCode, $httpStatus, array $extra)
     {
         $journal = $this->resolveDiagnosticJournal();
-        if (!$journal instanceof MtUniCreditDiagnosticJournal || (int) $orderId <= 0) {
+        $canonicalOrderId = MtUniCreditShopOrderId::tryNormalize($orderId);
+        if (!$journal instanceof MtUniCreditDiagnosticJournal || $canonicalOrderId === null) {
             return;
         }
         $journal->record(
             (int) $storeId,
-            (int) $orderId,
+            $canonicalOrderId,
             $entryPoint !== '' ? $entryPoint : MtUniCreditOperationEntryPoint::CHECKOUT,
             $eventCode,
             $httpStatus,
@@ -1012,7 +988,149 @@ final class MtUniCreditControlPanelOrderLifecycleService
             $calculation = MtUniCreditApplicationSnapshot::toCalculationResult($snapshot);
         }
 
-        return $this->payloadBuilder->build((int) $row['order_id'], $order, $orderProducts, $calculation, $shop);
+        return $this->payloadBuilder->build(
+            isset($row['order_id']) ? $row['order_id'] : null,
+            $order,
+            $orderProducts,
+            $calculation,
+            $shop
+        );
+    }
+
+    /**
+     * Map create-order HTTP failures to terminal vs ambiguous outcomes (OC4 semantics).
+     *
+     * Only allowlisted canonical machine codes are TERMINAL_FAILED.
+     * Bare/malformed 409, 429, 5xx, and noncanonical 4xx stay CP_OUTCOME_UNKNOWN —
+     * never blind re-POST and never bank_send_failed_cp from ambiguous create.
+     *
+     * @param int $attemptId
+     * @param int $storeId
+     * @param int $orderId
+     * @param string $entryPoint
+     * @param MtUniCreditCpHttpException $exception
+     * @return MtUniCreditControlPanelOrderSubmissionResult
+     */
+    private function handleCreateHttpFailure($attemptId, $storeId, $orderId, $entryPoint, MtUniCreditCpHttpException $exception)
+    {
+        $status = $exception->getStatusCode();
+        $error = $exception->isCanonicalFailure()
+            ? (string) $exception->getCanonicalError()
+            : '';
+
+        if ($error !== '' && in_array($error, self::$terminalCreateErrorCodes, true)) {
+            $this->attempts->persistFailure(
+                $attemptId,
+                MtUniCreditControlPanelErrorClass::REJECTED,
+                MtUniCreditFinancingAttemptState::TERMINAL_FAILED
+            );
+            $this->recordCpCreateDiagnostic(
+                $storeId,
+                $orderId,
+                $entryPoint,
+                MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_REJECTED,
+                $status,
+                array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::REJECTED)
+            );
+
+            return MtUniCreditControlPanelOrderSubmissionResult::fail(
+                MtUniCreditControlPanelErrorClass::REJECTED,
+                false,
+                $status
+            );
+        }
+
+        // Bare/malformed/non-definitive 409 remains ambiguous — never CP_EXISTING_CONFLICT.
+        if ($status === 409) {
+            $this->attempts->persistFailure(
+                $attemptId,
+                MtUniCreditControlPanelErrorClass::CONFLICT,
+                MtUniCreditFinancingAttemptState::CP_OUTCOME_UNKNOWN
+            );
+            $this->recordCpCreateDiagnostic(
+                $storeId,
+                $orderId,
+                $entryPoint,
+                MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_OUTCOME_UNKNOWN,
+                409,
+                array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::CONFLICT)
+            );
+
+            return MtUniCreditControlPanelOrderSubmissionResult::fail(
+                MtUniCreditControlPanelErrorClass::CONFLICT,
+                false,
+                409,
+                true
+            );
+        }
+
+        if ($status === 429 || $error === 'rate_limited') {
+            $this->attempts->persistFailure(
+                $attemptId,
+                MtUniCreditControlPanelErrorClass::REJECTED,
+                MtUniCreditFinancingAttemptState::CP_OUTCOME_UNKNOWN
+            );
+            $this->recordCpCreateDiagnostic(
+                $storeId,
+                $orderId,
+                $entryPoint,
+                MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_OUTCOME_UNKNOWN,
+                429,
+                array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::REJECTED)
+            );
+
+            return MtUniCreditControlPanelOrderSubmissionResult::fail(
+                MtUniCreditControlPanelErrorClass::REJECTED,
+                false,
+                429,
+                true
+            );
+        }
+
+        // 5xx and unknown/noncanonical 4xx: ambiguous — stop safely; never blind re-POST.
+        if ($status >= 500) {
+            $this->attempts->persistFailure(
+                $attemptId,
+                MtUniCreditControlPanelErrorClass::TRANSPORT_FAILED,
+                MtUniCreditFinancingAttemptState::CP_OUTCOME_UNKNOWN
+            );
+            $this->recordCpCreateDiagnostic(
+                $storeId,
+                $orderId,
+                $entryPoint,
+                MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_OUTCOME_UNKNOWN,
+                $status,
+                array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::TRANSPORT_FAILED)
+            );
+
+            return MtUniCreditControlPanelOrderSubmissionResult::fail(
+                MtUniCreditControlPanelErrorClass::TRANSPORT_FAILED,
+                false,
+                $status,
+                true
+            );
+        }
+
+        $this->attempts->persistFailure(
+            $attemptId,
+            MtUniCreditControlPanelErrorClass::REJECTED,
+            MtUniCreditFinancingAttemptState::CP_OUTCOME_UNKNOWN
+        );
+        $this->recordCpCreateDiagnostic(
+            $storeId,
+            $orderId,
+            $entryPoint,
+            MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_OUTCOME_UNKNOWN,
+            $status,
+            array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::REJECTED)
+        );
+
+        return MtUniCreditControlPanelOrderSubmissionResult::fail(
+            MtUniCreditControlPanelErrorClass::REJECTED,
+            false,
+            $status,
+            true
+        );
     }
 
     /**
@@ -1022,10 +1140,15 @@ final class MtUniCreditControlPanelOrderLifecycleService
      */
     private function enterSubmitting($attemptId, $currentState)
     {
+        // Never re-POST from created, ambiguous, terminal, or legacy conflict states.
+        // CP_FAILED_RETRYABLE remains allowed for pre-send / payload validation retries only.
         if ($currentState === MtUniCreditFinancingAttemptState::CP_CREATED) {
             return false;
         }
         if ($currentState === MtUniCreditFinancingAttemptState::CP_OUTCOME_UNKNOWN) {
+            return false;
+        }
+        if ($currentState === MtUniCreditFinancingAttemptState::TERMINAL_FAILED) {
             return false;
         }
         if ($currentState === MtUniCreditFinancingAttemptState::CP_EXISTING_CONFLICT) {

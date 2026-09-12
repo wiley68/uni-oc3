@@ -156,38 +156,13 @@ $memoryDb->seedOrder(200, 2, MtUniCreditConstants::EXTENSION_CODE);
 $memoryDb->seedOrder(300, 2, MtUniCreditConstants::EXTENSION_CODE);
 $memoryDb->seedOrder(400, 0, MtUniCreditConstants::EXTENSION_CODE);
 
-$bankRepo->updateByOrderIdentifier(
-    0,
-    '100',
-    MtUniCreditBankStatus::SENT_PROCESS1,
-    MtUniCreditBankStatus::LABEL_SENT_PROCESS1
-);
-$bankRepo->updateByOrderIdentifier(
-    2,
-    '200',
-    MtUniCreditBankStatus::SEND_FAILED_CP,
-    MtUniCreditBankStatus::LABEL_SEND_FAILED_CP
-);
-$bankRepo->updateByOrderIdentifier(
-    2,
-    '300',
-    MtUniCreditBankStatus::SENT_PROCESS2,
-    MtUniCreditBankStatus::LABEL_SENT_PROCESS2
-);
-$bankRepo->updateByOrderIdentifier(
-    0,
-    '400',
-    MtUniCreditBankStatus::SEND_FAILED_SMARTUCF,
-    MtUniCreditBankStatus::LABEL_SEND_FAILED_SMARTUCF
-);
+$bankRepo->upsertAuthorizedLocal(0, 100, MtUniCreditBankStatus::SENT_PROCESS1, MtUniCreditBankStatus::LABEL_SENT_PROCESS1);
+$bankRepo->upsertAuthorizedLocal(2, 200, MtUniCreditBankStatus::SEND_FAILED_CP, MtUniCreditBankStatus::LABEL_SEND_FAILED_CP);
+$bankRepo->upsertAuthorizedLocal(2, 300, MtUniCreditBankStatus::SENT_PROCESS2, MtUniCreditBankStatus::LABEL_SENT_PROCESS2);
+$bankRepo->upsertAuthorizedLocal(0, 400, MtUniCreditBankStatus::SEND_FAILED_SMARTUCF, MtUniCreditBankStatus::LABEL_SEND_FAILED_SMARTUCF);
 
 // Extra collision bait: store 0 status for order 200 must NEVER attach when native store is 2.
-$bankRepo->updateByOrderIdentifier(
-    0,
-    '200',
-    MtUniCreditBankStatus::SENT_PROCESS1,
-    MtUniCreditBankStatus::LABEL_SENT_PROCESS1
-);
+$bankRepo->upsertAuthorizedLocal(0, 200, MtUniCreditBankStatus::SENT_PROCESS1, MtUniCreditBankStatus::LABEL_SENT_PROCESS1);
 
 $wrongFallback = 99;
 

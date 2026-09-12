@@ -1,9 +1,9 @@
 <?php
 
 /**
- * Control Panel HTTP client — login, refresh, logout, shop, orders, status (Phase 4/9).
+ * Control Panel HTTP client — login, refresh, logout, shop, orders (canonical envelopes).
  */
-final class MtUniCreditControlPanelClient
+final class MtUniCreditControlPanelClient implements MtUniCreditControlPanelOrderStatusPort
 {
     /** @var MtUniCreditCredentialsRepository */
     private $credentials;
@@ -87,12 +87,7 @@ final class MtUniCreditControlPanelClient
             'name' => $this->shopName,
             'secret' => $secret,
         ));
-        $this->storeTokenResponse($response);
-
-        if (!isset($response['shop']) || !is_array($response['shop'])) {
-            $this->tokens->invalidate();
-            throw new MtUniCreditCpInvalidPayloadException('The Control Panel login response has no valid shop data.');
-        }
+        $this->storeTokenResponse($response, true);
 
         return $response;
     }
@@ -109,7 +104,7 @@ final class MtUniCreditControlPanelClient
 
         try {
             $response = $this->send('POST', '/auth/refresh', null, $token);
-            $this->storeTokenResponse($response);
+            $this->storeTokenResponse($response, false);
 
             return $response;
         } catch (MtUniCreditCpAuthenticationException $exception) {
@@ -125,7 +120,7 @@ final class MtUniCreditControlPanelClient
     {
         $token = $this->tokens->getAccessToken();
         if ($token === null) {
-            return array('success' => true);
+            return MtUniCreditInboundApiEnvelope::success('Logged out locally.');
         }
 
         try {
@@ -141,7 +136,8 @@ final class MtUniCreditControlPanelClient
     public function getShop()
     {
         $response = $this->authenticatedRequest('GET', '/shop');
-        if (!isset($response['data']) || !is_array($response['data'])) {
+        $data = isset($response['data']) ? $response['data'] : null;
+        if (!is_array($data) || !$this->isAssociativeObject($data)) {
             throw new MtUniCreditCpInvalidPayloadException('The Control Panel shop response has no valid data object.');
         }
 
@@ -202,170 +198,18 @@ final class MtUniCreditControlPanelClient
     }
 
     /**
+     * POST /orders — financing order create (idempotent by shop_id + order_id).
+     * One send only: no 401 re-login replay after a remote response.
+     *
+     * @param array<string, mixed> $order
      * @return array<string, mixed>
      */
     public function createOrder(array $order)
     {
-        // Auth/token bootstrap is pre-send for POST /orders. Response defects there
-        // remain definitive InvalidPayload (and Uncertain from transport is remapped).
-        try {
-            $token = $this->ensureToken();
-        } catch (MtUniCreditCpUncertainResponseException $exception) {
-            throw new MtUniCreditCpInvalidPayloadException($exception->getMessage(), 0, $exception);
-        }
-
-        try {
-            $response = $this->sendOrderCreate($order, $token);
-        } catch (MtUniCreditCpAuthenticationException $exception) {
-            // First order POST was rejected by auth middleware before persistence.
-            // Re-login is bootstrap — must NOT enter order-response uncertainty conversion.
-            $this->tokens->invalidate();
-            $this->reloginForOrderRetry();
-            $retryToken = $this->tokens->getAccessToken();
-            if ($retryToken === null) {
-                throw new MtUniCreditCpAuthenticationException(
-                    'Control Panel re-authentication did not provide a token.'
-                );
-            }
-
-            try {
-                $response = $this->sendOrderCreate($order, $retryToken);
-            } catch (MtUniCreditCpAuthenticationException $retryException) {
-                $this->tokens->invalidate();
-                throw $retryException;
-            }
-        }
-
-        $this->assertOrderCreateSuccessIdentity($response, $order);
+        $response = $this->authenticatedRequest('POST', '/orders', $order);
+        $this->assertCreateOrderIdentity($response, $order);
 
         return $response;
-    }
-
-    /**
-     * Strict response-owned identity for 2xx POST /orders success (create or equivalent replay).
-     * Failures are post-send uncertainty — CP may already have persisted.
-     *
-     * @param array<string, mixed> $response
-     * @param array<string, mixed> $order Submitted create payload (frozen order_id)
-     * @return void
-     */
-    private function assertOrderCreateSuccessIdentity(array $response, array $order)
-    {
-        if (
-            !isset($response['data'])
-            || !is_array($response['data'])
-            || !$this->isJsonObjectArray($response['data'])
-        ) {
-            throw new MtUniCreditCpUncertainResponseException(
-                'The Control Panel order response has no valid data object.'
-            );
-        }
-
-        $data = $response['data'];
-
-        if (!array_key_exists('id', $data) || !is_int($data['id']) || $data['id'] <= 0) {
-            throw new MtUniCreditCpUncertainResponseException(
-                'The Control Panel order response id is missing or invalid.'
-            );
-        }
-
-        if (!array_key_exists('shop_id', $data) || !is_int($data['shop_id']) || $data['shop_id'] <= 0) {
-            throw new MtUniCreditCpUncertainResponseException(
-                'The Control Panel order response shop_id is missing or invalid.'
-            );
-        }
-
-        $expectedOrderId = array_key_exists('order_id', $order) ? $order['order_id'] : null;
-        if (!is_string($expectedOrderId)) {
-            throw new MtUniCreditCpUncertainResponseException(
-                'The Control Panel order request identity is incomplete.'
-            );
-        }
-        if (
-            !array_key_exists('order_id', $data)
-            || !is_string($data['order_id'])
-            || $data['order_id'] !== $expectedOrderId
-        ) {
-            throw new MtUniCreditCpUncertainResponseException(
-                'The Control Panel order response order_id does not match the submitted order.'
-            );
-        }
-
-        $expectedUnicid = $this->credentials->getUnicid($this->storeId);
-        if (!is_string($expectedUnicid) || $expectedUnicid === '') {
-            throw new MtUniCreditCpUncertainResponseException(
-                'The Control Panel store identity is incomplete.'
-            );
-        }
-        if (
-            !array_key_exists('unicid', $data)
-            || !is_string($data['unicid'])
-            || $data['unicid'] !== $expectedUnicid
-        ) {
-            throw new MtUniCreditCpUncertainResponseException(
-                'The Control Panel order response unicid does not match the configured store.'
-            );
-        }
-    }
-
-    /**
-     * JSON object → associative array with string keys; JSON list → integer keys.
-     *
-     * @param array<mixed, mixed> $value
-     * @return bool
-     */
-    private function isJsonObjectArray(array $value)
-    {
-        foreach (array_keys($value) as $key) {
-            if (!is_string($key)) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /**
-     * POST /orders once and classify post-send InvalidPayload as persistence-uncertain.
-     *
-     * @param array<string, mixed> $order
-     * @param string $token
-     * @return array<string, mixed>
-     */
-    private function sendOrderCreate(array $order, $token)
-    {
-        try {
-            return $this->send('POST', '/orders', $order, $token, true);
-        } catch (MtUniCreditCpInvalidPayloadException $exception) {
-            // Body received / size-aborted after this order POST may already have reached CP.
-            throw new MtUniCreditCpUncertainResponseException($exception->getMessage(), 0, $exception);
-        }
-    }
-
-    /**
-     * Re-authenticate after a definitive order 401. Failures stay non-ambiguous.
-     *
-     * @return void
-     */
-    private function reloginForOrderRetry()
-    {
-        try {
-            $this->login();
-        } catch (MtUniCreditCpMalformedJsonException $exception) {
-            throw new MtUniCreditCpInvalidPayloadException($exception->getMessage(), 0, $exception);
-        } catch (MtUniCreditCpTimeoutException $exception) {
-            throw new MtUniCreditCpAuthenticationException(
-                'Control Panel re-authentication timed out.',
-                0,
-                $exception
-            );
-        } catch (MtUniCreditCpConnectionException $exception) {
-            throw new MtUniCreditCpAuthenticationException(
-                'Control Panel re-authentication failed to connect.',
-                0,
-                $exception
-            );
-        }
     }
 
     /**
@@ -375,108 +219,36 @@ final class MtUniCreditControlPanelClient
      *                            (local OpenCart order id), not the Control Panel internal PK.
      * @param string $statusLabel Human-readable CP status label
      * @param string $statusId Machine status id (e.g. bank_sent_process1)
-     * @return void
+     * @return array<string, mixed>
      */
     public function updateOrderStatus($shopOrderId, $statusLabel, $statusId)
     {
-        $shopOrderId = trim((string) $shopOrderId);
-        $statusLabel = trim((string) $statusLabel);
-        $statusId = trim((string) $statusId);
-        if ($shopOrderId === '' || $statusId === '') {
+        $canonicalOrderId = MtUniCreditShopOrderId::tryNormalize($shopOrderId);
+        $statusLabel = is_string($statusLabel) ? trim($statusLabel) : '';
+        $statusId = is_string($statusId) ? trim($statusId) : '';
+        if ($canonicalOrderId === null || $statusId === '' || $statusLabel === '') {
             throw new MtUniCreditCpInvalidPayloadException('Control Panel order status fields are incomplete.');
         }
-        $response = $this->authenticatedRequest('PATCH', '/orders/status', array(
-            'order_id' => $shopOrderId,
+        $payload = array(
+            'order_id' => $canonicalOrderId,
             'status' => $statusLabel,
             'status_id' => $statusId,
-        ));
-        $this->assertStatusPatchConfirmed($response, $shopOrderId, $statusLabel, $statusId);
+        );
+        $response = $this->authenticatedRequest('PATCH', '/orders/status', $payload);
+        $this->assertStatusPatchConfirmed($response, $payload);
+
+        return $response;
     }
 
     /**
-     * CP PATCH /orders/status success contract (ShopAuthController::updateOrderStatus):
-     * {
-     *   "success": true,
-     *   "message": "...",
-     *   "data": {
-     *     "id": <int>,
-     *     "order_id": <string>,
-     *     "shop_id": <int>,
-     *     "status": <string>,
-     *     "status_id": <string|null>,
-     *     "updated_at": "Y-m-d H:i:s"
-     *   }
-     * }
+     * Current shop UNICID from module credentials (same source as CP login).
+     * Never derived from a financing attempt row.
      *
-     * This client always submits status_id; confirmation requires exact echo of
-     * order_id, status, and status_id. Do not reconstruct missing fields from the request.
-     *
-     * @param array<string, mixed> $response
-     * @param string $shopOrderId
-     * @param string $statusLabel
-     * @param string $statusId
-     * @return void
+     * @return string
      */
-    private function assertStatusPatchConfirmed(array $response, $shopOrderId, $statusLabel, $statusId)
+    public function getConfiguredUnicid()
     {
-        if (!isset($response['data']) || !is_array($response['data'])) {
-            throw new MtUniCreditCpInvalidPayloadException(
-                'The Control Panel status response has no valid data object.'
-            );
-        }
-        if ($this->isListArray($response['data'])) {
-            throw new MtUniCreditCpInvalidPayloadException(
-                'The Control Panel status response data object is invalid.'
-            );
-        }
-
-        $data = $response['data'];
-        if (!isset($data['order_id']) || !is_string($data['order_id']) || $data['order_id'] === '') {
-            throw new MtUniCreditCpInvalidPayloadException(
-                'The Control Panel status response does not confirm order identity.'
-            );
-        }
-        if ($data['order_id'] !== $shopOrderId) {
-            throw new MtUniCreditCpInvalidPayloadException(
-                'The Control Panel status response order identity does not match the request.'
-            );
-        }
-
-        if (!isset($data['status']) || !is_string($data['status']) || $data['status'] === '') {
-            throw new MtUniCreditCpInvalidPayloadException(
-                'The Control Panel status response does not confirm status.'
-            );
-        }
-        if ($data['status'] !== $statusLabel) {
-            throw new MtUniCreditCpInvalidPayloadException(
-                'The Control Panel status response status does not match the request.'
-            );
-        }
-
-        // Request always includes status_id; CP success payload always includes status_id.
-        if (!array_key_exists('status_id', $data) || !is_string($data['status_id']) || $data['status_id'] === '') {
-            throw new MtUniCreditCpInvalidPayloadException(
-                'The Control Panel status response does not confirm status_id.'
-            );
-        }
-        if ($data['status_id'] !== $statusId) {
-            throw new MtUniCreditCpInvalidPayloadException(
-                'The Control Panel status response status_id does not match the request.'
-            );
-        }
-    }
-
-    /**
-     * @param array<mixed> $value
-     * @return bool
-     */
-    private function isListArray(array $value)
-    {
-        if ($value === array()) {
-            return false;
-        }
-
-        return array_keys($value) === range(0, count($value) - 1);
+        return trim((string) $this->credentials->getUnicid($this->storeId));
     }
 
     /**
@@ -492,6 +264,11 @@ final class MtUniCreditControlPanelClient
         try {
             return $this->send($method, $path, $payload, $token);
         } catch (MtUniCreditCpAuthenticationException $exception) {
+            // POST /orders must never auto-replay after a remote response — lifecycle owns create ambiguity.
+            if (!$this->allowsAuthenticationRetry($method, $path)) {
+                throw $exception;
+            }
+
             $this->tokens->invalidate();
             $this->login();
             $retryToken = $this->tokens->getAccessToken();
@@ -506,6 +283,30 @@ final class MtUniCreditControlPanelClient
                 throw $retryException;
             }
         }
+    }
+
+    /**
+     * Automatic login-and-retry after a canonical 401 is allowed only for idempotent routes.
+     * Unsafe create (POST /orders) is never auto-replayed once a remote response was received.
+     *
+     * @param string $method
+     * @param string $path
+     * @return bool
+     */
+    private function allowsAuthenticationRetry($method, $path)
+    {
+        $method = strtoupper((string) $method);
+        $normalized = '/' . trim((string) $path, '/');
+
+        if ($method === 'GET' && ($normalized === '/shop' || strpos($normalized, '/ssl/') === 0)) {
+            return true;
+        }
+
+        if ($method === 'PATCH' && $normalized === '/orders/status') {
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -542,12 +343,9 @@ final class MtUniCreditControlPanelClient
      * @param string $path
      * @param array<string, mixed>|null $payload
      * @param string|null $token
-     * @param bool $uncertainOnInvalidSuccess When true, a 2xx body that does not confirm
-     *                                        success is treated as post-send uncertainty
-     *                                        (order create). Other CP routes keep InvalidPayload.
      * @return array<string, mixed>
      */
-    private function send($method, $path, $payload = null, $token = null, $uncertainOnInvalidSuccess = false)
+    private function send($method, $path, $payload = null, $token = null)
     {
         $headers = array(
             'Accept' => 'application/json',
@@ -564,43 +362,104 @@ final class MtUniCreditControlPanelClient
             $payload
         );
 
-        if ($response->getStatusCode() === 401) {
-            throw new MtUniCreditCpAuthenticationException('The Control Panel rejected the authentication.');
+        if ($response->getStatusCode() < 200 || $response->getStatusCode() >= 300) {
+            // Including 401: bare/malformed bodies are not treated as safe auth evidence.
+            throw $this->buildHttpFailure($response->getStatusCode(), $response->getBody());
         }
 
-        if ($response->getStatusCode() < 200 || $response->getStatusCode() >= 300) {
-            throw new MtUniCreditCpHttpException(
-                $response->getStatusCode(),
-                $this->decodeErrorResponse($response->getBody())
+        return $this->decodeSuccessEnvelope($response->getBody());
+    }
+
+    /**
+     * @param int $statusCode
+     * @param string $body
+     * @return Throwable
+     */
+    private function buildHttpFailure($statusCode, $body)
+    {
+        $statusCode = (int) $statusCode;
+
+        try {
+            $decodedObject = $this->decodeJsonAsObject($body);
+        } catch (MtUniCreditCpMalformedJsonException $exception) {
+            return $exception;
+        }
+
+        if ($decodedObject === null) {
+            return new MtUniCreditCpMalformedJsonException('The Control Panel JSON error response is not an object.');
+        }
+
+        if (
+            !property_exists($decodedObject, 'success')
+            || $decodedObject->success !== false
+            || !property_exists($decodedObject, 'error')
+            || !is_string($decodedObject->error)
+            || $decodedObject->error === ''
+            || !preg_match('/^[a-z][a-z0-9_]*$/D', $decodedObject->error)
+            || !property_exists($decodedObject, 'message')
+            || !is_string($decodedObject->message)
+            || !property_exists($decodedObject, 'data')
+            || !($decodedObject->data instanceof stdClass)
+        ) {
+            return new MtUniCreditCpInvalidPayloadException('The Control Panel error response is not a canonical failure envelope.');
+        }
+
+        try {
+            $decoded = json_decode(json_encode($decodedObject, JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR);
+        } catch (JsonException $exception) {
+            return new MtUniCreditCpMalformedJsonException('The Control Panel JSON error response is not an object.', 0, $exception);
+        }
+        if (!is_array($decoded)) {
+            return new MtUniCreditCpMalformedJsonException('The Control Panel JSON error response is not an object.');
+        }
+
+        $message = is_string($decodedObject->message) ? $decodedObject->message : 'Control Panel HTTP error.';
+
+        // Canonical 401 is structured auth failure evidence for safe-route retry policy.
+        if ($statusCode === 401) {
+            return new MtUniCreditCpAuthenticationException(
+                $message !== '' ? $message : 'The Control Panel rejected the authentication.'
             );
         }
 
-        $decoded = $this->decode($response->getBody());
-
-        if (!isset($decoded['success']) || $decoded['success'] !== true) {
-            if ($uncertainOnInvalidSuccess) {
-                throw new MtUniCreditCpUncertainResponseException(
-                    'The Control Panel response does not confirm success.'
-                );
-            }
-            throw new MtUniCreditCpInvalidPayloadException('The Control Panel response does not confirm success.');
-        }
-
-        return $decoded;
+        return new MtUniCreditCpHttpException(
+            $statusCode,
+            $decoded,
+            $message,
+            true,
+            $decodedObject->error
+        );
     }
 
     /**
      * @param string $body
      * @return array<string, mixed>
      */
-    private function decode($body)
+    private function decodeSuccessEnvelope($body)
     {
-        try {
-            $decoded = json_decode($body, true, 512, JSON_THROW_ON_ERROR);
-        } catch (JsonException $exception) {
-            throw new MtUniCreditCpMalformedJsonException('The Control Panel returned malformed JSON.', 0, $exception);
+        $decodedObject = $this->decodeJsonAsObject($body);
+        if ($decodedObject === null) {
+            throw new MtUniCreditCpMalformedJsonException('The Control Panel JSON response is not an object.');
         }
 
+        if (
+            !property_exists($decodedObject, 'success')
+            || $decodedObject->success !== true
+            || !property_exists($decodedObject, 'error')
+            || $decodedObject->error !== null
+            || !property_exists($decodedObject, 'message')
+            || !is_string($decodedObject->message)
+            || !property_exists($decodedObject, 'data')
+            || !($decodedObject->data instanceof stdClass)
+        ) {
+            throw new MtUniCreditCpInvalidPayloadException('The Control Panel response does not confirm success.');
+        }
+
+        try {
+            $decoded = json_decode(json_encode($decodedObject, JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR);
+        } catch (JsonException $exception) {
+            throw new MtUniCreditCpMalformedJsonException('The Control Panel JSON response is not an object.', 0, $exception);
+        }
         if (!is_array($decoded)) {
             throw new MtUniCreditCpMalformedJsonException('The Control Panel JSON response is not an object.');
         }
@@ -610,17 +469,17 @@ final class MtUniCreditControlPanelClient
 
     /**
      * @param string $body
-     * @return array<string, mixed>
+     * @return stdClass|null
      */
-    private function decodeErrorResponse($body)
+    private function decodeJsonAsObject($body)
     {
         try {
-            $decoded = json_decode($body, true, 512, JSON_THROW_ON_ERROR);
+            $decoded = json_decode($body, false, 512, JSON_THROW_ON_ERROR);
         } catch (JsonException $exception) {
-            return array();
+            throw new MtUniCreditCpMalformedJsonException('The Control Panel returned malformed JSON.', 0, $exception);
         }
 
-        return is_array($decoded) ? $decoded : array();
+        return $decoded instanceof stdClass ? $decoded : null;
     }
 
     /**
@@ -661,13 +520,28 @@ final class MtUniCreditControlPanelClient
 
     /**
      * @param array<string, mixed> $response
+     * @param bool $requireShop
      * @return void
      */
-    private function storeTokenResponse(array $response)
+    private function storeTokenResponse(array $response, $requireShop)
     {
-        $accessToken = isset($response['access_token']) ? $response['access_token'] : null;
-        $tokenType = isset($response['token_type']) ? $response['token_type'] : null;
-        $expiresIn = isset($response['expires_in']) ? $response['expires_in'] : null;
+        $data = isset($response['data']) ? $response['data'] : null;
+        if (!is_array($data) || !$this->isAssociativeObject($data)) {
+            $this->tokens->invalidate();
+            throw new MtUniCreditCpInvalidPayloadException('The Control Panel token response has no valid data object.');
+        }
+
+        // Tokens ONLY from response.data — reject legacy top-level token fields when data.access_token is absent.
+        if (isset($response['access_token']) || isset($response['token_type']) || isset($response['expires_in'])) {
+            if (!isset($data['access_token'])) {
+                $this->tokens->invalidate();
+                throw new MtUniCreditCpInvalidPayloadException('The Control Panel token response uses legacy top-level token fields.');
+            }
+        }
+
+        $accessToken = isset($data['access_token']) ? $data['access_token'] : null;
+        $tokenType = isset($data['token_type']) ? $data['token_type'] : null;
+        $expiresIn = isset($data['expires_in']) ? $data['expires_in'] : null;
 
         if (
             !is_string($accessToken) || $accessToken === ''
@@ -678,10 +552,145 @@ final class MtUniCreditControlPanelClient
             throw new MtUniCreditCpInvalidPayloadException('The Control Panel token response is invalid.');
         }
 
+        if ($requireShop) {
+            $shop = isset($data['shop']) ? $data['shop'] : null;
+            if (!is_array($shop)) {
+                $this->tokens->invalidate();
+                throw new MtUniCreditCpInvalidPayloadException('The Control Panel login response has no valid shop data.');
+            }
+
+            $responseUnicid = isset($shop['unicid']) ? $shop['unicid'] : null;
+            $configuredUnicid = $this->credentials->getUnicid($this->storeId);
+            if (
+                !is_string($responseUnicid)
+                || $responseUnicid === ''
+                || $configuredUnicid === ''
+                || !hash_equals($configuredUnicid, $responseUnicid)
+            ) {
+                $this->tokens->invalidate();
+                throw new MtUniCreditCpInvalidPayloadException('The Control Panel login shop UNICID does not match configuration.');
+            }
+        }
+
         if (!$this->tokens->save($accessToken, $tokenType, $this->now() + (int) $expiresIn)) {
             $this->tokens->invalidate();
             throw new MtUniCreditCpInvalidPayloadException('The Control Panel token could not be stored.');
         }
+    }
+
+    /**
+     * Strict response-owned identity for 2xx POST /orders success (create or equivalent replay).
+     *
+     * @param array<string, mixed> $response
+     * @param array<string, mixed> $order Submitted create payload (frozen order_id)
+     * @return void
+     */
+    private function assertCreateOrderIdentity(array $response, array $order)
+    {
+        $data = isset($response['data']) ? $response['data'] : null;
+        if (!is_array($data) || !$this->isAssociativeObject($data)) {
+            throw new MtUniCreditCpInvalidPayloadException('The Control Panel create-order response has no valid data object.');
+        }
+
+        $id = isset($data['id']) ? $data['id'] : null;
+        if (!is_int($id) || $id <= 0) {
+            throw new MtUniCreditCpInvalidPayloadException('The Control Panel create-order response has no order id.');
+        }
+
+        $sentOrderId = isset($order['order_id']) ? $order['order_id'] : null;
+        if (!is_string($sentOrderId) || $sentOrderId === '') {
+            throw new MtUniCreditCpInvalidPayloadException('The Control Panel create-order request order_id is invalid.');
+        }
+        $echoOrderId = isset($data['order_id']) ? $data['order_id'] : null;
+        if (!is_string($echoOrderId) || $echoOrderId !== $sentOrderId) {
+            throw new MtUniCreditCpInvalidPayloadException('The Control Panel create-order response order_id does not match the request.');
+        }
+
+        $configuredUnicid = $this->credentials->getUnicid($this->storeId);
+        $echoUnicid = isset($data['unicid']) ? $data['unicid'] : null;
+        if (
+            !is_string($echoUnicid)
+            || $echoUnicid === ''
+            || $configuredUnicid === ''
+            || !hash_equals($configuredUnicid, $echoUnicid)
+        ) {
+            throw new MtUniCreditCpInvalidPayloadException('The Control Panel create-order response unicid does not match configuration.');
+        }
+
+        $shopId = isset($data['shop_id']) ? $data['shop_id'] : null;
+        if (!is_int($shopId) || $shopId <= 0) {
+            throw new MtUniCreditCpInvalidPayloadException('The Control Panel create-order response has no valid shop_id.');
+        }
+
+        $createdAt = isset($data['created_at']) ? $data['created_at'] : null;
+        if (!is_string($createdAt) || trim($createdAt) === '') {
+            throw new MtUniCreditCpInvalidPayloadException('The Control Panel create-order response has no valid created_at.');
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $response
+     * @param array{order_id: string, status: string, status_id: string} $payload
+     * @return void
+     */
+    private function assertStatusPatchConfirmed(array $response, array $payload)
+    {
+        $data = isset($response['data']) ? $response['data'] : null;
+        if (!is_array($data) || !$this->isAssociativeObject($data)) {
+            throw new MtUniCreditCpInvalidPayloadException('The Control Panel status response has no valid data object.');
+        }
+
+        $id = isset($data['id']) ? $data['id'] : null;
+        if (!is_int($id) || $id <= 0) {
+            throw new MtUniCreditCpInvalidPayloadException('The Control Panel status response has no valid id.');
+        }
+
+        $shopId = isset($data['shop_id']) ? $data['shop_id'] : null;
+        if (!is_int($shopId) || $shopId <= 0) {
+            throw new MtUniCreditCpInvalidPayloadException('The Control Panel status response has no valid shop_id.');
+        }
+
+        $echoOrderId = isset($data['order_id']) ? $data['order_id'] : null;
+        $echoStatusId = isset($data['status_id']) ? $data['status_id'] : null;
+        $echoStatus = isset($data['status']) ? $data['status'] : null;
+        if (
+            !is_string($echoOrderId) || $echoOrderId !== $payload['order_id']
+            || !is_string($echoStatusId) || $echoStatusId !== $payload['status_id']
+            || !is_string($echoStatus) || $echoStatus !== $payload['status']
+        ) {
+            throw new MtUniCreditCpInvalidPayloadException('The Control Panel status response does not echo the request identity.');
+        }
+
+        $updatedAt = isset($data['updated_at']) ? $data['updated_at'] : null;
+        if (!is_string($updatedAt) || trim($updatedAt) === '') {
+            throw new MtUniCreditCpInvalidPayloadException('The Control Panel status response has no valid updated_at.');
+        }
+    }
+
+    /**
+     * PHP 7.3 stand-in for !array_is_list(): JSON object → associative; empty `{}` OK.
+     *
+     * @param array<mixed> $value
+     * @return bool
+     */
+    private function isAssociativeObject(array $value)
+    {
+        return $this->isJsonObjectArray($value);
+    }
+
+    /**
+     * True for decoded JSON objects (incl. empty); false for JSON lists.
+     *
+     * @param array<mixed> $value
+     * @return bool
+     */
+    private function isJsonObjectArray(array $value)
+    {
+        if ($value === array()) {
+            return true;
+        }
+
+        return array_keys($value) !== range(0, count($value) - 1);
     }
 
     /**

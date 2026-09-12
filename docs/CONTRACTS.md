@@ -249,16 +249,16 @@ Fixtures: `tests/fixtures/cp_auth_contract.json`, `tests/fixtures/cp_api_endpoin
 
 Base prefix: `/api/v1`.
 
-| Method | Path                             | Auth   | Notes                                                                   |
-| ------ | -------------------------------- | ------ | ----------------------------------------------------------------------- |
-| POST   | `/api/v1/auth/login`             | no     | body `unicid`, `name`, `secret`                                         |
-| POST   | `/api/v1/auth/refresh`           | Bearer | rotates token; old forgotten                                            |
-| POST   | `/api/v1/auth/logout`            | Bearer | repeat logout → 401                                                     |
-| GET    | `/api/v1/shop`                   | Bearer | snapshot + `coeff_list`                                                 |
-| GET    | `/api/v1/ssl/certificate`        | Bearer | Process 1 cert metadata                                                 |
-| GET    | `/api/v1/ssl/certificate/bundle` | Bearer | cert + key PEM; never passphrase                                        |
-| POST   | `/api/v1/orders`                 | Bearer | see CP-ORDER-\*                                                         |
-| PATCH  | `/api/v1/orders/status`          | Bearer | `order_id` max 13, `status` required, `status_id` optional; **no** enum |
+| Method | Path                             | Auth   | Notes                                                                      |
+| ------ | -------------------------------- | ------ | -------------------------------------------------------------------------- |
+| POST   | `/api/v1/auth/login`             | no     | body `unicid`, `name`, `secret`                                            |
+| POST   | `/api/v1/auth/refresh`           | Bearer | rotates token; old forgotten                                               |
+| POST   | `/api/v1/auth/logout`            | Bearer | repeat logout → 401                                                        |
+| GET    | `/api/v1/shop`                   | Bearer | snapshot + `coeff_list`                                                    |
+| GET    | `/api/v1/ssl/certificate`        | Bearer | Process 1 cert metadata                                                    |
+| GET    | `/api/v1/ssl/certificate/bundle` | Bearer | cert + key PEM; never passphrase                                           |
+| POST   | `/api/v1/orders`                 | Bearer | see CP-ORDER-\*                                                            |
+| PATCH  | `/api/v1/orders/status`          | Bearer | `order_id` max 13; **`status` and `status_id` both required**; **no** enum |
 
 Login is **not** idempotent. Token length 64, type Bearer, TTL **86400** seconds.
 
@@ -268,14 +268,18 @@ Login is **not** idempotent. Token length 64, type Bearer, TTL **86400** seconds
 
 - Store bearer with expiry, store-scoped, encrypted at rest (`enc:v1:`).
 - Refresh when within **60** seconds of expiry (`CpHttpConstants::REFRESH_MARGIN_SECONDS`); on refresh auth failure, login.
-- On **401**: invalidate → login → **exactly one** replay of the original request. Never loop. Second 401 is permanent auth failure + invalidation.
+- Tokens are read **only** from `response.data` (`access_token`, `token_type`, `expires_in`). Legacy top-level token fields without `data.access_token` are rejected.
+- Canonical envelopes (success and failure) require four fields: `success`, `error`, `message`, `data`. Empty `data` is always JSON object `{}`, never `[]`.
+- On **401** for **safe** routes only (`GET /shop`, `GET /ssl/*`, `PATCH /orders/status`): invalidate → login → **exactly one** replay. Never loop. Second 401 is permanent auth failure + invalidation.
+- **`POST /orders` must never auto-replay after a remote response** (including 401). Create ambiguity is owned by financing lifecycle (`cp_outcome_unknown`), not by the HTTP client.
 
 ### CP-AUTH-003 — Transport / JSON / errors
 
 - HTTPS, TLS peer verification ON.
 - Connect timeout **5s**, total timeout **15s**, max response **1 MiB**.
 - Request `Accept` / `Content-Type`: `application/json`.
-- Success JSON must have `success === true`.
+- Success JSON must be a canonical success envelope (`success === true`, `error === null`, string `message`, object `data`).
+- Failure JSON for non-2xx must be a canonical failure envelope (`success === false`, non-empty `error` snake_case code, string `message`, object `data`).
 - Classify: malformed JSON, 4xx permanent, 5xx/network transient, timeout/transport ambiguous.
 - Permanent 4xx/auth/invalid payload → purge scoped cache + tokens.
 - Transient 5xx/network → preserve cache + tokens.
@@ -370,25 +374,25 @@ Throttle (CP-side): 60 / shop / minute.
 
 ### CP-ORDER-002 — Field names, meaning, limits
 
-| Field           | Rule                                                                                                                    |
-| --------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `order_id`      | required string, **max 13**; local OC order id as string                                                                |
-| `name`          | required, max **65**                                                                                                    |
-| `phone`         | required, max **45**, `^[\d\s\-\+\(\)]+$`; Checkout may send `''` when OC has no telephone — do not invent placeholders |
-| `email`         | required email, max **128**                                                                                             |
-| `address`       | required, max **256**                                                                                                   |
-| `address2`      | optional, max **256**; empty fallback `'-'` in completed builder                                                        |
-| `price`         | required numeric ≥ 0, `round(..., 2)`                                                                                   |
-| `vnoska`        | monthly installment, required numeric ≥ 0, 2 dp                                                                         |
-| `gpr`           | required numeric ≥ 0, 2 dp                                                                                              |
-| `vnoski`        | months, optional int 1–255, default 12                                                                                  |
-| `parva`         | first installment, optional numeric ≥ 0, default 0, 2 dp                                                                |
-| `products_id`   | optional; implode ids with `_`                                                                                          |
-| `products_name` | optional; underscore in names → hyphen, implode `_`; builder max 255                                                    |
-| `products_q`    | optional; implode qty `_`, qty ≥ 1                                                                                      |
-| `type_client`   | 0–255, default 0; completed modules: `0` if mobile else `1`                                                             |
-| `currency`      | max 3, **`in:BGN,EUR`**, API default BGN                                                                                |
-| `version`       | max 11, `x.x.x`; frozen **`2.0.2`** (D2)                                                                                |
+| Field           | Rule                                                                                                                                   |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `order_id`      | required string, **max 13**; local OC order id as string; **never truncated** — reject if longer                                       |
+| `name`          | required, max **65**; free-text preserved (UTF-8, apostrophes)                                                                         |
+| `phone`         | required, max **45**, `^[\d\s\-\+\(\)]+$`; Checkout may send `''` when OC has no telephone — do not invent placeholders                |
+| `email`         | required email, max **128**                                                                                                            |
+| `address`       | required, max **256**; free-text preserved                                                                                             |
+| `address2`      | optional, max **256**; empty fallback `'-'` in completed builder                                                                       |
+| `price`         | required numeric ≥ 0, `round(..., 2)`                                                                                                  |
+| `vnoska`        | monthly installment, required numeric ≥ 0, 2 dp                                                                                        |
+| `gpr`           | required numeric ≥ 0, 2 dp                                                                                                             |
+| `vnoski`        | months, optional int 1–255, default 12                                                                                                 |
+| `parva`         | first installment, optional numeric ≥ 0, default 0, 2 dp                                                                               |
+| `products_id`   | optional; implode ids with `_`                                                                                                         |
+| `products_name` | optional; **preserve** UTF-8 / apostrophes / underscores in names (no underscore→hyphen, no HTML-encode); implode `_`; builder max 255 |
+| `products_q`    | optional; implode qty `_`, qty ≥ 1                                                                                                     |
+| `type_client`   | 0–255, default 0; completed modules: `0` if mobile else `1`                                                                            |
+| `currency`      | max 3, **`in:BGN,EUR`**, API default BGN                                                                                               |
+| `version`       | max 11, `x.x.x`; frozen **`2.0.2`** (D2)                                                                                               |
 
 **Create-time:** omit `status` / `status_id`. CP defaults to `Създаден в КП Банка` / `cp_sent`.
 
@@ -533,12 +537,14 @@ Only:
 not_started → submitting → created | failed | outcome_unknown
 ```
 
-- **Success:** persist trusted redirect; PATCH/local `bank_sent_process1`; return `redirect_url` with `bank_submitted=true`.
-- **Definitive remote rejection:** `bank_send_failed_smartucf` locally and CP.
+- **Success:** admit durable CP sync target → write local `bank_sent_process1` → PATCH from persisted target; return `redirect_url` with `bank_submitted=true`.
+- **Definitive remote rejection:** `bank_send_failed_smartucf` locally and CP (same target-first durable sync).
 - **Ambiguous post-send** (timeout, stale `submitting`, duplicate-order evidence, invalid response): `outcome_unknown`; **no** terminal bank failure; **no** automatic second SmartUCF call; tell the customer not to resubmit.
 - Created attempt **replays** the stored trusted redirect.
 
-Failed CP status PATCH after a valid SmartUCF session does not rewrite bank failure; later retry reconciles status without a second SmartUCF call.
+Failed CP status PATCH after a valid SmartUCF session does not rewrite bank failure; durable `cp_status_sync_*` remains `pending` for later retry **without** a second SmartUCF call.
+
+`bank_sent_process1` and `bank_sent_process2` are **mutually incompatible terminals**, not sequential stages. P2 does **not** follow P1.
 
 ### P1-004 — Process 2 exclusion
 
@@ -566,7 +572,7 @@ Product/Cart primary phone remains required. Checkout primary phone remains opti
 - Store EGN/phone2 only as encrypted `process2_sensitive_enc`.
 - **Never** send EGN/phone2 to CP.
 - Authenticated encryption (`enc:v1:` AES-256-GCM preferred). Fail closed if the key cannot be resolved. No plaintext fallback.
-- After encrypt: PATCH/local `bank_sent_process2` using shop order id = local OC order id.
+- After encrypt: **admit durable CP sync target** → write local `bank_sent_process2` → PATCH from persisted target (shop order id = local OC order id). Local bank fact is not written before target admission.
 - Never write `bank_sent_process1` or `bank_send_failed_smartucf` for Process 2.
 - Once `bank_sent_process2` is recorded, retry must not repeat the bank handoff.
 
@@ -633,15 +639,32 @@ index.php?route=extension/mt_uni_credit/api/smartucf_debug_log
 
 Controller: `upload/catalog/controller/extension/mt_uni_credit/api.php` (`shop_cache`, `order_bank_status`, `smartucf_debug_log` actions).
 
-Responses: JSON `{success, message?, data?, error?}`. Errors: 400 / 401 / 403 / 404 / 405 / 422 / 500 (redacted). Never theme HTML on these endpoints.
+Responses: canonical JSON envelope `{success, error, message, data}` (`error` is `null` on success; empty `data` encodes as `{}`). Errors: 400 / 401 / 403 / 404 / 405 / 409 / 413 / 422 / 500 (redacted). Never theme HTML on these endpoints.
+
+**Inbound body bound:** max **1 MiB** (`MtUniCreditBoundedRawBodyReader`); oversized → **413** `payload_too_large` before HMAC/JSON.
+
+**Operation binding:** signed JSON must include exact `operation` string for the endpoint (`shop-cache`, `order-bank-status`, `smartucf-debug-log`). Missing/wrong/wrong-case/non-string → **400** `unsupported_operation`.
 
 **Endpoint semantics:**
 
-| Route                | Purpose                                                                                      |
-| -------------------- | -------------------------------------------------------------------------------------------- |
-| `shop_cache`         | CP push → validate → sanitize credentials → replace `(store_id, unicid)` cache               |
-| `order_bank_status`  | CP bank status upsert; native OC order status unchanged (`oc_order_state_changed: false`)    |
-| `smartucf_debug_log` | CP **read** of latest redacted diagnostic row for owned order (writers deferred to Phase 11) |
+| Route                | Purpose                                                                                                                                           |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `shop_cache`         | CP push → validate → sanitize credentials → replace `(store_id, unicid)` cache                                                                    |
+| `order_bank_status`  | CP bank status upsert via `FinancingOrderResolver` (UNICID financing ownership; **no** `payment_code` fallback); native OC order status unchanged |
+| `smartucf_debug_log` | CP **read** of latest redacted SmartUCF-session diagnostic for owned P1 attempt; P2 / missing lifecycle / wrong UNICID / ambiguous → opaque 404   |
+
+### API-002 — Durable CP status sync (`cp_status_sync_*`)
+
+On `financing_attempt`:
+
+| Column                                               | Role                                                          |
+| ---------------------------------------------------- | ------------------------------------------------------------- |
+| `cp_status_sync_state`                               | `not_needed` \| `pending` \| `confirmed` \| `terminal_failed` |
+| `cp_status_sync_status_id` / `cp_status_sync_status` | Durable PATCH target (authority for retries)                  |
+| `cp_status_sync_error_class`                         | Last classified failure                                       |
+| `cp_status_sync_updated_at`                          | UTC timestamp                                                 |
+
+CAS transitions: admit pending target → confirm on successful PATCH echo → terminal*failed only for allowlisted definitive CP machine codes (`invalid_payload`, `semantic_conflict`, `unsupported_status`, `order_not_found`). Local `bank_sent*_`means business handoff proven;`cp*status_sync*_` tracks CP confirmation separately.
 
 ---
 
@@ -658,13 +681,13 @@ Every attempt, correlation, bank status, cache, nonce, diagnostic, credential an
 
 ### STORE-002 — Ownership surfaces
 
-| Surface              | Rule                                              |
-| -------------------- | ------------------------------------------------- |
-| Order correlation    | unique `(store_id, order_id)` and attempt         |
-| Shop cache           | `(store_id, unicid)`                              |
-| Callbacks            | `config_store_id` + owned UniCredit order/attempt |
-| Diagnostics          | store + order; redacted                           |
-| Credentials / tokens | store-scoped encrypted settings                   |
+| Surface              | Rule                                                                                                                  |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Order correlation    | unique `(store_id, order_id)` and attempt                                                                             |
+| Shop cache           | `(store_id, unicid)`                                                                                                  |
+| Callbacks            | `config_store_id` + `FinancingOrderResolver` (store + order + UNICID financing attempt); **not** payment-method alone |
+| Diagnostics          | store + order; redacted                                                                                               |
+| Credentials / tokens | store-scoped encrypted settings                                                                                       |
 
 Logged-customer Thank You additionally matches `customer_id`. Guests use unpredictable session/attempt binding.
 
@@ -741,7 +764,11 @@ Hardened packaging requirements:
 - each ZIP entry’s decompressed bytes are SHA256-compared to the source file
 - debug-failure and private-key content sentinels must pass
 
-### Frozen v2.0.2 release identity
+### Release identity (v2.0.2)
+
+**Current canonical adaptation:** source commit identity will be frozen only after this adaptation is committed. Release artifact SHA256 will be recorded only when a package for that committed source is built via `scripts/package.ps1`. Do not treat rebuilds from uncommitted/working-tree state as a frozen release.
+
+**Historical (pre-canonical-adaptation) 2.0.2 package identity** — audit reference only; **not** authoritative for the current canonical adaptation:
 
 ```text
 Source HEAD:
@@ -753,8 +780,6 @@ CC_OpenCartv.3.x_UNI_v.2.0.2.ocmod.zip
 SHA256:
 F80655ED4E81BABDC56ED1FC5481C3DBDB487CDBBE280CDC2ACD68CE6CD53BA8
 ```
-
-This pairing is the frozen **2.0.2** release identity. Do not treat an ad-hoc rebuild as the same frozen artifact unless HEAD and SHA256 both match.
 
 ---
 

@@ -190,12 +190,7 @@ mtucAud027_assert(
     'F02: presentation present after write'
 );
 
-$bankRepo->updateByOrderIdentifier(
-    $storeId,
-    (string) $orderId,
-    MtUniCreditBankStatus::SENT_PROCESS2,
-    MtUniCreditBankStatus::LABEL_SENT_PROCESS2
-);
+$bankRepo->upsertAuthorizedLocal($storeId, (int) $orderId, MtUniCreditBankStatus::SENT_PROCESS2, MtUniCreditBankStatus::LABEL_SENT_PROCESS2);
 
 // ---------------------------------------------------------------------------
 // Later lifecycle mutations must not move retention clocks

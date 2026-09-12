@@ -330,28 +330,38 @@ $afterInvalid = (new MtUniCreditShopCacheRepository(new MtUniCreditDbAdapter($in
     ->findEncodedShopData($stack['storeId'], $stack['unicid']);
 mtuc6_assert($afterInvalid === $beforeEncoded, 'invalid push preserves existing cache');
 
-// Bank status
+// Bank status (local authorized writes + inbound financing ownership)
 $stack['memoryDb']->seedOrder(501, $stack['storeId'], MtUniCreditConstants::EXTENSION_CODE);
 $bankRepo = new MtUniCreditOrderBankStatusRepository($stack['db']);
-$result = $bankRepo->updateByOrderIdentifier($stack['storeId'], '501', 'bank_sent_process1', 'Sent');
+$result = $bankRepo->upsertAuthorizedLocal($stack['storeId'], 501, 'bank_sent_process1', 'Sent');
 mtuc6_assert($result !== null && $result['status_id'] === 'bank_sent_process1', 'valid bank status update');
-$duplicate = $bankRepo->updateByOrderIdentifier($stack['storeId'], '501', 'bank_sent_process1', 'Sent');
+$duplicate = $bankRepo->upsertAuthorizedLocal($stack['storeId'], 501, 'bank_sent_process1', 'Sent');
 mtuc6_assert($duplicate !== null && $duplicate['oc_order_state_changed'] === false, 'duplicate bank status idempotent');
-$newer = $bankRepo->updateByOrderIdentifier($stack['storeId'], '501', 'bank_sent_process2', 'Process 2');
+$p1p2Threw = false;
+try {
+    $bankRepo->upsertAuthorizedLocal($stack['storeId'], 501, 'bank_sent_process2', 'Process 2');
+} catch (MtUniCreditOrderBankStatusSemanticConflictException $exception) {
+    $p1p2Threw = true;
+}
+mtuc6_assert($p1p2Threw, 'AUD-015/GAP-10: P1→P2 cross-process raises semantic_conflict');
+$afterConflict = $bankRepo->findByOrderId($stack['storeId'], 501);
 mtuc6_assert(
-    $newer !== null
-        && $newer['status_id'] === 'bank_sent_process1'
-        && empty($newer['applied']),
-    'AUD-015: P1→P2 inbound cross-process blocked'
+    $afterConflict !== null && (string) $afterConflict['status_id'] === 'bank_sent_process1',
+    'AUD-015/GAP-10: P1 terminal fact preserved after conflict'
 );
-$stale = $bankRepo->updateByOrderIdentifier($stack['storeId'], '501', 'cp_sent', 'Създаден в КП Банка');
+$stale = $bankRepo->upsertAuthorizedLocal($stack['storeId'], 501, 'cp_sent', 'Създаден в КП Банка');
 mtuc6_assert(
     $stale !== null && $stale['status_id'] === 'bank_sent_process1',
     'AUD-015: P1→stale cp_sent blocked'
 );
-$stack['memoryDb']->seedOrder(502, Phase6TestHarness::STORE_B, MtUniCreditConstants::EXTENSION_CODE);
-mtuc6_assert($bankRepo->updateByOrderIdentifier($stack['storeId'], '502', 'cp_sent', 'X') === null, 'cross-store order rejected');
-mtuc6_assert($bankRepo->updateByOrderIdentifier($stack['storeId'], '999', 'cp_sent', 'X') === null, 'order not found rejected');
+mtuc6_assert(
+    $bankRepo->updateByOrderIdentifier($stack['storeId'], $stack['unicid'], '502', 'cp_sent', 'X') === null,
+    'financing ownership: missing attempt rejected'
+);
+mtuc6_assert(
+    $bankRepo->updateByOrderIdentifier($stack['storeId'], $stack['unicid'], '999', 'cp_sent', 'X') === null,
+    'order not found rejected'
+);
 mtuc6_assert(!MtUniCreditInboundBankStatusVocabulary::isAccepted('totally_invalid'), 'unsupported bank status vocabulary');
 
 // Debug log retrieval

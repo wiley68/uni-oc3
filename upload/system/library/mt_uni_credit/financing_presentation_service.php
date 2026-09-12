@@ -33,11 +33,11 @@ final class MtUniCreditFinancingPresentationService
      */
     public function rowsForOrder($storeId, $orderId, $audience)
     {
-        $snapshot = $this->repository->findByOrderId((int) $storeId, (int) $orderId);
+        $snapshot = $this->repository->findByOrderId((int) $storeId, $orderId);
         if ($snapshot === null) {
             return array();
         }
-        $status = $this->repository->findBankStatusLabel((int) $storeId, (int) $orderId);
+        $status = $this->repository->findBankStatusLabel((int) $storeId, $orderId);
         $sensitive = null;
         // OC4: decrypt only when audience may include EGN/phone2 (ADMIN_EMAIL / ADMIN_PANEL).
         // Customer paths never decrypt process2_sensitive_enc.
@@ -45,7 +45,7 @@ final class MtUniCreditFinancingPresentationService
             $audience === MtUniCreditFinancingPresentationAudience::ADMIN_EMAIL
             || $audience === MtUniCreditFinancingPresentationAudience::ADMIN_PANEL
         ) {
-            $sensitive = $this->decryptSensitive((int) $storeId, (int) $orderId);
+            $sensitive = $this->decryptSensitive((int) $storeId, $orderId);
         }
 
         return $this->presenter->rows($snapshot, $status, (string) $audience, $sensitive);
@@ -61,8 +61,8 @@ final class MtUniCreditFinancingPresentationService
     public function customerThankYouRows($storeId, $orderId)
     {
         // Terminal bank failures own the customer message — branch on status_id (AUD-015 F04).
-        $statusId = $this->repository->findBankStatusId((int) $storeId, (int) $orderId);
-        $statusLabel = $this->repository->findBankStatusLabel((int) $storeId, (int) $orderId);
+        $statusId = $this->repository->findBankStatusId((int) $storeId, $orderId);
+        $statusLabel = $this->repository->findBankStatusLabel((int) $storeId, $orderId);
         if ($statusId === MtUniCreditBankStatus::SEND_FAILED_SMARTUCF) {
             return array(
                 array(
@@ -179,7 +179,6 @@ final class MtUniCreditFinancingPresentationService
     public function htmlForOrder($storeId, $orderId, $audience, $title = null)
     {
         $storeId = (int) $storeId;
-        $orderId = (int) $orderId;
         $rows = $this->rowsForOrder($storeId, $orderId, (string) $audience);
         if ($rows === array()) {
             $status = $this->repository->findBankStatusLabel($storeId, $orderId);
@@ -211,19 +210,19 @@ final class MtUniCreditFinancingPresentationService
      */
     public function isUniCreditOrder($storeId, $orderId)
     {
-        return $this->repository->findByOrderId((int) $storeId, (int) $orderId) !== null
-            || $this->repository->findAttemptRowByOrderId((int) $storeId, (int) $orderId) !== null
-            || $this->repository->findBankStatusLabel((int) $storeId, (int) $orderId) !== '';
+        return $this->repository->findByOrderId((int) $storeId, $orderId) !== null
+            || $this->repository->findAttemptRowByOrderId((int) $storeId, $orderId) !== null
+            || $this->repository->findBankStatusLabel((int) $storeId, $orderId) !== '';
     }
 
     /**
      * @param int $storeId
-     * @param int $orderId
+     * @param int|string $orderId
      * @return MtUniCreditProcessTwoSensitiveData|null
      */
     private function decryptSensitive($storeId, $orderId)
     {
-        $row = $this->repository->findAttemptRowByOrderId((int) $storeId, (int) $orderId);
+        $row = $this->repository->findAttemptRowByOrderId((int) $storeId, $orderId);
         if ($row === null) {
             return null;
         }
@@ -234,7 +233,7 @@ final class MtUniCreditFinancingPresentationService
         try {
             return (new MtUniCreditProcessTwoSensitiveCipher())->decrypt($enc);
         } catch (Throwable $ignored) {
-            error_log('mt_uni_credit: leasing presentation sensitive decrypt failed order_id=' . (int) $orderId);
+            error_log('mt_uni_credit: leasing presentation sensitive decrypt failed order_id=' . (string) $orderId);
 
             return null;
         }

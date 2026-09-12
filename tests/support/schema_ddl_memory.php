@@ -26,7 +26,8 @@ class MtucSchemaDdlMemory
      * @param mixed $value
      * @return string
      */
-    public function escape($value) {
+    public function escape($value)
+    {
         return addslashes((string) $value);
     }
 
@@ -34,7 +35,8 @@ class MtucSchemaDdlMemory
      * @param string $sql
      * @return object
      */
-    public function query( $sql) {
+    public function query($sql)
+    {
         $sql = trim($sql);
 
         if (preg_match('/^CREATE\s+TABLE\s+(IF\s+NOT\s+EXISTS\s+)?`([^`]+)`\s*\(/is', $sql, $m)) {
@@ -71,6 +73,10 @@ class MtucSchemaDdlMemory
             );
         }
 
+        if (preg_match('/^ALTER\s+TABLE\s+`([^`]+)`\s+MODIFY\s+(?:COLUMN\s+)?`([^`]+)`\s+(.+)$/is', $sql, $m)) {
+            return $this->handleModifyColumn((string) $m[1], (string) $m[2], trim((string) $m[3]));
+        }
+
         return (object) array('num_rows' => 0, 'row' => array(), 'rows' => array());
     }
 
@@ -79,7 +85,8 @@ class MtucSchemaDdlMemory
      * @param string $name
      * @return void
      */
-    public function dropIndex( $table, $name) {
+    public function dropIndex($table, $name)
+    {
         if (isset($this->tables[$table]['indexes'][$name])) {
             unset($this->tables[$table]['indexes'][$name]);
         }
@@ -90,7 +97,8 @@ class MtucSchemaDdlMemory
      * @param string $name
      * @return void
      */
-    public function dropColumn( $table, $name) {
+    public function dropColumn($table, $name)
+    {
         if (isset($this->tables[$table]['columns'][$name])) {
             unset($this->tables[$table]['columns'][$name]);
         }
@@ -100,7 +108,8 @@ class MtucSchemaDdlMemory
      * @param string $table
      * @return void
      */
-    public function dropTable( $table) {
+    public function dropTable($table)
+    {
         unset($this->tables[$table]);
     }
 
@@ -109,7 +118,8 @@ class MtucSchemaDdlMemory
      * @param array<string, mixed> $row
      * @return void
      */
-    public function seedRow( $table, $row) {
+    public function seedRow($table, $row)
+    {
         if (!isset($this->rows[$table])) {
             $this->rows[$table] = array();
         }
@@ -122,7 +132,8 @@ class MtucSchemaDdlMemory
      * @param bool $ifNotExists
      * @return object
      */
-    private function handleCreate( $sql, $table, $ifNotExists) {
+    private function handleCreate($sql, $table, $ifNotExists)
+    {
         if ($this->failNextCreate) {
             throw new Exception('create failed');
         }
@@ -139,9 +150,9 @@ class MtucSchemaDdlMemory
         $body = (string) $bodyMatch[1];
 
         $columns = array();
-        if (preg_match_all('/`([a-z0-9_]+)`\s+[A-Z]/i', $body, $colMatches)) {
-            foreach ($colMatches[1] as $colName) {
-                $columns[(string) $colName] = 'parsed';
+        if (preg_match_all('/`([a-z0-9_]+)`\s+([A-Za-z]+(?:\([^)]+\))?(?:\s+UNSIGNED)?)/i', $body, $colMatches, PREG_SET_ORDER)) {
+            foreach ($colMatches as $colMatch) {
+                $columns[(string) $colMatch[1]] = strtolower(trim((string) $colMatch[2]));
             }
         }
 
@@ -188,13 +199,17 @@ class MtucSchemaDdlMemory
      * @param string $table
      * @return object
      */
-    private function handleShowColumns( $table) {
+    private function handleShowColumns($table)
+    {
         if (!isset($this->tables[$table])) {
             throw new Exception('Table \'' . $table . '\' doesn\'t exist');
         }
         $rows = array();
-        foreach (array_keys($this->tables[$table]['columns']) as $field) {
-            $rows[] = array('Field' => (string) $field);
+        foreach ($this->tables[$table]['columns'] as $field => $type) {
+            $rows[] = array(
+                'Field' => (string) $field,
+                'Type' => (string) $type,
+            );
         }
 
         return (object) array(
@@ -208,7 +223,8 @@ class MtucSchemaDdlMemory
      * @param string $table
      * @return object
      */
-    private function handleShowIndex( $table) {
+    private function handleShowIndex($table)
+    {
         if (!isset($this->tables[$table])) {
             throw new Exception('Table \'' . $table . '\' doesn\'t exist');
         }
@@ -239,7 +255,32 @@ class MtucSchemaDdlMemory
      * @param string $definition
      * @return object
      */
-    private function handleAddColumn( $table, $column, $definition) {
+    private function handleModifyColumn($table, $column, $definition)
+    {
+        $this->maybeFailAlter();
+        if (!isset($this->tables[$table])) {
+            throw new Exception('Table \'' . $table . '\' doesn\'t exist');
+        }
+        if (!isset($this->tables[$table]['columns'][$column])) {
+            throw new Exception('Unknown column \'' . $column . '\' in \'' . $table . '\'');
+        }
+        $type = 'parsed';
+        if (preg_match('/^(varchar\(\d+\)|char\(\d+\)|(?:tiny|small|medium|big)?int(?:eger)?(?:\(\d+\))?(?:\s+unsigned)?)/i', $definition, $tm)) {
+            $type = strtolower($tm[1]);
+        }
+        $this->tables[$table]['columns'][$column] = $type;
+
+        return (object) array('num_rows' => 0, 'row' => array(), 'rows' => array());
+    }
+
+    /**
+     * @param string $table
+     * @param string $column
+     * @param string $definition
+     * @return object
+     */
+    private function handleAddColumn($table, $column, $definition)
+    {
         $this->maybeFailAlter();
         if (!isset($this->tables[$table])) {
             throw new Exception('Table \'' . $table . '\' doesn\'t exist');
@@ -258,7 +299,8 @@ class MtucSchemaDdlMemory
      * @param bool $unique
      * @return object
      */
-    private function handleAddIndex( $table, $name, $columns, $unique) {
+    private function handleAddIndex($table, $name, $columns, $unique)
+    {
         $this->maybeFailAlter();
         if (!isset($this->tables[$table])) {
             throw new Exception('Table \'' . $table . '\' doesn\'t exist');
@@ -277,7 +319,8 @@ class MtucSchemaDdlMemory
     /**
      * @return void
      */
-    private function maybeFailAlter() {
+    private function maybeFailAlter()
+    {
         if ($this->failNextAlter) {
             throw new Exception('alter failed');
         }
@@ -292,7 +335,8 @@ class MtucSchemaDdlMemory
      * @param array<int, string> $columns
      * @return void
      */
-    private function assertNoDuplicateRows( $table, $columns) {
+    private function assertNoDuplicateRows($table, $columns)
+    {
         if (empty($this->rows[$table])) {
             return;
         }
@@ -314,7 +358,8 @@ class MtucSchemaDdlMemory
      * @param string $list
      * @return array<int, string>
      */
-    private function parseIndexColumns( $list) {
+    private function parseIndexColumns($list)
+    {
         $out = array();
         if (preg_match_all('/`([a-z0-9_]+)`/i', $list, $m)) {
             foreach ($m[1] as $col) {
@@ -325,4 +370,3 @@ class MtucSchemaDdlMemory
         return $out;
     }
 }
-

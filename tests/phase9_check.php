@@ -73,6 +73,8 @@ function mtuc9_queue_ssl_metadata(Phase4FakeCpHttpTransport $transport, string $
 {
     $transport->enqueueJson(200, array(
         'success' => true,
+        'error' => null,
+        'message' => 'ok',
         'data' => array(
             'available' => true,
             'ssl_revision' => 'revision-1',
@@ -86,6 +88,8 @@ function mtuc9_queue_ssl_bundle(Phase4FakeCpHttpTransport $transport, string $ce
 {
     $transport->enqueueJson(200, array(
         'success' => true,
+        'error' => null,
+        'message' => 'ok',
         'data' => array(
             'available' => true,
             'ssl_revision' => 'revision-1',
@@ -706,7 +710,12 @@ mtuc9_assert(Phase9TestHarness::smartUcfCallCount($stackCertH['smartUcfProbe']) 
 
 $transportCertJ = new Phase4FakeCpHttpTransport();
 Phase9TestHarness::enqueueCpCreateSuccess($transportCertJ);
-$transportCertJ->enqueueJson(503, array('success' => false, 'error' => 'temporarily_unavailable'));
+$transportCertJ->enqueueJson(503, array(
+    'success' => false,
+    'error' => 'temporarily_unavailable',
+    'message' => 'temporarily unavailable',
+    'data' => new stdClass(),
+));
 $stackCertJ = Phase9TestHarness::stack($transportCertJ, null, null, Phase5TestHarness::STORE_A, array('uni_sertificat' => 1));
 @unlink($pathsA->certificatePath());
 @unlink($pathsA->privateKeyPath());
@@ -718,7 +727,12 @@ mtuc9_assert(Phase9TestHarness::smartUcfCallCount($stackCertJ['smartUcfProbe']) 
 // I. Metadata transient + valid local pair => fail-open use local pair.
 $transportCertI = new Phase4FakeCpHttpTransport();
 Phase9TestHarness::enqueueCpCreateSuccess($transportCertI);
-$transportCertI->enqueueJson(503, array('success' => false, 'error' => 'temporarily_unavailable'));
+$transportCertI->enqueueJson(503, array(
+    'success' => false,
+    'error' => 'temporarily_unavailable',
+    'message' => 'temporarily unavailable',
+    'data' => new stdClass(),
+));
 $stackCertI = Phase9TestHarness::stack($transportCertI, null, null, Phase5TestHarness::STORE_A, array('uni_sertificat' => 1));
 @file_put_contents($pathsA->certificatePath(), $fixtures['cert']);
 @file_put_contents($pathsA->privateKeyPath(), $fixtures['key']);
@@ -813,9 +827,14 @@ mtuc9_assert(
     'wiring source: ControlPanelClient PATCH /orders/status'
 );
 mtuc9_assert(
-    strpos($coordSource, 'updateOrderStatus(') !== false
+    (
+        strpos($coordSource, 'admitTarget(') !== false
+        || strpos($coordSource, 'retryPending(') !== false
+        || strpos($coordSource, 'ControlPanelStatusSync') !== false
+        || strpos($coordSource, 'statusSync') !== false
+    )
         && strpos($coordSource, 'ERROR_CP_BANK_STATUS_SYNC_PENDING') !== false,
-    'wiring source: coordinator propagates CP bank status after SmartUCF'
+    'wiring source: coordinator syncs CP bank status after SmartUCF'
 );
 
 // ---------------------------------------------------------------------------

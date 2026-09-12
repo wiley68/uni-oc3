@@ -35,7 +35,7 @@ final class MtUniCreditFinancingAttemptRepository
      * Find or create the single attempt for (store_id, order_id) using CHECKOUT entry point.
      *
      * @param int $storeId
-     * @param int $orderId
+     * @param int|string $orderId Native OC3 int or canonical string
      * @param string $unicid
      * @param string $operationKeyHash
      * @param string $selectionHash
@@ -65,7 +65,7 @@ final class MtUniCreditFinancingAttemptRepository
      * Find or create the single attempt for (store_id, order_id).
      *
      * @param int $storeId
-     * @param int $orderId
+     * @param int|string $orderId Native OC3 int or canonical string
      * @param string $unicid
      * @param string $operationKeyHash
      * @param string $selectionHash
@@ -83,14 +83,14 @@ final class MtUniCreditFinancingAttemptRepository
         $entryPoint
     ) {
         MtUniCreditStoreScope::requireStoreId($storeId);
-        $orderId = (int) $orderId;
+        $canonicalOrderId = MtUniCreditShopOrderId::tryNormalize($orderId);
         $unicid = trim($unicid);
         $entryPoint = (string) $entryPoint;
-        if ($orderId <= 0 || $unicid === '' || !MtUniCreditOperationEntryPoint::isValid($entryPoint)) {
+        if ($canonicalOrderId === null || $unicid === '' || !MtUniCreditOperationEntryPoint::isValid($entryPoint)) {
             throw new MtUniCreditPersistenceValidationException('Financing attempt requires store, order, UNICID and entry point.');
         }
 
-        $existing = $this->findByStoreOrder($storeId, $orderId);
+        $existing = $this->findByStoreOrder($storeId, $canonicalOrderId);
         if ($existing !== null) {
             if (!hash_equals((string) $existing['operation_key_hash'], (string) $operationKeyHash)) {
                 throw new MtUniCreditPersistenceValidationException(
@@ -115,21 +115,21 @@ final class MtUniCreditFinancingAttemptRepository
                     . " '" . $this->db->escape($selectionHash) . "',"
                     . " '" . $this->db->escape($requestFingerprint) . "',"
                     . " '" . $this->db->escape(MtUniCreditFinancingAttemptState::ORDER_CREATED) . "',"
-                    . (int) $orderId . ","
+                    . " " . MtUniCreditShopOrderId::sqlQuoted($this->db, $canonicalOrderId) . ","
                     . " '" . $this->db->escape($unicid) . "',"
                     . " '" . $this->db->escape($now) . "',"
                     . " '" . $this->db->escape($now) . "'"
                     . ")"
             );
         } catch (Exception $exception) {
-            $existing = $this->findByStoreOrder($storeId, $orderId);
+            $existing = $this->findByStoreOrder($storeId, $canonicalOrderId);
             if ($existing !== null) {
                 return $existing;
             }
             throw new MtUniCreditPersistenceException('Unable to create financing attempt.', 0, $exception);
         }
 
-        $created = $this->findByStoreOrder($storeId, $orderId);
+        $created = $this->findByStoreOrder($storeId, $canonicalOrderId);
         if ($created === null) {
             throw new MtUniCreditPersistenceException('Financing attempt insert did not persist.');
         }
@@ -139,17 +139,21 @@ final class MtUniCreditFinancingAttemptRepository
 
     /**
      * @param int $storeId
-     * @param int $orderId
+     * @param int|string $orderId
      * @return array<string, mixed>|null
      */
     public function findByStoreOrder($storeId, $orderId)
     {
         MtUniCreditStoreScope::requireStoreId($storeId);
+        $canonicalOrderId = MtUniCreditShopOrderId::tryNormalize($orderId);
+        if ($canonicalOrderId === null) {
+            return null;
+        }
         $table = $this->tableName();
         $result = $this->db->query(
             "SELECT * FROM `{$table}`"
                 . " WHERE `store_id` = " . (int) $storeId
-                . " AND `order_id` = " . (int) $orderId
+                . " AND `order_id` = " . MtUniCreditShopOrderId::sqlQuoted($this->db, $canonicalOrderId)
                 . " LIMIT 1"
         );
 
@@ -411,7 +415,7 @@ final class MtUniCreditFinancingAttemptRepository
             'selection_hash' => (string) $row['selection_hash'],
             'request_fingerprint' => isset($row['request_fingerprint']) ? (string) $row['request_fingerprint'] : '',
             'state' => (string) $row['state'],
-            'order_id' => isset($row['order_id']) ? (int) $row['order_id'] : 0,
+            'order_id' => $this->normalizeOrderIdColumn(isset($row['order_id']) ? $row['order_id'] : null),
             'unicid' => isset($row['unicid']) ? (string) $row['unicid'] : '',
             'control_panel_order_id' => isset($row['control_panel_order_id']) && $row['control_panel_order_id'] !== null
                 ? (int) $row['control_panel_order_id']
@@ -439,6 +443,19 @@ final class MtUniCreditFinancingAttemptRepository
             'created_at' => (string) $row['created_at'],
             'updated_at' => (string) $row['updated_at'],
         );
+    }
+
+    /**
+     * @param mixed $value
+     * @return string|null
+     */
+    private function normalizeOrderIdColumn($value)
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return MtUniCreditShopOrderId::tryNormalize($value);
     }
 
     /**

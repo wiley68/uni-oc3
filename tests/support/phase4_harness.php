@@ -128,17 +128,23 @@ final class Phase4TestHarness
      */
     public static function loginSuccessPayload(array $overrides = array())
     {
-        return array_merge(array(
+        $base = array(
             'success' => true,
-            'access_token' => str_repeat('a', 64),
-            'token_type' => 'Bearer',
-            'expires_in' => 86400,
-            'shop' => array(
-                'id' => 1,
-                'name' => self::TEST_SHOP_URL,
-                'unicid' => self::TEST_UNICID,
+            'error' => null,
+            'message' => 'ok',
+            'data' => array(
+                'access_token' => str_repeat('a', 64),
+                'token_type' => 'Bearer',
+                'expires_in' => 86400,
+                'shop' => array(
+                    'id' => 1,
+                    'name' => self::TEST_SHOP_URL,
+                    'unicid' => self::TEST_UNICID,
+                ),
             ),
-        ), $overrides);
+        );
+
+        return array_replace_recursive($base, $overrides);
     }
 
     /**
@@ -151,6 +157,7 @@ final class Phase4TestHarness
 
         return array(
             'success' => true,
+            'error' => null,
             'message' => 'ok',
             'data' => $data,
         );

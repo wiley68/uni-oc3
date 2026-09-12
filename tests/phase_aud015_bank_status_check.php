@@ -91,9 +91,9 @@ function mtucAud015_repo(Phase2MemoryDb $memoryDb, $storeId, $orderId)
  */
 function mtucAud015_write($repo, $storeId, $orderId, $statusId, $label, $source)
 {
-    return $repo->updateByOrderIdentifier(
+    return $repo->upsertAuthorizedLocal(
         $storeId,
-        (string) $orderId,
+        (int) $orderId,
         $statusId,
         $label,
         $source
@@ -204,10 +204,10 @@ function mtucAud015_run($lib)
     );
     mtucAud015_assert(
         preg_match(
-            '/updateOrderStatus\([\s\S]*?updateByOrderIdentifier/s',
+            '/admitTarget\([\s\S]*?upsertAuthorizedLocal/s',
             $p2Src
         ) === 1,
-        'F02: CP updateOrderStatus precedes local updateByOrderIdentifier'
+        'F02: CP status sync admitTarget precedes local upsertAuthorizedLocal'
     );
     mtucAud015_assert(
         strpos($classifierSrc, 'Absence of success data is not affirmative rejection') !== false
@@ -791,9 +791,10 @@ function mtucAud015_run($lib)
     $repoMs = new MtUniCreditOrderBankStatusRepository($dbMs);
     $cross = $repoMs->updateByOrderIdentifier(
         Phase5TestHarness::STORE_A,
+        'unicid-store-a',
         '15405',
         MtUniCreditBankStatus::CP_SENT,
-        '',
+        'label',
         $inbound
     );
     mtucAud015_assert($cross === null, 'multishop: cross-store ownership rejected');

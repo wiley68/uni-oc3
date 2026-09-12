@@ -99,7 +99,7 @@ final class MtUniCreditDiagnosticJournal
      * Compact operational row. Safe for CP support without debug mode.
      *
      * @param int $storeId
-     * @param int $orderId
+     * @param int|string $orderId
      * @param string $entryPoint
      * @param string $eventCode
      * @param int|null $httpStatus
@@ -109,8 +109,8 @@ final class MtUniCreditDiagnosticJournal
     public function record($storeId, $orderId, $entryPoint, $eventCode, $httpStatus, array $summary)
     {
         $storeId = (int) $storeId;
-        $orderId = (int) $orderId;
-        if ($orderId <= 0 || !MtUniCreditStoreScope::isValid($storeId)) {
+        $canonicalOrderId = MtUniCreditShopOrderId::tryNormalize($orderId);
+        if ($canonicalOrderId === null || !MtUniCreditStoreScope::isValid($storeId)) {
             return false;
         }
 
@@ -123,7 +123,7 @@ final class MtUniCreditDiagnosticJournal
             }
             $this->repository->insert(
                 $storeId,
-                $orderId,
+                $canonicalOrderId,
                 (string) $entryPoint,
                 (string) $eventCode,
                 $httpStatus === null ? null : (int) $httpStatus,
@@ -136,7 +136,7 @@ final class MtUniCreditDiagnosticJournal
                 'mt_uni_credit: diagnostic journal write failed class='
                     . get_class($exception)
                     . ' store_id=' . $storeId
-                    . ' order_id=' . $orderId
+                    . ' order_id=' . $canonicalOrderId
                     . ' event=' . substr((string) $eventCode, 0, 64)
             );
 
@@ -152,7 +152,7 @@ final class MtUniCreditDiagnosticJournal
      * must not be omitted or CP shows empty JSON).
      *
      * @param int $storeId
-     * @param int $orderId
+     * @param int|string $orderId
      * @param string $entryPoint
      * @param string $endpoint
      * @param mixed $request

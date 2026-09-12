@@ -1,7 +1,13 @@
 <?php
 
 /**
- * Process 2 post-CP handoff: bank_sent_process2 + leasing mail (no SmartUCF).
+ * Process 2 post-CP handoff: durable CP target → local bank_sent_process2 → PATCH → prepared → mail.
+ *
+ * Canonical sequence after CP create:
+ * claimPreparing → admit durable target → local bank fact → PATCH → markPrepared → mail.
+ * On CONFLICT after admit: fail without local mutation.
+ * Stale preparing reclaim avoids infinite operation_processing loops; when a P2 target
+ * is already pending/confirmed, resume without repeating external handoff side effects.
  */
 final class MtUniCreditProcessTwoLifecycleCoordinator
 {
@@ -22,8 +28,8 @@ final class MtUniCreditProcessTwoLifecycleCoordinator
     /** @var MtUniCreditOrderBankStatusRepository */
     private $bankStatuses;
 
-    /** @var MtUniCreditControlPanelClient */
-    private $controlPanel;
+    /** @var MtUniCreditControlPanelStatusSyncService */
+    private $statusSync;
 
     /** @var MtUniCreditProcessTwoSensitiveCipher */
     private $cipher;
@@ -35,7 +41,7 @@ final class MtUniCreditProcessTwoLifecycleCoordinator
      * @param MtUniCreditProcessTwoLifecycleRepository $lifecycle
      * @param MtUniCreditProcessTwoMailRecipientRepository $mailRecipients
      * @param MtUniCreditOrderBankStatusRepository $bankStatuses
-     * @param MtUniCreditControlPanelClient $controlPanel
+     * @param MtUniCreditControlPanelStatusSyncService $statusSync
      * @param MtUniCreditProcessTwoSensitiveCipher $cipher
      * @param MtUniCreditProcessTwoMailPort $mailer
      */
@@ -43,14 +49,14 @@ final class MtUniCreditProcessTwoLifecycleCoordinator
         MtUniCreditProcessTwoLifecycleRepository $lifecycle,
         MtUniCreditProcessTwoMailRecipientRepository $mailRecipients,
         MtUniCreditOrderBankStatusRepository $bankStatuses,
-        MtUniCreditControlPanelClient $controlPanel,
+        MtUniCreditControlPanelStatusSyncService $statusSync,
         MtUniCreditProcessTwoSensitiveCipher $cipher,
         MtUniCreditProcessTwoMailPort $mailer
     ) {
         $this->lifecycle = $lifecycle;
         $this->mailRecipients = $mailRecipients;
         $this->bankStatuses = $bankStatuses;
-        $this->controlPanel = $controlPanel;
+        $this->statusSync = $statusSync;
         $this->cipher = $cipher;
         $this->mailer = $mailer;
     }
@@ -74,7 +80,17 @@ final class MtUniCreditProcessTwoLifecycleCoordinator
     {
         $attemptId = (int) $attemptId;
         $storeId = (int) $storeId;
-        $localOrderId = (int) $localOrderId;
+        $shopOrderId = MtUniCreditShopOrderId::tryNormalize($localOrderId);
+        if ($shopOrderId === null) {
+            return array(
+                'success' => false,
+                'error' => 'process2_failed',
+                'message' => self::CUSTOMER_FAILED_MESSAGE,
+                'recoverable' => false,
+            );
+        }
+        $localOrderId = $shopOrderId;
+        $status = MtUniCreditBankStatus::process2Sent();
 
         $row = $this->lifecycle->findByAttempt($attemptId);
         if ($row === null) {
@@ -91,7 +107,8 @@ final class MtUniCreditProcessTwoLifecycleCoordinator
             : MtUniCreditProcessTwoLifecycleStates::NOT_STARTED);
 
         if ($state === MtUniCreditProcessTwoLifecycleStates::PREPARED) {
-            $this->reconcileBankStatus($attemptId, $storeId, $localOrderId, false);
+            // Replay: do not re-handoff; only retry pending CP sync + continue mail if needed.
+            $this->statusSync->retryPending($attemptId, $shopOrderId);
             if (!$this->lifecycle->isMailSent($attemptId)) {
                 $this->trySendMail($attemptId, $row, $shop, $orderContext);
             }
@@ -104,16 +121,30 @@ final class MtUniCreditProcessTwoLifecycleCoordinator
             );
         }
 
-        if (
-            $state === MtUniCreditProcessTwoLifecycleStates::PREPARING
-            && !$this->lifecycle->isStalePreparing($row)
-        ) {
-            return array(
-                'success' => false,
-                'error' => 'operation_processing',
-                'message' => self::CUSTOMER_PROCESSING_MESSAGE,
-                'recoverable' => true,
-            );
+        if ($state === MtUniCreditProcessTwoLifecycleStates::PREPARING) {
+            if ($this->hasAdmittedProcess2Target($attemptId)) {
+                // Durable target already admitted — resume local + PATCH without repeating handoff.
+                return $this->resumeAfterAdmittedTarget(
+                    $attemptId,
+                    $storeId,
+                    $localOrderId,
+                    $shopOrderId,
+                    $status,
+                    $row,
+                    $shop,
+                    $orderContext
+                );
+            }
+
+            if (!$this->lifecycle->isStalePreparing($row)) {
+                return array(
+                    'success' => false,
+                    'error' => 'operation_processing',
+                    'message' => self::CUSTOMER_PROCESSING_MESSAGE,
+                    'recoverable' => true,
+                );
+            }
+            // Stale preparing without admitted P2 target: fall through to claimPreparing reclaim.
         }
 
         $ownerToken = MtUniCreditLockOwnerTokenGenerator::generate();
@@ -150,7 +181,31 @@ final class MtUniCreditProcessTwoLifecycleCoordinator
             if ($enc === '') {
                 throw new RuntimeException('Process 2 sensitive payload missing.');
             }
-            $this->reconcileBankStatus($attemptId, $storeId, $localOrderId, true);
+
+            $decision = $this->statusSync->admitTarget(
+                $attemptId,
+                $status['status_id'],
+                $status['status_label']
+            );
+            if (
+                $decision === MtUniCreditControlPanelStatusSyncService::CONFLICT
+                || $decision === MtUniCreditControlPanelStatusSyncService::REJECT
+            ) {
+                throw new RuntimeException('Process 2 durable target admission conflict.');
+            }
+
+            $this->writeLocalBankStatus($storeId, $localOrderId, $status);
+
+            $syncState = $this->statusSync->retryPending($attemptId, $shopOrderId);
+            if ($syncState === MtUniCreditControlPanelStatusSyncStates::PENDING) {
+                error_log(
+                    'mt_uni_credit: ' . self::ERROR_CP_BANK_STATUS_SYNC_PENDING
+                        . ' attempt_id=' . $attemptId
+                        . ' order_id=' . $shopOrderId
+                        . ' status_id=' . $status['status_id']
+                );
+            }
+
             $this->lifecycle->markPrepared($attemptId);
             $this->trySendMail($attemptId, $row, $shop, $orderContext);
             $this->lifecycle->redactExpiredSensitiveBatch();
@@ -179,6 +234,107 @@ final class MtUniCreditProcessTwoLifecycleCoordinator
             'replay' => false,
             'message' => self::CUSTOMER_SUCCESS_MESSAGE,
         );
+    }
+
+    /**
+     * @param int $attemptId
+     * @return bool
+     */
+    private function hasAdmittedProcess2Target($attemptId)
+    {
+        $target = $this->statusSync->readPersistedTarget((int) $attemptId);
+        if ($target === null) {
+            return false;
+        }
+
+        $syncStatusId = (string) (isset($target['status_id']) ? $target['status_id'] : '');
+        $syncState = (string) (isset($target['state']) ? $target['state'] : '');
+
+        return $syncStatusId === MtUniCreditBankStatus::SENT_PROCESS2
+            && in_array(
+                $syncState,
+                array(
+                    MtUniCreditControlPanelStatusSyncStates::PENDING,
+                    MtUniCreditControlPanelStatusSyncStates::CONFIRMED,
+                ),
+                true
+            );
+    }
+
+    /**
+     * @param int $attemptId
+     * @param int $storeId
+     * @param int $localOrderId
+     * @param string $shopOrderId
+     * @param array{status_id: string, status_label: string} $status
+     * @param array<string, mixed> $row
+     * @param array<string, mixed> $shop
+     * @param array<string, mixed> $orderContext
+     * @return array<string, mixed>
+     */
+    private function resumeAfterAdmittedTarget(
+        $attemptId,
+        $storeId,
+        $localOrderId,
+        $shopOrderId,
+        array $status,
+        array $row,
+        array $shop,
+        array $orderContext
+    ) {
+        try {
+            $this->writeLocalBankStatus($storeId, $localOrderId, $status);
+            $this->statusSync->retryPending($attemptId, $shopOrderId);
+            $this->lifecycle->markPrepared($attemptId);
+            $this->trySendMail($attemptId, $row, $shop, $orderContext);
+        } catch (Throwable $exception) {
+            error_log(
+                'mt_uni_credit: Process 2 resume after admitted target failed attempt_id=' . $attemptId
+                    . ' class=' . get_class($exception)
+            );
+
+            return array(
+                'success' => false,
+                'error' => 'operation_processing',
+                'message' => self::CUSTOMER_PROCESSING_MESSAGE,
+                'recoverable' => true,
+            );
+        }
+
+        return array(
+            'success' => true,
+            'process2_state' => MtUniCreditProcessTwoLifecycleStates::PREPARED,
+            'replay' => true,
+            'message' => self::CUSTOMER_SUCCESS_MESSAGE,
+        );
+    }
+
+    /**
+     * @param int $storeId
+     * @param string $localOrderId Canonical shop order id
+     * @param array{status_id: string, status_label: string} $status
+     * @return void
+     */
+    private function writeLocalBankStatus($storeId, $localOrderId, array $status)
+    {
+        $local = $this->bankStatuses->upsertAuthorizedLocal(
+            (int) $storeId,
+            $localOrderId,
+            $status['status_id'],
+            $status['status_label'],
+            MtUniCreditBankStatusTransitionPolicy::SOURCE_LOCAL_LIFECYCLE
+        );
+        if ($local === null) {
+            throw new RuntimeException(self::ERROR_LOCAL_BANK_STATUS_FAILED);
+        }
+
+        $verified = $this->bankStatuses->findByOrderId((int) $storeId, $localOrderId);
+        if (
+            $verified === null
+            || (string) $verified['status_id'] !== (string) $status['status_id']
+        ) {
+            throw new RuntimeException(self::ERROR_LOCAL_BANK_STATUS_FAILED);
+        }
     }
 
     /**
@@ -245,6 +401,8 @@ final class MtUniCreditProcessTwoLifecycleCoordinator
                 continue;
             }
 
+            // Residual SMTP crash window: provider may have accepted the message before
+            // markSent; uncertain/sent claims prevent blind re-send after reclaim.
             $externalSendSucceeded = false;
             try {
                 $ok = $this->mailer->sendProcess2Recipient(
@@ -339,68 +497,5 @@ final class MtUniCreditProcessTwoLifecycleCoordinator
         }
 
         return $orderContext;
-    }
-
-    /**
-     * AUD-015 F02: CP PATCH/handoff first; local bank_sent_process2 only after remote success.
-     *
-     * @param int $attemptId
-     * @param int $storeId
-     * @param int $localOrderId
-     * @param bool $requireSuccess when true, local+CP failures block prepared/mail
-     * @return void
-     */
-    private function reconcileBankStatus($attemptId, $storeId, $localOrderId, $requireSuccess)
-    {
-        $status = MtUniCreditBankStatus::process2Sent();
-        $shopOrderId = substr((string) $localOrderId, 0, 13);
-
-        try {
-            $this->controlPanel->updateOrderStatus(
-                $shopOrderId,
-                $status['status_label'],
-                $status['status_id']
-            );
-        } catch (Throwable $exception) {
-            error_log(
-                'mt_uni_credit: ' . self::ERROR_CP_BANK_STATUS_SYNC_PENDING
-                    . ' attempt_id=' . $attemptId
-                    . ' order_id=' . $shopOrderId
-                    . ' status_id=' . $status['status_id']
-                    . ' class=' . get_class($exception)
-            );
-            if ($requireSuccess) {
-                throw $exception;
-            }
-            // Soft reconcile (already PREPARED): keep trying local durability below.
-        }
-
-        try {
-            $local = $this->bankStatuses->updateByOrderIdentifier(
-                $storeId,
-                $shopOrderId,
-                $status['status_id'],
-                $status['status_label'],
-                MtUniCreditBankStatusTransitionPolicy::SOURCE_LOCAL_LIFECYCLE
-            );
-        } catch (Throwable $exception) {
-            if ($requireSuccess) {
-                throw new RuntimeException(self::ERROR_LOCAL_BANK_STATUS_FAILED, 0, $exception);
-            }
-            $local = null;
-        }
-
-        if ($requireSuccess) {
-            if ($local === null) {
-                throw new RuntimeException(self::ERROR_LOCAL_BANK_STATUS_FAILED);
-            }
-            $verified = $this->bankStatuses->findByOrderId($storeId, $localOrderId);
-            if (
-                $verified === null
-                || (string) $verified['status_id'] !== (string) $status['status_id']
-            ) {
-                throw new RuntimeException(self::ERROR_LOCAL_BANK_STATUS_FAILED);
-            }
-        }
     }
 }

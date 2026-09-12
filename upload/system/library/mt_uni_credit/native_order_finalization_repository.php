@@ -208,7 +208,9 @@ final class MtUniCreditNativeOrderFinalizationRepository
         return array(
             'attempt_id' => (int) $row['attempt_id'],
             'store_id' => (int) $row['store_id'],
-            'order_id' => isset($row['order_id']) ? (int) $row['order_id'] : 0,
+            'order_id' => isset($row['order_id'])
+                ? MtUniCreditShopOrderId::tryNormalize($row['order_id'])
+                : null,
             'native_finalize_state' => isset($row['native_finalize_state'])
                 ? (string) $row['native_finalize_state']
                 : MtUniCreditNativeOrderFinalizationStates::NOT_STARTED,

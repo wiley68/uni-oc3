@@ -541,12 +541,7 @@ MtUniCreditProcessTwoSubmissionSupport::persistLeasingSnapshot(
     null,
     false
 );
-(new MtUniCreditOrderBankStatusRepository($db))->updateByOrderIdentifier(
-    $storeId,
-    (string) $orderId,
-    MtUniCreditBankStatus::SENT_PROCESS1,
-    MtUniCreditBankStatus::LABEL_SENT_PROCESS1
-);
+(new MtUniCreditOrderBankStatusRepository($db))->upsertAuthorizedLocal($storeId, (int) $orderId, MtUniCreditBankStatus::SENT_PROCESS1, MtUniCreditBankStatus::LABEL_SENT_PROCESS1);
 
 $svc = new MtUniCreditFinancingPresentationService(new MtUniCreditFinancingPresentationRepository($db));
 $customerRows = $svc->filterCustomerFacingRows(

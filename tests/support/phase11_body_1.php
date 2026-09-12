@@ -235,25 +235,10 @@ $presentationRepo = new MtUniCreditFinancingPresentationRepository($dbAdapter);
 Phase9TestHarness::seedBankOrder($memoryDb, 11001, $storeA);
 Phase9TestHarness::seedBankOrder($memoryDb, 11002, $storeA);
 Phase9TestHarness::seedBankOrder($memoryDb, 11003, $storeA);
-$bankRepo->updateByOrderIdentifier(
-    $storeA,
-    '11002',
-    MtUniCreditBankStatus::SENT_PROCESS1,
-    MtUniCreditBankStatus::LABEL_SENT_PROCESS1
-);
-$bankRepo->updateByOrderIdentifier(
-    $storeA,
-    '11003',
-    MtUniCreditBankStatus::SENT_PROCESS2,
-    MtUniCreditBankStatus::LABEL_SENT_PROCESS2
-);
+$bankRepo->upsertAuthorizedLocal($storeA, 11002, MtUniCreditBankStatus::SENT_PROCESS1, MtUniCreditBankStatus::LABEL_SENT_PROCESS1);
+$bankRepo->upsertAuthorizedLocal($storeA, 11003, MtUniCreditBankStatus::SENT_PROCESS2, MtUniCreditBankStatus::LABEL_SENT_PROCESS2);
 Phase9TestHarness::seedBankOrder($memoryDb, 11002, $storeB);
-$bankRepo->updateByOrderIdentifier(
-    $storeB,
-    '11002',
-    MtUniCreditBankStatus::SEND_FAILED_SMARTUCF,
-    MtUniCreditBankStatus::LABEL_SEND_FAILED_SMARTUCF
-);
+$bankRepo->upsertAuthorizedLocal($storeB, 11002, MtUniCreditBankStatus::SEND_FAILED_SMARTUCF, MtUniCreditBankStatus::LABEL_SEND_FAILED_SMARTUCF);
 
 $orders = array(
     array('order_id' => 11001, 'store_id' => $storeA),
@@ -283,18 +268,8 @@ mtuc11_assert(
 // AUD-024-F01: real OC3 list rows omit store_id — resolve via native oc_order.
 $memoryDb->seedOrder(12001, 0, MtUniCreditConstants::EXTENSION_CODE);
 $memoryDb->seedOrder(12002, Phase5TestHarness::STORE_B, MtUniCreditConstants::EXTENSION_CODE);
-$bankRepo->updateByOrderIdentifier(
-    0,
-    '12001',
-    MtUniCreditBankStatus::SENT_PROCESS1,
-    MtUniCreditBankStatus::LABEL_SENT_PROCESS1
-);
-$bankRepo->updateByOrderIdentifier(
-    Phase5TestHarness::STORE_B,
-    '12002',
-    MtUniCreditBankStatus::SEND_FAILED_CP,
-    MtUniCreditBankStatus::LABEL_SEND_FAILED_CP
-);
+$bankRepo->upsertAuthorizedLocal(0, 12001, MtUniCreditBankStatus::SENT_PROCESS1, MtUniCreditBankStatus::LABEL_SENT_PROCESS1);
+$bankRepo->upsertAuthorizedLocal(Phase5TestHarness::STORE_B, 12002, MtUniCreditBankStatus::SEND_FAILED_CP, MtUniCreditBankStatus::LABEL_SEND_FAILED_CP);
 $realShapeOrders = array(
     array('order_id' => 12001),
     array('order_id' => 12002),
@@ -358,12 +333,7 @@ $cipher = new MtUniCreditProcessTwoSensitiveCipher(Phase4TestHarness::testSecret
 $enc = $cipher->encrypt(new MtUniCreditProcessTwoSensitiveData('1990010112', '+35988111111'));
 $lifecycleRepo->persistSensitiveEncrypted((int) $attemptRow['attempt_id'], $enc);
 (new MtUniCreditOrderBankStatusRepository(new MtUniCreditDbAdapter($stack['memoryDb'], 'oc_')))
-    ->updateByOrderIdentifier(
-        $stack['storeId'],
-        (string) $orderId,
-        MtUniCreditBankStatus::SENT_PROCESS2,
-        MtUniCreditBankStatus::LABEL_SENT_PROCESS2
-    );
+    ->upsertAuthorizedLocal($stack['storeId'], (int) $orderId, MtUniCreditBankStatus::SENT_PROCESS2, MtUniCreditBankStatus::LABEL_SENT_PROCESS2);
 
 $svc = new MtUniCreditFinancingPresentationService(
     new MtUniCreditFinancingPresentationRepository(

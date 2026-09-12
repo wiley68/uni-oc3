@@ -248,8 +248,11 @@ final class MtUniCreditStorefrontFinancingSubmissionService
                 );
             }
 
-            $claimOrderId = isset($claim['order_id']) && $claim['order_id'] !== null && $claim['order_id'] !== ''
-                ? (int) $claim['order_id']
+            $claimCanonical = isset($claim['order_id']) && $claim['order_id'] !== null && $claim['order_id'] !== ''
+                ? MtUniCreditShopOrderId::tryNormalize($claim['order_id'])
+                : null;
+            $claimOrderId = $claimCanonical !== null
+                ? (int) (MtUniCreditShopOrderId::tryNativeOc3OrderId($claimCanonical) ?: 0)
                 : 0;
             if ($claimOrderId > 0) {
                 $orderId = $claimOrderId;

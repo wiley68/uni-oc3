@@ -8,13 +8,27 @@
     "index.php?route=extension/mt_uni_credit/api/smartucf_debug_log"
   ],
   "route_status": "implemented_phase_6",
+  "operations": {
+    "shop_cache": "shop-cache",
+    "order_bank_status": "order-bank-status",
+    "smartucf_debug_log": "smartucf-debug-log"
+  },
+  "operation_binding": "exact string in signed JSON body; missing/wrong/wrong-case/non-string → 400 unsupported_operation; not part of HMAC input",
+  "max_body_bytes": 1048576,
+  "oversized": {"http": 413, "error": "payload_too_large", "before": "HMAC/JSON"},
+  "envelope": ["success", "error", "message", "data"],
+  "empty_data": "{}",
   "http_errors": {
-    "400": "bad JSON/validation/unsupported status",
+    "200": "success / idempotent replay",
+    "201": "created (reserved)",
+    "400": "bad JSON/validation/unsupported status/operation",
     "401": "auth/replay/time",
     "403": "module disabled",
     "404": "owned order/log missing",
     "405": "method",
-    "422": "invalid shop snapshot",
+    "409": "order_ambiguous / semantic_conflict (P1↔P2)",
+    "413": "payload too large",
+    "422": "shop_snapshot_invalid + data.violations",
     "500": "redacted unexpected failure"
   },
   "do_not_use_seo_aliases": true,

@@ -62,6 +62,7 @@ final class MtUniCreditPersistenceSchema
         $this->ensureAud020Columns();
         $this->ensureAud027Columns();
         $this->completeRequiredSchema();
+        $this->ensureCanonicalOrderIdColumnTypes();
         $this->verifyRequiredSchema();
     }
 
@@ -128,6 +129,156 @@ final class MtUniCreditPersistenceSchema
                 }
             }
         }
+        $this->verifyCanonicalOrderIdColumnTypes();
+    }
+
+    /**
+     * Migrate UniPayment-owned canonical order_id columns from integer to VARCHAR(13).
+     * Idempotent: already string-capable (≥13) columns are left unchanged.
+     *
+     * @return void
+     */
+    public function ensureCanonicalOrderIdColumnTypes()
+    {
+        foreach ($this->canonicalOrderIdColumnTargets() as $target) {
+            $table = $this->db->getPrefix() . $target['table'];
+            if (!$this->tableExists($table)) {
+                throw new MtUniCreditInstallationException(
+                    'Canonical order_id migration failed: missing table ' . $target['table']
+                );
+            }
+            $type = $this->inspectColumnType($table, 'order_id');
+            if ($type === null) {
+                throw new MtUniCreditInstallationException(
+                    'Canonical order_id migration failed: missing order_id on ' . $target['table']
+                );
+            }
+            if ($this->isStringCapableOrderIdType($type)) {
+                continue;
+            }
+            if (!$this->isIntegerLikeColumnType($type)) {
+                throw new MtUniCreditInstallationException(
+                    'Canonical order_id migration failed: unexpected type on ' . $target['table']
+                );
+            }
+            $nullSql = !empty($target['nullable']) ? 'NULL' : 'NOT NULL';
+            try {
+                $this->db->query(
+                    'ALTER TABLE `' . $table . '` MODIFY COLUMN `order_id` VARCHAR(13) ' . $nullSql
+                );
+            } catch (Exception $exception) {
+                throw new MtUniCreditInstallationException(
+                    'Canonical order_id MODIFY failed on ' . $target['table'],
+                    0,
+                    $exception
+                );
+            }
+            $after = $this->inspectColumnType($table, 'order_id');
+            if ($after === null || $this->isIntegerLikeColumnType($after) || !$this->isStringCapableOrderIdType($after)) {
+                throw new MtUniCreditInstallationException(
+                    'Canonical order_id migration did not yield VARCHAR on ' . $target['table']
+                );
+            }
+        }
+    }
+
+    /**
+     * @return void
+     */
+    private function verifyCanonicalOrderIdColumnTypes()
+    {
+        foreach ($this->canonicalOrderIdColumnTargets() as $target) {
+            $table = $this->db->getPrefix() . $target['table'];
+            $type = $this->inspectColumnType($table, 'order_id');
+            if ($type === null || !$this->isStringCapableOrderIdType($type)) {
+                throw new MtUniCreditInstallationException(
+                    'Schema verification failed: order_id must be string-capable on ' . $target['table']
+                );
+            }
+        }
+    }
+
+    /**
+     * @return array<int, array{table: string, nullable: bool}>
+     */
+    private function canonicalOrderIdColumnTargets()
+    {
+        return array(
+            array(
+                'table' => MtUniCreditPersistenceTableNames::FINANCING_ATTEMPT,
+                'nullable' => true,
+            ),
+            array(
+                'table' => MtUniCreditPersistenceTableNames::ORDER_BANK_STATUS,
+                'nullable' => false,
+            ),
+            array(
+                'table' => MtUniCreditPersistenceTableNames::OPERATION_ORDER_CLAIM,
+                'nullable' => true,
+            ),
+            array(
+                'table' => MtUniCreditPersistenceTableNames::DIAGNOSTIC_DEBUG_LOG,
+                'nullable' => false,
+            ),
+        );
+    }
+
+    /**
+     * @param string $table
+     * @param string $column
+     * @return string|null lowercase Type from SHOW COLUMNS
+     */
+    private function inspectColumnType($table, $column)
+    {
+        try {
+            $result = $this->db->query('SHOW COLUMNS FROM `' . $table . '`');
+        } catch (Exception $exception) {
+            throw new MtUniCreditInstallationException(
+                'Schema inspection failed (column types).',
+                0,
+                $exception
+            );
+        }
+        if (!is_object($result) || !isset($result->rows) || !is_array($result->rows)) {
+            return null;
+        }
+        foreach ($result->rows as $row) {
+            if (!is_array($row) || !isset($row['Field']) || (string) $row['Field'] !== $column) {
+                continue;
+            }
+            if (!isset($row['Type'])) {
+                return null;
+            }
+
+            return strtolower((string) $row['Type']);
+        }
+
+        return null;
+    }
+
+    /**
+     * @param string $type
+     * @return bool
+     */
+    private function isStringCapableOrderIdType($type)
+    {
+        if (preg_match('/^(?:var)?char\((\d+)\)$/i', $type, $matches)) {
+            return (int) $matches[1] >= 13;
+        }
+
+        return false;
+    }
+
+    /**
+     * @param string $type
+     * @return bool
+     */
+    private function isIntegerLikeColumnType($type)
+    {
+        return (bool) preg_match(
+            '/^(?:tiny|small|medium|big)?int(?:eger)?(?:\s*\(\d+\))?(?:\s+unsigned)?$/i',
+            trim($type)
+        );
     }
 
     /**
@@ -753,7 +904,7 @@ final class MtUniCreditPersistenceSchema
             "CREATE TABLE IF NOT EXISTS `{$orderBankStatus}` (
                 `order_bank_status_id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
                 `store_id` INT UNSIGNED NOT NULL,
-                `order_id` INT UNSIGNED NOT NULL,
+                `order_id` VARCHAR(13) NOT NULL,
                 `order_reference` VARCHAR(64) NOT NULL,
                 `status_id` VARCHAR(255) NOT NULL,
                 `status_label` VARCHAR(255) NOT NULL,
@@ -766,7 +917,7 @@ final class MtUniCreditPersistenceSchema
             "CREATE TABLE IF NOT EXISTS `{$diagnosticDebugLog}` (
                 `diagnostic_debug_log_id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
                 `store_id` INT UNSIGNED NOT NULL,
-                `order_id` INT UNSIGNED NOT NULL,
+                `order_id` VARCHAR(13) NOT NULL,
                 `entry_point` VARCHAR(16) NOT NULL DEFAULT '',
                 `event_code` VARCHAR(64) NOT NULL DEFAULT '',
                 `http_status` INT NULL,
@@ -796,7 +947,7 @@ final class MtUniCreditPersistenceSchema
                 `selection_hash` CHAR(64) NOT NULL,
                 `request_fingerprint` CHAR(64) NOT NULL DEFAULT '',
                 `state` VARCHAR(32) NOT NULL,
-                `order_id` INT UNSIGNED NULL,
+                `order_id` VARCHAR(13) NULL,
                 `unicid` VARCHAR(64) NOT NULL DEFAULT '',
                 `control_panel_order_id` BIGINT UNSIGNED NULL,
                 `cp_payload` LONGTEXT NULL,
@@ -814,6 +965,11 @@ final class MtUniCreditPersistenceSchema
                 `cart_clear_state` VARCHAR(32) NOT NULL DEFAULT 'not_applied',
                 `cart_clear_claimed_at` DATETIME NULL,
                 `cart_clear_applied_at` DATETIME NULL,
+                `cp_status_sync_state` VARCHAR(32) NOT NULL DEFAULT 'not_needed',
+                `cp_status_sync_status_id` VARCHAR(255) NULL,
+                `cp_status_sync_status` VARCHAR(255) NULL,
+                `cp_status_sync_error_class` VARCHAR(64) NULL,
+                `cp_status_sync_updated_at` DATETIME NULL,
                 `created_at` DATETIME NOT NULL,
                 `updated_at` DATETIME NOT NULL,
                 PRIMARY KEY (`attempt_id`),
@@ -821,7 +977,9 @@ final class MtUniCreditPersistenceSchema
                 KEY `idx_mt_uni_credit_attempt_operation` (`store_id`, `entry_point`, `operation_key_hash`, `state`),
                 KEY `idx_mt_uni_credit_attempt_state_updated` (`state`, `updated_at`),
                 KEY `idx_mt_uni_credit_attempt_smartucf_state` (`smartucf_state`, `updated_at`),
-                KEY `idx_mt_uni_credit_attempt_cart_clear` (`cart_clear_state`, `cart_clear_claimed_at`)
+                KEY `idx_mt_uni_credit_attempt_cart_clear` (`cart_clear_state`, `cart_clear_claimed_at`),
+                KEY `idx_mt_uni_credit_attempt_cp_status_sync` (`cp_status_sync_state`),
+                KEY `idx_mt_uni_credit_attempt_store_order_unicid` (`store_id`, `order_id`, `unicid`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
         );
     }
@@ -843,7 +1001,7 @@ final class MtUniCreditPersistenceSchema
                 `entry_point` VARCHAR(16) NOT NULL,
                 `operation_key_hash` CHAR(64) NOT NULL,
                 `state` VARCHAR(32) NOT NULL,
-                `order_id` INT UNSIGNED NULL,
+                `order_id` VARCHAR(13) NULL,
                 `claim_owner_token` CHAR(32) NOT NULL,
                 `created_at` DATETIME NOT NULL,
                 `updated_at` DATETIME NOT NULL,

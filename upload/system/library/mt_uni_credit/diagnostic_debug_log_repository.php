@@ -29,7 +29,7 @@ final class MtUniCreditDiagnosticDebugLogRepository
 
     /**
      * @param int $storeId
-     * @param int $orderId
+     * @param int|string $orderId Native OC3 int or canonical string
      * @param string $entryPoint
      * @param string $eventCode
      * @param int|null $httpStatus
@@ -39,8 +39,8 @@ final class MtUniCreditDiagnosticDebugLogRepository
     public function insert($storeId, $orderId, $entryPoint, $eventCode, $httpStatus, array $summary)
     {
         MtUniCreditStoreScope::requireStoreId($storeId);
-        $orderId = (int) $orderId;
-        if ($orderId <= 0) {
+        $orderId = MtUniCreditShopOrderId::tryNormalize($orderId);
+        if ($orderId === null) {
             throw new MtUniCreditPersistenceValidationException('Diagnostic journal requires a positive order_id.');
         }
 
@@ -79,7 +79,7 @@ final class MtUniCreditDiagnosticDebugLogRepository
                 . " (`store_id`, `order_id`, `entry_point`, `event_code`, `http_status`, `summary_json`, `created_at`)"
                 . " VALUES ("
                 . (int) $storeId . ","
-                . (int) $orderId . ","
+                . " " . MtUniCreditShopOrderId::sqlQuoted($this->db, $orderId) . ","
                 . " '" . $this->db->escape($entryPoint) . "',"
                 . " '" . $this->db->escape($eventCode) . "',"
                 . $httpSql . ","
@@ -93,14 +93,14 @@ final class MtUniCreditDiagnosticDebugLogRepository
 
     /**
      * @param int $storeId
-     * @param int $orderId
+     * @param int|string $orderId
      * @return array<string, mixed>|null
      */
     public function findLatestByOrderId($storeId, $orderId)
     {
         MtUniCreditStoreScope::requireStoreId($storeId);
-        $orderId = (int) $orderId;
-        if ($orderId <= 0) {
+        $orderId = MtUniCreditShopOrderId::tryNormalize($orderId);
+        if ($orderId === null) {
             return null;
         }
 
@@ -109,7 +109,7 @@ final class MtUniCreditDiagnosticDebugLogRepository
             "SELECT `diagnostic_debug_log_id`, `summary_json`, `entry_point`, `event_code`, `http_status`, `created_at`"
                 . " FROM `{$table}`"
                 . " WHERE `store_id` = " . (int) $storeId
-                . " AND `order_id` = " . (int) $orderId
+                . " AND `order_id` = " . MtUniCreditShopOrderId::sqlQuoted($this->db, $orderId)
                 . " ORDER BY `diagnostic_debug_log_id` DESC"
                 . " LIMIT 1"
         );
@@ -128,14 +128,14 @@ final class MtUniCreditDiagnosticDebugLogRepository
      * (cp_status_patch_success, process2_*, etc.).
      *
      * @param int $storeId
-     * @param int $orderId
+     * @param int|string $orderId
      * @return array<string, mixed>|null
      */
     public function findLatestSmartUcfSessionByOrderId($storeId, $orderId)
     {
         MtUniCreditStoreScope::requireStoreId($storeId);
-        $orderId = (int) $orderId;
-        if ($orderId <= 0) {
+        $orderId = MtUniCreditShopOrderId::tryNormalize($orderId);
+        if ($orderId === null) {
             return null;
         }
 
@@ -144,7 +144,7 @@ final class MtUniCreditDiagnosticDebugLogRepository
             "SELECT `diagnostic_debug_log_id`, `summary_json`, `entry_point`, `event_code`, `http_status`, `created_at`"
                 . " FROM `{$table}`"
                 . " WHERE `store_id` = " . (int) $storeId
-                . " AND `order_id` = " . (int) $orderId
+                . " AND `order_id` = " . MtUniCreditShopOrderId::sqlQuoted($this->db, $orderId)
                 . " ORDER BY `diagnostic_debug_log_id` DESC"
                 . " LIMIT 50"
         );
@@ -270,7 +270,7 @@ final class MtUniCreditDiagnosticDebugLogRepository
     }
 
     /**
-     * @param int $orderId
+     * @param string $orderId
      * @param array<string, mixed> $row
      * @return array<string, mixed>
      */
@@ -284,7 +284,7 @@ final class MtUniCreditDiagnosticDebugLogRepository
         $eventCode = isset($row['event_code']) ? (string) $row['event_code'] : '';
 
         return array(
-            'order_id' => (int) $orderId,
+            'order_id' => (string) $orderId,
             'entry_point' => isset($row['entry_point']) ? (string) $row['entry_point'] : '',
             'event_code' => $eventCode,
             'type' => isset($summary['type'])
@@ -326,7 +326,7 @@ final class MtUniCreditDiagnosticDebugLogRepository
         return array(
             'id' => isset($row['diagnostic_debug_log_id']) ? (int) $row['diagnostic_debug_log_id'] : 0,
             'store_id' => isset($row['store_id']) ? (int) $row['store_id'] : 0,
-            'order_id' => isset($row['order_id']) ? (int) $row['order_id'] : 0,
+            'order_id' => $this->normalizeExportOrderId(isset($row['order_id']) ? $row['order_id'] : null),
             'entry_point' => isset($row['entry_point']) ? (string) $row['entry_point'] : '',
             'event_code' => $eventCode,
             'type' => isset($summary['type'])
@@ -349,6 +349,17 @@ final class MtUniCreditDiagnosticDebugLogRepository
             'message' => isset($summary['message']) ? (string) $summary['message'] : '',
             'created_at_gmt' => isset($row['created_at']) ? (string) $row['created_at'] : '',
         );
+    }
+
+    /**
+     * @param mixed $value
+     * @return string
+     */
+    private function normalizeExportOrderId($value)
+    {
+        $canonical = MtUniCreditShopOrderId::tryNormalize($value);
+
+        return $canonical !== null ? $canonical : '';
     }
 
     /**

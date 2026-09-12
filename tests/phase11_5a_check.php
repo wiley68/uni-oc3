@@ -59,6 +59,35 @@ function mtuc115a_nonce()
 }
 
 /**
+ * Seed a unique financing attempt for inbound ownership (optional SmartUCF lifecycle state).
+ *
+ * @param array<string, mixed> $stack
+ * @param int $orderId
+ * @param string|null $smartucfState
+ * @return void
+ */
+function mtuc115a_seedFinancingAttempt(array $stack, $orderId, $smartucfState = null)
+{
+    $attempts = new MtUniCreditFinancingAttemptRepository($stack['db']);
+    $row = $attempts->findOrCreateCheckoutAttempt(
+        $stack['storeId'],
+        (int) $orderId,
+        $stack['unicid'],
+        hash('sha256', 'mtuc115a-op-' . $stack['storeId'] . '-' . $orderId),
+        hash('sha256', 'mtuc115a-sel-' . $stack['storeId'] . '-' . $orderId),
+        hash('sha256', 'mtuc115a-fp-' . $stack['storeId'] . '-' . $orderId)
+    );
+    if ($smartucfState === null) {
+        return;
+    }
+    $table = $stack['db']->getPrefix() . MtUniCreditPersistenceTableNames::FINANCING_ATTEMPT;
+    $stack['db']->query(
+        "UPDATE `{$table}` SET `smartucf_state` = '" . $stack['db']->escape((string) $smartucfState) . "'"
+            . " WHERE `attempt_id` = " . (int) $row['attempt_id']
+    );
+}
+
+/**
  * Invoke a controller-equivalent inbound handler through auth + dispatcher.
  *
  * @param string $endpoint shop_cache|order_bank_status|smartucf_debug_log
@@ -115,37 +144,54 @@ function mtuc115a_invoke($endpoint, array $payload, array $stack, array $headerO
         };
     } elseif ($endpoint === 'order_bank_status') {
         $handler = function (array $body, $unicid) use ($storeId, $db) {
-            unset($unicid);
             $orderId = isset($body['order_id']) ? $body['order_id'] : null;
-            if (!is_string($orderId) && !is_int($orderId)) {
+            if (!is_string($orderId)) {
                 throw new MtUniCreditInboundApiException('Полето order_id е задължително.', 400, 'invalid_payload');
             }
-            $orderId = trim((string) $orderId);
-            if ($orderId === '' || strlen($orderId) > 64) {
+            $orderId = trim($orderId);
+            if ($orderId === '' || strlen($orderId) > 13) {
                 throw new MtUniCreditInboundApiException('Полето order_id е невалидно.', 400, 'invalid_payload');
             }
             $statusId = isset($body['status_id']) ? $body['status_id'] : null;
-            if (!is_string($statusId) && !is_int($statusId)) {
+            if (!is_string($statusId)) {
                 throw new MtUniCreditInboundApiException('Полето status_id е задължително.', 400, 'invalid_payload');
             }
-            $statusId = trim((string) $statusId);
+            $statusId = trim($statusId);
             if ($statusId === '' || strlen($statusId) > 255) {
                 throw new MtUniCreditInboundApiException('Полето status_id е невалидно.', 400, 'invalid_payload');
             }
             if (!MtUniCreditInboundBankStatusVocabulary::isAccepted($statusId)) {
                 throw new MtUniCreditInboundApiException('Неподдържан банков статус.', 400, 'unsupported_status');
             }
-            $status = isset($body['status']) ? $body['status'] : '';
-            if (!is_string($status) || strlen($status) > 255) {
-                throw new MtUniCreditInboundApiException('Полето status е невалидно.', 400, 'invalid_payload');
+            $status = isset($body['status']) ? $body['status'] : null;
+            if (!is_string($status)) {
+                throw new MtUniCreditInboundApiException('Полето status е задължително.', 400, 'invalid_payload');
             }
             $status = trim($status);
-            $result = (new MtUniCreditOrderBankStatusRepository($db))->updateByOrderIdentifier(
-                $storeId,
-                $orderId,
-                $statusId,
-                $status
-            );
+            if ($status === '' || strlen($status) > 255) {
+                throw new MtUniCreditInboundApiException('Полето status е невалидно.', 400, 'invalid_payload');
+            }
+            try {
+                $result = (new MtUniCreditOrderBankStatusRepository($db))->updateByOrderIdentifier(
+                    $storeId,
+                    $unicid,
+                    $orderId,
+                    $statusId,
+                    $status
+                );
+            } catch (MtUniCreditFinancingOrderAmbiguousException $exception) {
+                throw new MtUniCreditInboundApiException(
+                    'Поръчката е двусмислена за този магазин.',
+                    409,
+                    'order_ambiguous'
+                );
+            } catch (MtUniCreditOrderBankStatusSemanticConflictException $exception) {
+                throw new MtUniCreditInboundApiException(
+                    'Несъвместима промяна на банков статус.',
+                    409,
+                    'semantic_conflict'
+                );
+            }
             if ($result === null) {
                 throw new MtUniCreditInboundApiException('Поръчката не е намерена в магазина.', 404, 'order_not_found');
             }
@@ -158,25 +204,55 @@ function mtuc115a_invoke($endpoint, array $payload, array $stack, array $headerO
         };
     } elseif ($endpoint === 'smartucf_debug_log') {
         $handler = function (array $body, $unicid) use ($storeId, $db) {
-            unset($unicid);
             $orderIdRaw = isset($body['order_id']) ? $body['order_id'] : null;
-            if (!is_string($orderIdRaw) && !is_int($orderIdRaw)) {
+            if (!is_string($orderIdRaw)) {
                 throw new MtUniCreditInboundApiException('Полето order_id е задължително.', 400, 'invalid_payload');
             }
-            $orderIdRaw = trim((string) $orderIdRaw);
-            if ($orderIdRaw === '' || strlen($orderIdRaw) > 64 || !ctype_digit($orderIdRaw)) {
+            $orderIdRaw = trim($orderIdRaw);
+            if ($orderIdRaw === '' || strlen($orderIdRaw) > 13 || !ctype_digit($orderIdRaw)) {
                 throw new MtUniCreditInboundApiException('Полето order_id е невалидно.', 400, 'invalid_payload');
             }
-            $orderId = (int) $orderIdRaw;
-            $ownership = new MtUniCreditOrderOwnershipResolver($db);
-            if ($ownership->resolveAuthorizedOrderId($storeId, $orderIdRaw) === null) {
+
+            try {
+                $resolved = (new MtUniCreditFinancingOrderResolver($db))->resolve($storeId, $unicid, $orderIdRaw);
+            } catch (MtUniCreditFinancingOrderAmbiguousException $exception) {
                 throw new MtUniCreditInboundApiException(
                     'Не е намерена диагностична информация за тази поръчка.',
                     404,
                     'order_not_found'
                 );
             }
-            $log = (new MtUniCreditDiagnosticDebugLogRepository($db))->findLatestSmartUcfSessionByOrderId($storeId, $orderId);
+
+            if ($resolved === null) {
+                throw new MtUniCreditInboundApiException(
+                    'Не е намерена диагностична информация за тази поръчка.',
+                    404,
+                    'order_not_found'
+                );
+            }
+
+            $attempt = $resolved['attempt'];
+            $bank = (new MtUniCreditOrderBankStatusRepository($db))->findCurrentStatus($storeId, $resolved['order_id']);
+            if (is_array($bank) && (string) (isset($bank['status_id']) ? $bank['status_id'] : '') === MtUniCreditBankStatus::SENT_PROCESS2) {
+                throw new MtUniCreditInboundApiException(
+                    'Не е намерена диагностична информация за тази поръчка.',
+                    404,
+                    'order_not_found'
+                );
+            }
+            $smartucfState = isset($attempt['smartucf_state']) ? (string) $attempt['smartucf_state'] : '';
+            if ($smartucfState === '' || $smartucfState === MtUniCreditSmartUcfLifecycleStates::NOT_STARTED) {
+                throw new MtUniCreditInboundApiException(
+                    'Не е намерена диагностична информация за тази поръчка.',
+                    404,
+                    'order_not_found'
+                );
+            }
+
+            $log = (new MtUniCreditDiagnosticDebugLogRepository($db))->findLatestSmartUcfSessionByOrderId(
+                $storeId,
+                $resolved['order_id']
+            );
             if ($log === null) {
                 throw new MtUniCreditInboundApiException(
                     'Не е намерена диагностична информация за тази поръчка.',
@@ -187,9 +263,10 @@ function mtuc115a_invoke($endpoint, array $payload, array $stack, array $headerO
 
             return array(
                 'success' => true,
+                'message' => 'Диагностичният запис е намерен.',
                 'data' => array(
                     'order_id' => $orderIdRaw,
-                    'oc_order_id' => $orderId,
+                    'oc_order_id' => $resolved['order_id'],
                     'log' => $log,
                 ),
             );
@@ -462,6 +539,7 @@ mtuc115a_assert_auth_matrix('shop_cache', Phase6TestHarness::stack());
 // ---------------------------------------------------------------------------
 $stackDbg = Phase6TestHarness::stack();
 $stackDbg['memoryDb']->seedOrder(701, $stackDbg['storeId'], MtUniCreditConstants::EXTENSION_CODE);
+mtuc115a_seedFinancingAttempt($stackDbg, 701, MtUniCreditSmartUcfLifecycleStates::CREATED);
 (new MtUniCreditDiagnosticDebugLogRepository($stackDbg['db']))->insert(
     $stackDbg['storeId'],
     701,
@@ -503,6 +581,7 @@ mtuc115a_assert(
 );
 
 $stackDbg['memoryDb']->seedOrder(702, $stackDbg['storeId'], MtUniCreditConstants::EXTENSION_CODE);
+mtuc115a_seedFinancingAttempt($stackDbg, 702, MtUniCreditSmartUcfLifecycleStates::CREATED);
 $dbgEmpty = mtuc115a_invoke('smartucf_debug_log', array(
     'unicid' => $stackDbg['unicid'],
     'order_id' => '702',
@@ -576,6 +655,7 @@ mtuc115a_assert_auth_matrix('smartucf_debug_log', Phase6TestHarness::stack());
 // ---------------------------------------------------------------------------
 $stackBank = Phase6TestHarness::stack();
 $stackBank['memoryDb']->seedOrder(901, $stackBank['storeId'], MtUniCreditConstants::EXTENSION_CODE);
+mtuc115a_seedFinancingAttempt($stackBank, 901);
 
 $fwd = mtuc115a_invoke('order_bank_status', array(
     'unicid' => $stackBank['unicid'],

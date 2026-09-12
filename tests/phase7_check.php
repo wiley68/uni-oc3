@@ -151,7 +151,7 @@ foreach ($fixture['ps9_create_field_order'] as $field) {
 }
 mtuc7_assert(!isset($payload['status']) && !isset($payload['status_id']), 'create payload omits status/status_id');
 mtuc7_assert($payload['version'] === '2.0.2', 'payload version frozen 2.0.2');
-mtuc7_assert($payload['products_name'] === 'Example-Product', 'underscore in product name replaced');
+mtuc7_assert($payload['products_name'] === 'Example_Product', 'product name underscore preserved');
 
 // Attempt persistence + reuse
 $transport = new Phase4FakeCpHttpTransport();
@@ -200,21 +200,26 @@ mtuc7_assert((int) $same['attempt_id'] === (int) $attempt['attempt_id'], 'same o
 $cross = $stack['attempts']->findByStoreOrder(Phase5TestHarness::STORE_B, Phase7TestHarness::ORDER_ID);
 mtuc7_assert($cross === null, 'no cross-store attempt fallback');
 
-// Definitive 4xx rejection
+// Definitive 4xx rejection (canonical machine-coded failure envelope)
 $transportReject = new Phase4FakeCpHttpTransport();
 $transportReject->enqueueJson(200, $payloads['login']);
-$transportReject->enqueueJson(422, array('success' => false, 'message' => 'invalid'));
+$transportReject->enqueueJson(422, array(
+    'success' => false,
+    'error' => 'invalid_payload',
+    'message' => 'invalid',
+    'data' => new stdClass(),
+));
 $stackReject = Phase7TestHarness::stack($transportReject);
 $rejectInput = $input;
 $rejectInput['order_id'] = 7002;
 $rejectInput['order'] = Phase7TestHarness::orderRow(7002);
 $rejected = $stackReject['submission']->submit($rejectInput);
-mtuc7_assert(empty($rejected['success']), 'definitive 422 fails');
-mtuc7_assert(empty($rejected['ambiguous_blocked']), '422 is not ambiguous');
+mtuc7_assert(empty($rejected['success']), 'canonical 422 invalid_payload fails');
+mtuc7_assert(empty($rejected['ambiguous_blocked']), '422 invalid_payload is not ambiguous');
 $rejectAttempt = $stackReject['attempts']->findByStoreOrder($stackReject['storeId'], 7002);
 mtuc7_assert(
     $rejectAttempt !== null && $rejectAttempt['state'] === MtUniCreditFinancingAttemptState::TERMINAL_FAILED,
-    'definitive failure state terminal_failed'
+    'canonical 422 invalid_payload state terminal_failed'
 );
 
 // Ambiguous timeout STOP GATE
@@ -274,19 +279,36 @@ mtuc7_assert(
 );
 $stackLock['locks']->release($stackLock['storeId'], MtUniCreditOperationEntryPoint::CHECKOUT, $opHash, $tokenA);
 
-// 401 then success: authenticatedRequest retries once (OC4 parity for POST)
+// 401 on POST /orders: create must NEVER auto-replay after 401
 $transport401 = new Phase4FakeCpHttpTransport();
 $transport401->enqueueJson(200, $payloads['login']);
-$transport401->enqueue(401, '{"success":false}');
-$transport401->enqueueJson(200, $payloads['login']);
-$transport401->enqueueJson(201, $payloads['order']);
+$transport401->enqueueJson(401, array(
+    'success' => false,
+    'error' => 'authentication_failed',
+    'message' => 'auth failed',
+    'data' => new stdClass(),
+));
 $stack401 = Phase7TestHarness::stack($transport401);
 $input401 = $input;
 $input401['order_id'] = 7011;
 $input401['order'] = Phase7TestHarness::orderRow(7011);
 $result401 = $stack401['submission']->submit($input401);
-mtuc7_assert(!empty($result401['success']), '401 then re-auth succeeds for POST /orders');
-mtuc7_assert(Phase7TestHarness::countOrderPosts($transport401) === 2, '401 interaction: order POST retried once after re-login');
+mtuc7_assert(empty($result401['success']), '401 on create submit fails');
+mtuc7_assert(
+    !empty($result401['ambiguous_blocked']) || empty($result401['success']),
+    '401 on create is blocked / not successful'
+);
+mtuc7_assert(Phase7TestHarness::countOrderPosts($transport401) === 1, '401 on create: exactly one POST /orders');
+$attempt401 = $stack401['attempts']->findByStoreOrder($stack401['storeId'], 7011);
+mtuc7_assert(
+    $attempt401 !== null && $attempt401['state'] === MtUniCreditFinancingAttemptState::CP_OUTCOME_UNKNOWN,
+    '401 on create attempt state cp_outcome_unknown'
+);
+$stack401['submission']->submit($input401);
+mtuc7_assert(
+    Phase7TestHarness::countOrderPosts($transport401) === 1,
+    '401 on create: second submit does not POST /orders again'
+);
 
 // Revalidation failures
 $transportVal = new Phase4FakeCpHttpTransport();
@@ -440,29 +462,37 @@ mtuc7_assert(
     'stale A token rejected for current B'
 );
 
-// Retryable failure (HTTP 429 only): GET shows retry; POST reuses attempt
+// HTTP 429 is an ambiguous STOP GATE (not retryable create replay)
 $transportRetry = new Phase4FakeCpHttpTransport();
 $transportRetry->enqueueJson(200, $payloads['login']);
-$transportRetry->enqueueJson(429, array('success' => false, 'message' => 'rate limited'));
+$transportRetry->enqueueJson(429, array(
+    'success' => false,
+    'error' => 'rate_limited',
+    'message' => 'rate limited',
+    'data' => new stdClass(),
+));
 $stackRetry = Phase7TestHarness::stack($transportRetry);
 $retryOrderId = 7110;
 $retryInput = $input;
 $retryInput['order_id'] = $retryOrderId;
 $retryInput['order'] = Phase7TestHarness::orderRow($retryOrderId);
-$stackRetry['submission']->submit($retryInput);
+$retryFirst = $stackRetry['submission']->submit($retryInput);
+mtuc7_assert(empty($retryFirst['success']), '429 submit fails');
+mtuc7_assert(Phase7TestHarness::countOrderPosts($transportRetry) === 1, '429 STOP GATE: first POST happened');
 $retryAttempt = $stackRetry['attempts']->findByStoreOrder($stackRetry['storeId'], $retryOrderId);
 $retryView = MtUniCreditCheckoutPreparedViewState::fromAttempt($retryAttempt);
-mtuc7_assert($retryView['mode'] === MtUniCreditCheckoutPreparedViewState::MODE_RETRYABLE, 'GET retryable mode');
-mtuc7_assert(!empty($retryView['can_submit']), 'GET retryable shows retry submit');
-$retryId = (int) $retryAttempt['attempt_id'];
-$fp = (string) $retryAttempt['request_fingerprint'];
-// Client already holds auth from first attempt — only enqueue the order response.
-$transportRetry->enqueueJson(201, $payloads['order']);
-$retryOk = $stackRetry['submission']->submit($retryInput);
-mtuc7_assert(!empty($retryOk['success']), 'POST retry succeeds');
-$retryAfter = $stackRetry['attempts']->findByStoreOrder($stackRetry['storeId'], $retryOrderId);
-mtuc7_assert((int) $retryAfter['attempt_id'] === $retryId, 'retry reuses existing attempt row');
-mtuc7_assert((string) $retryAfter['request_fingerprint'] === $fp, 'retry keeps frozen fingerprint');
+mtuc7_assert($retryView['mode'] === MtUniCreditCheckoutPreparedViewState::MODE_AMBIGUOUS, '429 GET mode is ambiguous');
+mtuc7_assert(empty($retryView['can_submit']), '429 GET can_submit is false');
+mtuc7_assert(
+    $retryAttempt !== null && $retryAttempt['state'] === MtUniCreditFinancingAttemptState::CP_OUTCOME_UNKNOWN,
+    '429 attempt state cp_outcome_unknown'
+);
+$retrySecond = $stackRetry['submission']->submit($retryInput);
+mtuc7_assert(empty($retrySecond['success']), '429 second submit still fails');
+mtuc7_assert(
+    Phase7TestHarness::countOrderPosts($transportRetry) === 1,
+    '429 STOP GATE: second submit does not POST /orders again'
+);
 
 // Ambiguous: GET blocked; POST must not issue /orders
 $transportAmbGet = new Phase4FakeCpHttpTransport();

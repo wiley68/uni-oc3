@@ -91,7 +91,7 @@ final class MtUniCreditPersistenceSchemaInventory
                 'columns' => array(
                     'order_bank_status_id' => 'INT UNSIGNED NOT NULL AUTO_INCREMENT',
                     'store_id' => 'INT UNSIGNED NOT NULL',
-                    'order_id' => 'INT UNSIGNED NOT NULL',
+                    'order_id' => 'VARCHAR(13) NOT NULL',
                     'order_reference' => 'VARCHAR(64) NOT NULL',
                     'status_id' => 'VARCHAR(255) NOT NULL',
                     'status_label' => 'VARCHAR(255) NOT NULL',
@@ -115,7 +115,7 @@ final class MtUniCreditPersistenceSchemaInventory
                 'columns' => array(
                     'diagnostic_debug_log_id' => 'INT UNSIGNED NOT NULL AUTO_INCREMENT',
                     'store_id' => 'INT UNSIGNED NOT NULL',
-                    'order_id' => 'INT UNSIGNED NOT NULL',
+                    'order_id' => 'VARCHAR(13) NOT NULL',
                     'entry_point' => "VARCHAR(16) NOT NULL DEFAULT ''",
                     'event_code' => "VARCHAR(64) NOT NULL DEFAULT ''",
                     'http_status' => 'INT NULL',
@@ -145,7 +145,7 @@ final class MtUniCreditPersistenceSchemaInventory
                     'selection_hash' => 'CHAR(64) NOT NULL',
                     'request_fingerprint' => "CHAR(64) NOT NULL DEFAULT ''",
                     'state' => 'VARCHAR(32) NOT NULL',
-                    'order_id' => 'INT UNSIGNED NULL',
+                    'order_id' => 'VARCHAR(13) NULL',
                     'unicid' => "VARCHAR(64) NOT NULL DEFAULT ''",
                     'control_panel_order_id' => 'BIGINT UNSIGNED NULL',
                     'cp_payload' => 'LONGTEXT NULL',
@@ -177,6 +177,11 @@ final class MtUniCreditPersistenceSchemaInventory
                     'native_finalize_outcome' => 'VARCHAR(64) NULL',
                     'process2_sensitive_created_at' => 'DATETIME NULL',
                     'leasing_presentation_created_at' => 'DATETIME NULL',
+                    'cp_status_sync_state' => "VARCHAR(32) NOT NULL DEFAULT 'not_needed'",
+                    'cp_status_sync_status_id' => 'VARCHAR(255) NULL',
+                    'cp_status_sync_status' => 'VARCHAR(255) NULL',
+                    'cp_status_sync_error_class' => 'VARCHAR(64) NULL',
+                    'cp_status_sync_updated_at' => 'DATETIME NULL',
                     'created_at' => 'DATETIME NOT NULL',
                     'updated_at' => 'DATETIME NOT NULL',
                 ),
@@ -222,8 +227,19 @@ final class MtUniCreditPersistenceSchemaInventory
                         'unique' => false,
                         'columns' => array('leasing_presentation_created_at'),
                     ),
+                    array(
+                        'name' => 'idx_mt_uni_credit_attempt_cp_status_sync',
+                        'unique' => false,
+                        'columns' => array('cp_status_sync_state'),
+                    ),
+                    array(
+                        'name' => 'idx_mt_uni_credit_attempt_store_order_unicid',
+                        'unique' => false,
+                        'columns' => array('store_id', 'order_id', 'unicid'),
+                    ),
                 ),
             ),
+
             MtUniCreditPersistenceTableNames::OPERATION_ORDER_CLAIM => array(
                 'columns' => array(
                     'operation_order_claim_id' => 'INT UNSIGNED NOT NULL AUTO_INCREMENT',
@@ -231,7 +247,7 @@ final class MtUniCreditPersistenceSchemaInventory
                     'entry_point' => 'VARCHAR(16) NOT NULL',
                     'operation_key_hash' => 'CHAR(64) NOT NULL',
                     'state' => 'VARCHAR(32) NOT NULL',
-                    'order_id' => 'INT UNSIGNED NULL',
+                    'order_id' => 'VARCHAR(13) NULL',
                     'claim_owner_token' => 'CHAR(32) NOT NULL',
                     'created_at' => 'DATETIME NOT NULL',
                     'updated_at' => 'DATETIME NOT NULL',

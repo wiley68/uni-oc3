@@ -12,6 +12,17 @@
 >
 > An old unchecked checkbox or a historical LOCAL PASS heading must **not** be read as the current release gate.
 
+### Canonical CP↔OC3 offline suite (LOCAL)
+
+Run without network:
+
+```text
+php tests/phase_canonical_aggregate_check.php
+php scripts/run_canonical_safe_tests.php
+```
+
+Covers inbound bound body / operation binding / envelopes, FinancingOrderResolver ownership, bank-status P1↔P2 CONFLICT, SmartUCF debug opacity, CP client no-create-replay, durable status sync CAS, P1/P2 target-first lifecycle, and free-text / order_id max-13 preservation. Version remains **2.0.2**.
+
 This document separates facts established from the workspace/references from facts that **must** be collected on the test server.
 
 Never send real passwords, CP secrets, private keys, passphrases, bearer tokens, or EGN in chat or tickets. For certificates/secrets request only: presence, path, owner/group, permissions, and hashes/fingerprints.
@@ -292,9 +303,11 @@ Phase 0 does not install the module. D1–D4 Phase 0 blockers are closed; remain
 
 ## Phase 1 remote checklist (admin skeleton)
 
-Build locally with `powershell -File scripts/package.ps1` (never hand-zip the repo). Install the frozen artifact `dist/CC_OpenCartv.3.x_UNI_v.2.0.2.ocmod.zip` on the test shop when verifying that release. Record sanitized results only; do **not** mark PASS until each item is verified on the server.
+Build locally with `powershell -File scripts/package.ps1` (never hand-zip the repo). Install `dist/CC_OpenCartv.3.x_UNI_v.2.0.2.ocmod.zip` on the test shop when verifying a built package for that release. Record sanitized results only; do **not** mark PASS until each item is verified on the server.
 
-**Frozen v2.0.2 identity:** source HEAD `c9203bbf78a103184077c401485293abf41876b7`; artifact SHA256 `F80655ED4E81BABDC56ED1FC5481C3DBDB487CDBBE280CDC2ACD68CE6CD53BA8`. Packaging enforces source preflight, exact approved-file manifest, per-file SHA256 byte integrity, and debug/private-key sentinels (see `docs/CONTRACTS.md` K3).
+**Current canonical adaptation identity:** source commit will be frozen after the adaptation commit; artifact SHA256 will be recorded when that package is built. Packaging still enforces source preflight, exact approved-file manifest, per-file SHA256 byte integrity, and debug/private-key sentinels (see `docs/CONTRACTS.md` K3).
+
+**Historical (pre-canonical-adaptation) 2.0.2 package identity** — audit reference only; **not** authoritative for the current adaptation: source HEAD `c9203bbf78a103184077c401485293abf41876b7`; artifact SHA256 `F80655ED4E81BABDC56ED1FC5481C3DBDB487CDBBE280CDC2ACD68CE6CD53BA8`.
 
 ### Global
 
@@ -1170,7 +1183,11 @@ Classifications: **VERIFIED** (local and/or accepted remote), **ACCEPTED EXCEPTI
 | R9  | `sucfOnlineSessionID` visibility in SmartUCF debug log    | VERIFIED (local redactor parity; operational support identifier — not a credential)      |
 | R10 | Journal / default storefront behaviour                    | VERIFIED (local asset/OCMOD patterns); remote theme matrix PENDING where not recorded    |
 
-### Frozen release identity (v2.0.2)
+### Release identity (v2.0.2)
+
+**Current canonical adaptation:** source commit identity will be frozen only after this adaptation is committed. Release artifact SHA256 will be recorded only when a package for that committed source is built via `scripts/package.ps1`.
+
+**Historical (pre-canonical-adaptation) 2.0.2 package identity** — audit reference only; **not** authoritative for the current canonical adaptation:
 
 ```text
 Source HEAD: c9203bbf78a103184077c401485293abf41876b7

@@ -111,8 +111,10 @@ final class Phase4FakeCpHttpTransport implements MtUniCreditCpHttpTransport
         if (strtoupper((string) $method) === 'PATCH' && strpos((string) $url, '/orders/status') !== false) {
             if ($this->failStatusPatch) {
                 return new MtUniCreditCpHttpResponse(500, json_encode(array(
-                    'error' => 'status_update_failed',
+                    'success' => false,
+                    'error' => 'internal_error',
                     'message' => 'Forced PATCH failure for tests',
+                    'data' => new stdClass(),
                 ), JSON_THROW_ON_ERROR));
             }
 
@@ -122,6 +124,7 @@ final class Phase4FakeCpHttpTransport implements MtUniCreditCpHttpTransport
 
             return new MtUniCreditCpHttpResponse(200, json_encode(array(
                 'success' => true,
+                'error' => null,
                 'message' => 'Статусът на поръчката е обновен успешно',
                 'data' => array(
                     'id' => 1,
@@ -180,6 +183,12 @@ final class Phase4FakeCpHttpTransport implements MtUniCreditCpHttpTransport
         }
         $decoded['data']['unicid'] = '123e4567-e89b-12d3-a456-426614174000';
         $decoded['data']['shop_id'] = 1;
+        if (!array_key_exists('created_at', $decoded['data'])) {
+            $decoded['data']['created_at'] = '2024-01-01 00:00:00';
+        }
+        if (!array_key_exists('error', $decoded)) {
+            $decoded['error'] = null;
+        }
 
         try {
             return json_encode($decoded, JSON_THROW_ON_ERROR);

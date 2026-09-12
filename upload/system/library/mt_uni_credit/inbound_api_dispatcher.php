@@ -13,6 +13,7 @@ final class MtUniCreditInboundApiDispatcher
      * @param array<string, mixed> $server
      * @param string $rawBody
      * @param string $requestMethod
+     * @param string|null $expectedOperation
      * @return array<string, mixed>
      */
     public static function dispatch(
@@ -20,7 +21,8 @@ final class MtUniCreditInboundApiDispatcher
         MtUniCreditRequestAuthenticator $authenticator,
         array $server,
         $rawBody,
-        $requestMethod
+        $requestMethod,
+        $expectedOperation = null
     ) {
         if (strtoupper((string) $requestMethod) !== 'POST') {
             throw new MtUniCreditInboundApiException('Разрешени са само POST заявки.', 405, 'method_not_allowed');
@@ -30,8 +32,13 @@ final class MtUniCreditInboundApiDispatcher
             throw new MtUniCreditInboundApiException('Изисква се JSON тяло на заявката.', 400, 'invalid_payload');
         }
 
+        // Defense in depth — oversized bodies should already be rejected in the runner (413).
         if (strlen($rawBody) > self::MAX_RAW_BODY_BYTES) {
-            throw new MtUniCreditInboundApiException('JSON тялото на заявката е твърде голямо.', 400, 'payload_too_large');
+            throw new MtUniCreditInboundApiException(
+                'Тялото на заявката надвишава допустимия размер.',
+                413,
+                'payload_too_large'
+            );
         }
 
         // Authenticate exact raw body bytes before any JSON decode / payload validation.
@@ -44,6 +51,10 @@ final class MtUniCreditInboundApiDispatcher
         }
 
         $unicid = $authenticator->finalizeAuthenticatedRequest($payload, $authenticatedUnicid, $headers);
+
+        if ($expectedOperation !== null && $expectedOperation !== '') {
+            MtUniCreditInboundApiOperations::assertExact($payload, (string) $expectedOperation);
+        }
 
         return call_user_func($handler, $payload, $unicid);
     }
@@ -85,11 +96,20 @@ final class MtUniCreditInboundApiDispatcher
      */
     public static function encodeResponse(array $payload, $statusCode)
     {
-        $body = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $normalized = MtUniCreditInboundApiEnvelope::forJsonEncode($payload, ((int) $statusCode) < 400);
+        $body = json_encode($normalized, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         if ($body === false) {
+            $fallback = MtUniCreditInboundApiEnvelope::forJsonEncode(
+                MtUniCreditInboundApiEnvelope::failure(
+                    'internal_error',
+                    'Модулът не можа да кодира отговора.'
+                ),
+                false
+            );
+
             return array(
                 'status' => 500,
-                'body' => '{"success":false,"message":"Модулът не можа да кодира отговора."}',
+                'body' => (string) json_encode($fallback, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             );
         }
 
@@ -105,18 +125,47 @@ final class MtUniCreditInboundApiDispatcher
      */
     public static function encodeException(MtUniCreditInboundApiException $exception)
     {
-        $payload = array(
-            'success' => false,
-            'message' => $exception->getMessage(),
-        );
-        if ($exception->getErrorCode() !== null) {
-            $payload['error'] = $exception->getErrorCode();
-        }
-        if ($exception->getResponseData() !== null) {
-            $payload['data'] = $exception->getResponseData();
+        $error = $exception->getErrorCode();
+        if ($error === null || $error === '') {
+            switch ((int) $exception->getStatusCode()) {
+                case 400:
+                    $error = 'bad_request';
+                    break;
+                case 401:
+                    $error = 'authentication_failed';
+                    break;
+                case 403:
+                    $error = 'module_disabled';
+                    break;
+                case 404:
+                    $error = 'not_found';
+                    break;
+                case 405:
+                    $error = 'method_not_allowed';
+                    break;
+                case 409:
+                    $error = 'conflict';
+                    break;
+                case 413:
+                    $error = 'payload_too_large';
+                    break;
+                case 422:
+                    $error = 'unprocessable_entity';
+                    break;
+                default:
+                    $error = 'internal_error';
+                    break;
+            }
         }
 
-        return self::encodeResponse($payload, $exception->getStatusCode());
+        return self::encodeResponse(
+            MtUniCreditInboundApiEnvelope::failure(
+                $error,
+                $exception->getMessage(),
+                $exception->getResponseData()
+            ),
+            $exception->getStatusCode()
+        );
     }
 
     /**
@@ -128,6 +177,8 @@ final class MtUniCreditInboundApiDispatcher
         switch ((int) $status) {
             case 200:
                 return '200 OK';
+            case 201:
+                return '201 Created';
             case 400:
                 return '400 Bad Request';
             case 401:
@@ -138,8 +189,14 @@ final class MtUniCreditInboundApiDispatcher
                 return '404 Not Found';
             case 405:
                 return '405 Method Not Allowed';
+            case 409:
+                return '409 Conflict';
+            case 413:
+                return '413 Payload Too Large';
             case 422:
                 return '422 Unprocessable Entity';
+            case 500:
+                return '500 Internal Server Error';
             default:
                 return (int) $status . ' Error';
         }

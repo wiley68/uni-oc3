@@ -18,7 +18,7 @@ final class MtUniCreditFinancingPresentationRepository
 
     /**
      * @param int $storeId
-     * @param int $orderId
+     * @param int|string $orderId
      * @return MtUniCreditFinancingPresentationSnapshot|null
      */
     public function findByOrderId($storeId, $orderId)
@@ -44,12 +44,12 @@ final class MtUniCreditFinancingPresentationRepository
 
     /**
      * @param int $storeId
-     * @param int $orderId
+     * @param int|string $orderId
      * @return string Display label (canonical for named codes)
      */
     public function findBankStatusLabel($storeId, $orderId)
     {
-        $row = $this->findBankStatusRow((int) $storeId, (int) $orderId);
+        $row = $this->findBankStatusRow((int) $storeId, $orderId);
         if ($row === null) {
             return '';
         }
@@ -59,39 +59,43 @@ final class MtUniCreditFinancingPresentationRepository
 
     /**
      * @param int $storeId
-     * @param int $orderId
+     * @param int|string $orderId
      * @return string status_id or empty
      */
     public function findBankStatusId($storeId, $orderId)
     {
-        $row = $this->findBankStatusRow((int) $storeId, (int) $orderId);
+        $row = $this->findBankStatusRow((int) $storeId, $orderId);
 
         return $row !== null ? (string) $row['status_id'] : '';
     }
 
     /**
      * @param int $storeId
-     * @param int $orderId
+     * @param int|string $orderId
      * @return array{status_id: string, status_label: string}|null
      */
     public function findBankStatusRow($storeId, $orderId)
     {
-        $map = $this->batchBankStatusRows((int) $storeId, array((int) $orderId));
+        $canonical = MtUniCreditShopOrderId::tryNormalize($orderId);
+        if ($canonical === null) {
+            return null;
+        }
+        $map = $this->batchBankStatusRows((int) $storeId, array($canonical));
 
-        return isset($map[(int) $orderId]) ? $map[(int) $orderId] : null;
+        return isset($map[$canonical]) ? $map[$canonical] : null;
     }
 
     /**
      * @param int $storeId
-     * @param array<int, int> $orderIds
-     * @return array<int, string> order_id => status_label
+     * @param array<int, int|string> $orderIds
+     * @return array<string, string> canonical order_id => status_label
      */
     public function batchBankStatusLabels($storeId, array $orderIds)
     {
         $rows = $this->batchBankStatusRows($storeId, $orderIds);
         $map = array();
         foreach ($rows as $orderId => $row) {
-            $map[(int) $orderId] = MtUniCreditBankStatus::resolveLabel(
+            $map[(string) $orderId] = MtUniCreditBankStatus::resolveLabel(
                 $row['status_id'],
                 $row['status_label']
             );
@@ -102,16 +106,16 @@ final class MtUniCreditFinancingPresentationRepository
 
     /**
      * @param int $storeId
-     * @param array<int, int> $orderIds
-     * @return array<int, array{status_id: string, status_label: string}>
+     * @param array<int, int|string> $orderIds
+     * @return array<string, array{status_id: string, status_label: string}>
      */
     public function batchBankStatusRows($storeId, array $orderIds)
     {
         $ids = array();
         foreach ($orderIds as $orderId) {
-            $id = (int) $orderId;
-            if ($id > 0) {
-                $ids[$id] = $id;
+            $canonical = MtUniCreditShopOrderId::tryNormalize($orderId);
+            if ($canonical !== null) {
+                $ids[$canonical] = MtUniCreditShopOrderId::sqlQuoted($this->db, $canonical);
             }
         }
         if ($ids === array()) {
@@ -121,7 +125,7 @@ final class MtUniCreditFinancingPresentationRepository
         $table = $this->db->getPrefix() . MtUniCreditPersistenceTableNames::ORDER_BANK_STATUS;
         $sql = "SELECT `order_id`, `status_id`, `status_label` FROM `{$table}`"
             . " WHERE `store_id` = " . (int) $storeId
-            . " AND `order_id` IN (" . implode(',', $ids) . ")";
+            . " AND `order_id` IN (" . implode(',', array_values($ids)) . ")";
         $result = $this->db->query($sql);
         $map = array();
         if (is_object($result) && !empty($result->rows) && is_array($result->rows)) {
@@ -129,7 +133,11 @@ final class MtUniCreditFinancingPresentationRepository
                 if (!isset($row['order_id'])) {
                     continue;
                 }
-                $map[(int) $row['order_id']] = array(
+                $canonical = MtUniCreditShopOrderId::tryNormalize($row['order_id']);
+                if ($canonical === null) {
+                    continue;
+                }
+                $map[$canonical] = array(
                     'status_id' => (string) (isset($row['status_id']) ? $row['status_id'] : ''),
                     'status_label' => (string) (isset($row['status_label']) ? $row['status_label'] : ''),
                 );
@@ -144,16 +152,16 @@ final class MtUniCreditFinancingPresentationRepository
      *
      * Real admin order-list rows do not include store_id; authority is oc_order.
      *
-     * @param array<int, int> $orderIds
-     * @return array<int, int> order_id => store_id (may be 0)
+     * @param array<int, int|string> $orderIds
+     * @return array<int, int> native order_id => store_id (may be 0)
      */
     public function batchNativeOrderStoreIds(array $orderIds)
     {
         $ids = array();
         foreach ($orderIds as $orderId) {
-            $id = (int) $orderId;
-            if ($id > 0) {
-                $ids[$id] = $id;
+            $native = MtUniCreditShopOrderId::tryNativeOc3OrderId($orderId);
+            if ($native !== null) {
+                $ids[$native] = $native;
             }
         }
         if ($ids === array()) {
@@ -201,12 +209,17 @@ final class MtUniCreditFinancingPresentationRepository
             if (!is_array($order)) {
                 continue;
             }
-            $orderId = (int) (isset($order['order_id']) ? $order['order_id'] : 0);
-            if ($orderId <= 0) {
+            $canonical = MtUniCreditShopOrderId::tryNormalize(
+                isset($order['order_id']) ? $order['order_id'] : null
+            );
+            if ($canonical === null) {
                 continue;
             }
             if (!array_key_exists('store_id', $order)) {
-                $needNative[$orderId] = $orderId;
+                $native = MtUniCreditShopOrderId::tryNativeOc3OrderId($canonical);
+                if ($native !== null) {
+                    $needNative[$native] = $native;
+                }
             }
         }
         $nativeStores = $needNative !== array()
@@ -218,19 +231,23 @@ final class MtUniCreditFinancingPresentationRepository
             if (!is_array($order)) {
                 continue;
             }
-            $orderId = (int) (isset($order['order_id']) ? $order['order_id'] : 0);
-            if ($orderId <= 0) {
+            $canonical = MtUniCreditShopOrderId::tryNormalize(
+                isset($order['order_id']) ? $order['order_id'] : null
+            );
+            if ($canonical === null) {
                 continue;
             }
             if (array_key_exists('store_id', $order)) {
                 $storeId = (int) $order['store_id'];
-            } elseif (array_key_exists($orderId, $nativeStores)) {
-                $storeId = (int) $nativeStores[$orderId];
             } else {
-                // No authoritative store identity — leave blank (do not use config_store_id).
-                continue;
+                $native = MtUniCreditShopOrderId::tryNativeOc3OrderId($canonical);
+                if ($native === null || !array_key_exists($native, $nativeStores)) {
+                    // No authoritative store identity — leave blank (do not use config_store_id).
+                    continue;
+                }
+                $storeId = (int) $nativeStores[$native];
             }
-            $grouped[$storeId][$index] = $orderId;
+            $grouped[$storeId][$index] = $canonical;
         }
         foreach ($grouped as $storeId => $indexToOrderId) {
             $map = $this->batchBankStatusLabels((int) $storeId, array_values($indexToOrderId));
@@ -244,16 +261,20 @@ final class MtUniCreditFinancingPresentationRepository
 
     /**
      * @param int $storeId
-     * @param int $orderId
+     * @param int|string $orderId
      * @return array<string, mixed>|null
      */
     public function findAttemptRowByOrderId($storeId, $orderId)
     {
+        $canonical = MtUniCreditShopOrderId::tryNormalize($orderId);
+        if ($canonical === null) {
+            return null;
+        }
         $table = $this->db->getPrefix() . MtUniCreditPersistenceTableNames::FINANCING_ATTEMPT;
         $sql = "SELECT `attempt_id`, `leasing_presentation_json`, `process2_sensitive_enc`, `control_panel_order_id`"
             . " FROM `{$table}`"
             . " WHERE `store_id` = " . (int) $storeId
-            . " AND `order_id` = " . (int) $orderId
+            . " AND `order_id` = " . MtUniCreditShopOrderId::sqlQuoted($this->db, $canonical)
             . " ORDER BY `attempt_id` DESC LIMIT 1";
         $result = $this->db->query($sql);
         if (!is_object($result) || empty($result->num_rows) || !is_array($result->row)) {

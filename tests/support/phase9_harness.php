@@ -430,21 +430,21 @@ final class Phase9TestHarness
      * Seed OC order row so bank-status ownership resolves.
      *
      * @param Phase2MemoryDb $memoryDb
-     * @param int $orderId
+     * @param int|string $orderId Canonical shop order id (string preferred)
      * @param int $storeId
      * @return void
      */
-    public static function seedBankOrder(Phase2MemoryDb $memoryDb, int $orderId, int $storeId): void
+    public static function seedBankOrder(Phase2MemoryDb $memoryDb, $orderId, $storeId)
     {
         $memoryDb->seedOrder($orderId, $storeId, MtUniCreditConstants::EXTENSION_CODE);
     }
 
     /**
      * @param array<string, mixed> $stack
-     * @param int $orderId
+     * @param int|string $orderId
      * @return string|null
      */
-    public static function bankStatusId(array $stack, int $orderId): ?string
+    public static function bankStatusId(array $stack, $orderId)
     {
         $row = $stack['bankStatuses']->findByOrderId((int) $stack['storeId'], $orderId);
         if ($row === null) {
@@ -486,17 +486,22 @@ final class Phase9TestHarness
     }
 
     /**
-     * @param int $orderId
+     * @param int|string $orderId Canonical shop order id (string preferred; no host-width cast)
      * @param int $storeId
      * @return array<string, mixed>
      */
-    public static function submitInput(int $orderId, int $storeId): array
+    public static function submitInput($orderId, $storeId)
     {
-        $order = Phase7TestHarness::orderRow($orderId, $storeId);
+        $canonical = MtUniCreditShopOrderId::tryNormalize($orderId);
+        if ($canonical === null) {
+            throw new InvalidArgumentException('submitInput requires a canonical shop order id');
+        }
+        $order = Phase7TestHarness::orderRow($canonical, $storeId);
+        $order['order_id'] = $canonical;
 
         return array(
             'store_id' => $storeId,
-            'order_id' => $orderId,
+            'order_id' => $canonical,
             'order' => $order,
             'order_products' => Phase7TestHarness::orderProducts(),
             'cart_context' => Phase7TestHarness::cartContext(),
@@ -525,11 +530,11 @@ final class Phase9TestHarness
     }
 
     /**
-     * @param int $orderId
+     * @param int|string $orderId
      * @param int $storeId
      * @return array<string, mixed>
      */
-    public static function submitInputProcess2(int $orderId, int $storeId): array
+    public static function submitInputProcess2($orderId, $storeId)
     {
         $input = self::submitInput($orderId, $storeId);
         $input['process2'] = self::process2Fields();

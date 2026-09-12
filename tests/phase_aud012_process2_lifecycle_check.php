@@ -76,23 +76,53 @@ final class MtUniCreditAud012FailClosedBankStatuses
 
     /**
      * @param int $storeId
-     * @param string $orderReference
+     * @param int $orderId
      * @param string $statusId
      * @param string $statusLabel
+     * @param string|null $source
      * @return array<string, mixed>|null
      */
-    public function updateByOrderIdentifier($storeId, $orderReference, $statusId, $statusLabel, $source = null)
+    public function upsertAuthorizedLocal($storeId, $orderId, $statusId, $statusLabel, $source = null)
     {
         if ($this->failLocal) {
             return null;
         }
 
         if ($source === null) {
-            return $this->inner->updateByOrderIdentifier($storeId, $orderReference, $statusId, $statusLabel);
+            return $this->inner->upsertAuthorizedLocal($storeId, $orderId, $statusId, $statusLabel);
+        }
+
+        return $this->inner->upsertAuthorizedLocal(
+            $storeId,
+            $orderId,
+            $statusId,
+            $statusLabel,
+            $source
+        );
+    }
+
+    /**
+     * @param int $storeId
+     * @param string $unicid
+     * @param string $orderReference
+     * @param string $statusId
+     * @param string $statusLabel
+     * @param string|null $source
+     * @return array<string, mixed>|null
+     */
+    public function updateByOrderIdentifier($storeId, $unicid, $orderReference, $statusId, $statusLabel, $source = null)
+    {
+        if ($this->failLocal) {
+            return null;
+        }
+
+        if ($source === null) {
+            return $this->inner->updateByOrderIdentifier($storeId, $unicid, $orderReference, $statusId, $statusLabel);
         }
 
         return $this->inner->updateByOrderIdentifier(
             $storeId,
+            $unicid,
             $orderReference,
             $statusId,
             $statusLabel,

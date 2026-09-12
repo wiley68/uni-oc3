@@ -115,13 +115,7 @@ function mtucCpSync_invoke(array $payload, array $stack, array $headerOverrides 
             throw new MtUniCreditInboundApiException('Полето status е невалидно.', 400, 'invalid_payload');
         }
         $status = trim($status);
-        $result = (new MtUniCreditOrderBankStatusRepository($db))->updateByOrderIdentifier(
-            $storeId,
-            $orderId,
-            $statusId,
-            $status,
-            MtUniCreditBankStatusTransitionPolicy::SOURCE_INBOUND_CALLBACK
-        );
+        $result = (new MtUniCreditOrderBankStatusRepository($db))->upsertAuthorizedLocal($storeId, (int) $orderId, $statusId, $status, MtUniCreditBankStatusTransitionPolicy::SOURCE_INBOUND_CALLBACK);
         if ($result === null) {
             throw new MtUniCreditInboundApiException('Поръчката не е намерена в магазина.', 404, 'order_not_found');
         }
@@ -169,13 +163,7 @@ $orderId = 9201;
 $stack['memoryDb']->seedOrder($orderId, $stack['storeId'], MtUniCreditConstants::EXTENSION_CODE);
 $repo = new MtUniCreditOrderBankStatusRepository($stack['db']);
 
-$seed = $repo->updateByOrderIdentifier(
-    $stack['storeId'],
-    (string) $orderId,
-    MtUniCreditBankStatus::SENT_PROCESS1,
-    MtUniCreditBankStatus::LABEL_SENT_PROCESS1,
-    MtUniCreditBankStatusTransitionPolicy::SOURCE_LOCAL_LIFECYCLE
-);
+$seed = $repo->upsertAuthorizedLocal($stack['storeId'], (int) $orderId, MtUniCreditBankStatus::SENT_PROCESS1, MtUniCreditBankStatus::LABEL_SENT_PROCESS1, MtUniCreditBankStatusTransitionPolicy::SOURCE_LOCAL_LIFECYCLE);
 mtucCpSync_assert(
     $seed !== null && !empty($seed['applied'])
         && (string) $seed['status_id'] === MtUniCreditBankStatus::SENT_PROCESS1,
@@ -262,13 +250,7 @@ $staleStack = Phase6TestHarness::stack();
 $staleOrder = 9202;
 $staleStack['memoryDb']->seedOrder($staleOrder, $staleStack['storeId'], MtUniCreditConstants::EXTENSION_CODE);
 $staleRepo = new MtUniCreditOrderBankStatusRepository($staleStack['db']);
-$staleRepo->updateByOrderIdentifier(
-    $staleStack['storeId'],
-    (string) $staleOrder,
-    MtUniCreditBankStatus::SENT_PROCESS1,
-    MtUniCreditBankStatus::LABEL_SENT_PROCESS1,
-    MtUniCreditBankStatusTransitionPolicy::SOURCE_LOCAL_LIFECYCLE
-);
+$staleRepo->upsertAuthorizedLocal($staleStack['storeId'], (int) $staleOrder, MtUniCreditBankStatus::SENT_PROCESS1, MtUniCreditBankStatus::LABEL_SENT_PROCESS1, MtUniCreditBankStatusTransitionPolicy::SOURCE_LOCAL_LIFECYCLE);
 $stale = mtucCpSync_invoke(array(
     'unicid' => $staleStack['unicid'],
     'order_id' => (string) $staleOrder,
@@ -297,20 +279,8 @@ $shared->seedOrder($orderB, $stackB['storeId'], MtUniCreditConstants::EXTENSION_
 
 $repoA = new MtUniCreditOrderBankStatusRepository($stackA['db']);
 $repoB = new MtUniCreditOrderBankStatusRepository($stackB['db']);
-$repoA->updateByOrderIdentifier(
-    $stackA['storeId'],
-    (string) $orderA,
-    MtUniCreditBankStatus::SENT_PROCESS1,
-    MtUniCreditBankStatus::LABEL_SENT_PROCESS1,
-    MtUniCreditBankStatusTransitionPolicy::SOURCE_LOCAL_LIFECYCLE
-);
-$repoB->updateByOrderIdentifier(
-    $stackB['storeId'],
-    (string) $orderB,
-    MtUniCreditBankStatus::SENT_PROCESS1,
-    MtUniCreditBankStatus::LABEL_SENT_PROCESS1,
-    MtUniCreditBankStatusTransitionPolicy::SOURCE_LOCAL_LIFECYCLE
-);
+$repoA->upsertAuthorizedLocal($stackA['storeId'], (int) $orderA, MtUniCreditBankStatus::SENT_PROCESS1, MtUniCreditBankStatus::LABEL_SENT_PROCESS1, MtUniCreditBankStatusTransitionPolicy::SOURCE_LOCAL_LIFECYCLE);
+$repoB->upsertAuthorizedLocal($stackB['storeId'], (int) $orderB, MtUniCreditBankStatus::SENT_PROCESS1, MtUniCreditBankStatus::LABEL_SENT_PROCESS1, MtUniCreditBankStatusTransitionPolicy::SOURCE_LOCAL_LIFECYCLE);
 
 $ms = mtucCpSync_invoke(array(
     'unicid' => $stackA['unicid'],

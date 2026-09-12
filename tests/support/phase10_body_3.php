@@ -45,12 +45,7 @@ $attemptRow = $stackValid['attempts']->findOrCreateAttempt(
 (new MtUniCreditProcessTwoLifecycleRepository(new MtUniCreditDbAdapter($stackValid['memoryDb'], 'oc_')))
     ->persistLeasingPresentationJson((int) $attemptRow['attempt_id'], json_encode($snap->toArray()));
 (new MtUniCreditOrderBankStatusRepository(new MtUniCreditDbAdapter($stackValid['memoryDb'], 'oc_')))
-    ->updateByOrderIdentifier(
-        $stackValid['storeId'],
-        (string) 10130,
-        MtUniCreditBankStatus::SENT_PROCESS2,
-        MtUniCreditBankStatus::LABEL_SENT_PROCESS2
-    );
+    ->upsertAuthorizedLocal($stackValid['storeId'], (int) 10130, MtUniCreditBankStatus::SENT_PROCESS2, MtUniCreditBankStatus::LABEL_SENT_PROCESS2);
 
 $thankHtml = $svc->customerThankYouHtml($stackValid['storeId'], 10130);
 mtuc10_assert($thankHtml !== '', 'thank you: leasing HTML present');

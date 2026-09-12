@@ -4,6 +4,20 @@
 > `docs/CONTRACTS.md` and `docs/RUNTIME_VERIFICATION.md` (including AUD-032 documentation updates).
 > Do not treat this plan’s early prose as current release instructions when contracts have been updated.
 
+### Canonical CP↔OC3 adaptation (current release — supersedes older plan prose)
+
+When this plan’s early wording conflicts with the following, **CONTRACTS.md wins**:
+
+- Canonical CP envelopes (`success` / `error` / `message` / `data`; empty `data` = `{}`).
+- Tokens only from `response.data`; no legacy top-level token acceptance without `data.access_token`.
+- **`POST /orders` never auto-replays** after a remote response (including 401).
+- PATCH `/orders/status` requires **both** `status` and `status_id`.
+- Durable `cp_status_sync_*` CAS states on `financing_attempt` (target-first P1/P2).
+- P1 and P2 are **mutually incompatible** terminals — P2 does **not** follow P1; PATCH does **not** precede durable target admission.
+- Inbound callbacks authorize via `FinancingOrderResolver` (store + order + UNICID), **not** payment method alone.
+- Inbound body bound to **1 MiB**; exact `operation` binding; free-text / `order_id` never truncated.
+- Offline proof: `tests/phase_canonical_*_check.php` + `tests/phase_canonical_aggregate_check.php` / `scripts/run_canonical_safe_tests.php`.
+
 ## Document status and boundaries
 
 This is an analysis and implementation plan, not implementation. It is based on baseline commit `e7787b091e5258ac0f9d105b5131bf4e58dd9c11` and the local references available on 2026-09-01. No runtime facts are inferred from the test shop.

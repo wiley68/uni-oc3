@@ -2,11 +2,14 @@
 
 /**
  * Builds Control Panel POST /orders body from server-authoritative order + calculation.
+ *
+ * GAP-14: order_id is never truncated/coerced; free-text product names keep UTF-8,
+ * apostrophes and underscores (no underscore→hyphen, no HTML-encode).
  */
 final class MtUniCreditControlPanelOrderPayloadBuilder
 {
     /**
-     * @param int $localOrderId
+     * @param int|string $localOrderId
      * @param array<string, mixed> $order OpenCart order row
      * @param array<int, array<string, mixed>> $orderProducts
      * @param MtUniCreditCalculationResult $calculation
@@ -15,6 +18,8 @@ final class MtUniCreditControlPanelOrderPayloadBuilder
      */
     public function build($localOrderId, array $order, array $orderProducts, MtUniCreditCalculationResult $calculation, array $shop)
     {
+        $orderIdString = $this->normalizeOrderId($localOrderId);
+
         $ids = array();
         $names = array();
         $quantities = array();
@@ -23,7 +28,9 @@ final class MtUniCreditControlPanelOrderPayloadBuilder
                 continue;
             }
             $ids[] = (int) (isset($product['product_id']) ? $product['product_id'] : 0);
-            $names[] = str_replace('_', '-', (string) (isset($product['name']) ? $product['name'] : ''));
+            // Preserve free-text exactly (UTF-8, apostrophes, underscores). Delimiter between
+            // multi-line names remains "_" at implode time only — never mutate the name itself.
+            $names[] = (string) (isset($product['name']) ? $product['name'] : '');
             $quantities[] = max(1, (int) (isset($product['quantity']) ? $product['quantity'] : 1));
         }
 
@@ -48,7 +55,7 @@ final class MtUniCreditControlPanelOrderPayloadBuilder
         }
 
         return array(
-            'order_id' => substr((string) (int) $localOrderId, 0, 13),
+            'order_id' => $orderIdString,
             'name' => substr($name, 0, 65),
             'phone' => substr($phone, 0, 45),
             'email' => substr($email, 0, 128),
@@ -60,7 +67,8 @@ final class MtUniCreditControlPanelOrderPayloadBuilder
             'vnoski' => (int) $calculation->scheme->months,
             'parva' => round((float) $calculation->firstInstallment->amount, 2),
             'products_id' => implode('_', $ids),
-            'products_name' => substr(implode('_', $names), 0, 255),
+            // CP contract: products_name has no max (cp_max null). Never truncate or mutate.
+            'products_name' => implode('_', $names),
             'products_q' => implode('_', $quantities),
             'type_client' => !empty($shop['_is_mobile']) ? 0 : 1,
             'currency' => $currency,
@@ -109,6 +117,15 @@ final class MtUniCreditControlPanelOrderPayloadBuilder
         }
 
         return hash('sha256', json_encode($canonical, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    }
+
+    /**
+     * @param int|string $localOrderId
+     * @return string
+     */
+    private function normalizeOrderId($localOrderId)
+    {
+        return MtUniCreditShopOrderId::requireNormalized($localOrderId);
     }
 
     /**
