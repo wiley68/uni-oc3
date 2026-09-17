@@ -253,7 +253,7 @@ final class MtUniCreditCheckoutFinancingSubmissionService
             'http_status' => $result->httpStatus,
         );
 
-        // Checkout Woo/PS parity: definitive CP create failure → local bank_send_failed_cp
+        // Definitive CP create failure → local bank_send_failed_cp
         // (no CP PATCH — no CP order). Native/Thank You only after durable status is proven (AUD-014 F03).
         if (MtUniCreditFinancingTerminalNavigationSupport::isCheckoutCpFailureNativeFinalizationCandidate($failure)) {
             if ($this->persistCheckoutCpFailureBankStatus($storeId, $orderId)) {
@@ -456,31 +456,10 @@ final class MtUniCreditCheckoutFinancingSubmissionService
      */
     private function persistCheckoutCpFailureBankStatus($storeId, $orderId)
     {
-        $storeId = (int) $storeId;
-        $orderId = MtUniCreditShopOrderId::tryNormalize($orderId);
-        if ($storeId < 0 || $orderId === null) {
-            return false;
-        }
         try {
-            $status = MtUniCreditBankStatus::controlPanelFailure(false);
             $repo = MtUniCreditProcess1ServiceFactory::bankStatuses($this->attempts->database());
-            $updated = $repo->upsertAuthorizedLocal(
-                $storeId,
-                $orderId,
-                $status['status_id'],
-                $status['status_label'],
-                MtUniCreditBankStatusTransitionPolicy::SOURCE_LOCAL_LIFECYCLE
-            );
-            if ($updated === null) {
-                return false;
-            }
-            $row = $repo->findByOrderId($storeId, $orderId);
-            if ($row === null) {
-                return false;
-            }
 
-            return isset($row['status_id'])
-                && (string) $row['status_id'] === MtUniCreditBankStatus::SEND_FAILED_CP;
+            return MtUniCreditBankStatus::persistLocalControlPanelFailure($repo, $storeId, $orderId);
         } catch (Exception $ignored) {
             return false;
         }

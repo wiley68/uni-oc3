@@ -32,7 +32,31 @@ class MtUniCreditCpConnectionException extends MtUniCreditCpException
 
 final class MtUniCreditCpTimeoutException extends MtUniCreditCpConnectionException {}
 
-final class MtUniCreditCpMalformedJsonException extends MtUniCreditCpException {}
+final class MtUniCreditCpMalformedJsonException extends MtUniCreditCpException
+{
+    /** @var int|null HTTP status when this was raised from a non-2xx CP response body */
+    private $httpStatusCode;
+
+    /**
+     * @param string $message
+     * @param int $code
+     * @param Throwable|null $previous
+     * @param int|null $httpStatusCode
+     */
+    public function __construct($message = '', $code = 0, $previous = null, $httpStatusCode = null)
+    {
+        parent::__construct($message, (int) $code, $previous);
+        $this->httpStatusCode = $httpStatusCode !== null ? (int) $httpStatusCode : null;
+    }
+
+    /**
+     * @return int|null
+     */
+    public function getHttpStatusCode()
+    {
+        return $this->httpStatusCode;
+    }
+}
 
 final class MtUniCreditCpAuthenticationException extends MtUniCreditCpException
 {
@@ -131,6 +155,29 @@ final class MtUniCreditCpHttpException extends MtUniCreditCpException
 
 final class MtUniCreditCpInvalidPayloadException extends MtUniCreditCpException
 {
+    /** @var int|null HTTP status when this was raised from a non-2xx CP response body */
+    private $httpStatusCode;
+
+    /**
+     * @param string $message
+     * @param int $code
+     * @param Throwable|null $previous
+     * @param int|null $httpStatusCode
+     */
+    public function __construct($message = '', $code = 0, $previous = null, $httpStatusCode = null)
+    {
+        parent::__construct($message, (int) $code, $previous);
+        $this->httpStatusCode = $httpStatusCode !== null ? (int) $httpStatusCode : null;
+    }
+
+    /**
+     * @return int|null
+     */
+    public function getHttpStatusCode()
+    {
+        return $this->httpStatusCode;
+    }
+
     /**
      * @return bool
      */

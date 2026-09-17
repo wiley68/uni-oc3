@@ -75,6 +75,49 @@ final class MtUniCreditBankStatus
     }
 
     /**
+     * Persist local bank_send_failed_cp after definitive CP create failure.
+     * No CP PATCH (no remote CP order). Returns true only when durable status is proven.
+     *
+     * @param MtUniCreditOrderBankStatusRepository $repo
+     * @param int $storeId
+     * @param int|string $orderId
+     * @return bool
+     */
+    public static function persistLocalControlPanelFailure($repo, $storeId, $orderId)
+    {
+        if (!$repo instanceof MtUniCreditOrderBankStatusRepository) {
+            return false;
+        }
+        $storeId = (int) $storeId;
+        $orderId = MtUniCreditShopOrderId::tryNormalize($orderId);
+        if ($storeId < 0 || $orderId === null) {
+            return false;
+        }
+        try {
+            $status = self::controlPanelFailure(false);
+            $updated = $repo->upsertAuthorizedLocal(
+                $storeId,
+                $orderId,
+                $status['status_id'],
+                $status['status_label'],
+                MtUniCreditBankStatusTransitionPolicy::SOURCE_LOCAL_LIFECYCLE
+            );
+            if ($updated === null) {
+                return false;
+            }
+            $row = $repo->findByOrderId($storeId, $orderId);
+            if ($row === null) {
+                return false;
+            }
+
+            return isset($row['status_id'])
+                && (string) $row['status_id'] === self::SEND_FAILED_CP;
+        } catch (Exception $ignored) {
+            return false;
+        }
+    }
+
+    /**
      * Server-side canonical BG label for named status codes (AUD-015 F04).
      * Returns null for numeric / unknown codes (display-only inbound label may apply).
      *

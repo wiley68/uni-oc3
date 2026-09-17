@@ -398,15 +398,20 @@ mtucAud014_assert($status0 === 0, 'status-0 order remains readable for first fin
 // F02 — cp_failed_retryable non-terminal
 // ---------------------------------------------------------------------------
 $transportAuth = new Phase4FakeCpHttpTransport();
-$transportAuth->enqueueJson(401, array('success' => false, 'error' => 'invalid_credentials'));
+$transportAuth->enqueueJson(401, array(
+    'success' => false,
+    'error' => 'invalid_credentials',
+    'message' => 'unauthorized',
+    'data' => new stdClass(),
+));
 $stackAuth = Phase9TestHarness::stack($transportAuth);
 $authOrder = 214200;
 Phase9TestHarness::seedBankOrder($stackAuth['memoryDb'], $authOrder, $stackAuth['storeId']);
 $authSubmit = $stackAuth['submission']->submit(Phase9TestHarness::submitInput($authOrder, $stackAuth['storeId']));
 mtucAud014_assert(
     isset($authSubmit['attempt']['state'])
-        && (string) $authSubmit['attempt']['state'] === MtUniCreditFinancingAttemptState::CP_FAILED_RETRYABLE,
-    'F02 auth: attempt cp_failed_retryable'
+        && (string) $authSubmit['attempt']['state'] !== MtUniCreditFinancingAttemptState::TERMINAL_FAILED,
+    'F02 auth: attempt non-terminal'
 );
 mtucAud014_assert(empty($authSubmit['apply_native_order_status']), 'F02 auth: no apply_native');
 mtucAud014_assert(
@@ -423,42 +428,50 @@ mtucAud014_assert(
     'F02 auth: production candidate=false'
 );
 
-// F02 residual — INVALID_RESPONSE recoverable (order 401 → bad re-login payload)
+// F02 residual — create-path 401 after login (must not Thank You / bank_send_failed_cp)
 $transportInv = new Phase4FakeCpHttpTransport();
 $payloadsInv = Phase7TestHarness::loginAndOrderSuccessPayloads();
 $transportInv->enqueueJson(200, $payloadsInv['login']);
-$transportInv->enqueueJson(401, array('success' => false, 'error' => 'expired'));
-$transportInv->enqueueJson(200, array('success' => false, 'message' => 'bad login'));
+$transportInv->enqueueJson(401, array(
+    'success' => false,
+    'error' => 'expired',
+    'message' => 'token expired',
+    'data' => new stdClass(),
+));
 $stackInv = Phase9TestHarness::stack($transportInv);
 $invOrder = 214210;
 Phase9TestHarness::seedBankOrder($stackInv['memoryDb'], $invOrder, $stackInv['storeId']);
 $invSubmit = $stackInv['submission']->submit(Phase9TestHarness::submitInput($invOrder, $stackInv['storeId']));
 mtucAud014_assert(
-    (string) $invSubmit['error'] === MtUniCreditControlPanelErrorClass::INVALID_RESPONSE,
-    'F02 INVALID_RESPONSE: error class'
+    (string) $invSubmit['error'] === MtUniCreditControlPanelErrorClass::AUTH_FAILED
+        || (string) $invSubmit['error'] === MtUniCreditControlPanelErrorClass::INVALID_RESPONSE,
+    'F02 create-401: auth/invalid family'
 );
-mtucAud014_assert(!empty($invSubmit['recoverable']), 'F02 INVALID_RESPONSE: recoverable=true');
+mtucAud014_assert(
+    !empty($invSubmit['ambiguous_blocked']) || !empty($invSubmit['recoverable']),
+    'F02 create-401: non-terminal'
+);
 mtucAud014_assert(
     isset($invSubmit['attempt']['state'])
-        && (string) $invSubmit['attempt']['state'] === MtUniCreditFinancingAttemptState::CP_FAILED_RETRYABLE,
-    'F02 INVALID_RESPONSE: cp_failed_retryable'
+        && (string) $invSubmit['attempt']['state'] !== MtUniCreditFinancingAttemptState::TERMINAL_FAILED,
+    'F02 create-401: not terminal_failed'
 );
 mtucAud014_assert(
     !MtUniCreditFinancingTerminalNavigationSupport::isCheckoutCpFailureNativeFinalizationCandidate($invSubmit),
-    'F02 INVALID_RESPONSE: production candidate=false'
+    'F02 create-401: production candidate=false'
 );
-mtucAud014_assert(empty($invSubmit['apply_native_order_status']), 'F02 INVALID_RESPONSE: no apply_native');
+mtucAud014_assert(empty($invSubmit['apply_native_order_status']), 'F02 create-401: no apply_native');
 mtucAud014_assert(
     (string) (isset($invSubmit['bank_status']) ? $invSubmit['bank_status'] : '')
         !== MtUniCreditBankStatus::SEND_FAILED_CP,
-    'F02 INVALID_RESPONSE: no bank_send_failed_cp'
+    'F02 create-401: no bank_send_failed_cp'
 );
 mtucAud014_assert(
     !MtUniCreditFinancingTerminalNavigationSupport::isDefinitiveCheckoutCpFailureTerminal($invSubmit),
-    'F02 INVALID_RESPONSE: no terminal Thank You'
+    'F02 create-401: no terminal Thank You'
 );
 $probeInv = mtucAud014_historyProbe();
-mtucAud014_assert((int) $probeInv->calls === 0, 'F02 INVALID_RESPONSE: addOrderHistory=0');
+mtucAud014_assert((int) $probeInv->calls === 0, 'F02 create-401: addOrderHistory=0');
 
 // F02 — VALIDATION_FAILED recoverable (classifier + production gates)
 $validationProbe = array(
@@ -482,7 +495,7 @@ mtucAud014_assert(
     'F02 VALIDATION_FAILED recoverable: not terminal'
 );
 
-// F02 — REJECTED recoverable (HTTP 429 rate-limit production path)
+// F02 — HTTP 429 rate-limit (noncanonical body) remains outcome_unknown — never Thank You
 $transport429 = new Phase4FakeCpHttpTransport();
 $payloads429 = Phase7TestHarness::loginAndOrderSuccessPayloads();
 $transport429->enqueueJson(200, $payloads429['login']);
@@ -492,10 +505,10 @@ $order429 = 214212;
 Phase9TestHarness::seedBankOrder($stack429['memoryDb'], $order429, $stack429['storeId']);
 $submit429 = $stack429['submission']->submit(Phase9TestHarness::submitInput($order429, $stack429['storeId']));
 mtucAud014_assert(
-    (string) $submit429['error'] === MtUniCreditControlPanelErrorClass::REJECTED
-        && !empty($submit429['recoverable'])
+    (string) $submit429['error'] === MtUniCreditControlPanelErrorClass::INVALID_RESPONSE
+        && !empty($submit429['ambiguous_blocked'])
         && isset($submit429['attempt']['state'])
-        && (string) $submit429['attempt']['state'] === MtUniCreditFinancingAttemptState::CP_FAILED_RETRYABLE,
+        && (string) $submit429['attempt']['state'] === MtUniCreditFinancingAttemptState::CP_OUTCOME_UNKNOWN,
     'F02 REJECTED recoverable 429: shape'
 );
 mtucAud014_assert(
@@ -503,6 +516,11 @@ mtucAud014_assert(
     'F02 REJECTED recoverable: candidate=false'
 );
 mtucAud014_assert(empty($submit429['apply_native_order_status']), 'F02 REJECTED recoverable: no apply_native');
+mtucAud014_assert(
+    (string) (isset($submit429['bank_status']) ? $submit429['bank_status'] : '')
+        !== MtUniCreditBankStatus::SEND_FAILED_CP,
+    'F02 429: no bank_send_failed_cp'
+);
 
 // ---------------------------------------------------------------------------
 // F03 — durable CP failure status prerequisite
@@ -510,7 +528,7 @@ mtucAud014_assert(empty($submit429['apply_native_order_status']), 'F02 REJECTED 
 $transportOk = new Phase4FakeCpHttpTransport();
 $payloads = Phase7TestHarness::loginAndOrderSuccessPayloads();
 $transportOk->enqueueJson(200, $payloads['login']);
-$transportOk->enqueueJson(422, array('success' => false, 'message' => 'invalid'));
+$transportOk->enqueueJson(422, array('success' => false, 'error' => 'invalid_payload', 'message' => 'invalid', 'data' => new stdClass()));
 $stackOk = Phase9TestHarness::stack($transportOk);
 $okOrder = 214300;
 Phase9TestHarness::seedBankOrder($stackOk['memoryDb'], $okOrder, $stackOk['storeId']);
@@ -546,7 +564,7 @@ $throwDb = new Phase2MemoryDb();
 $throwDb->throwOnBankStatusInsert = true;
 $transportFail = new Phase4FakeCpHttpTransport();
 $transportFail->enqueueJson(200, $payloads['login']);
-$transportFail->enqueueJson(422, array('success' => false, 'message' => 'invalid'));
+$transportFail->enqueueJson(422, array('success' => false, 'error' => 'invalid_payload', 'message' => 'invalid', 'data' => new stdClass()));
 $stackFail = Phase9TestHarness::stack($transportFail, null, $throwDb);
 $failOrder = 214301;
 Phase9TestHarness::seedBankOrder($throwDb, $failOrder, $stackFail['storeId']);

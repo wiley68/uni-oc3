@@ -121,6 +121,18 @@ function mtuc115c2_controllerJson(array $result)
             'https://shop.test/index.php?route=checkout/success'
         );
     }
+    if (MtUniCreditFinancingTerminalNavigationSupport::isDefinitiveCheckoutCpFailureTerminal($result)) {
+        if (!empty($result['bank_status'])) {
+            $json['bank_status'] = (string) $result['bank_status'];
+        }
+
+        return MtUniCreditFinancingTerminalNavigationSupport::enrichDefinitiveCheckoutCpFailureThankYou(
+            $json,
+            $session,
+            (int) $result['order_id'],
+            'https://shop.test/index.php?route=checkout/success'
+        );
+    }
     if (MtUniCreditFinancingTerminalNavigationSupport::isCpCreateFailureStayOnPage($result)) {
         return MtUniCreditFinancingTerminalNavigationSupport::enrichCpCreateFailureModal($json, $session);
     }
@@ -283,7 +295,7 @@ foreach (array('logged' => 61, 'guest' => 0) as $actor => $customerId) {
     $transport = new Phase4FakeCpHttpTransport();
     $payloads = Phase7TestHarness::loginAndOrderSuccessPayloads();
     $transport->enqueueJson(200, $payloads['login']);
-    $transport->enqueueJson(422, array('success' => false, 'message' => 'invalid'));
+    $transport->enqueueJson(422, array('success' => false, 'error' => 'invalid_payload', 'message' => 'invalid', 'data' => new stdClass()));
     $stack = Phase9TestHarness::stack($transport);
     $orderId = 117200 + (int) $customerId;
     $creates = 0;
@@ -307,31 +319,34 @@ foreach (array('logged' => 61, 'guest' => 0) as $actor => $customerId) {
         'P1 ' . $actor . ' CP: terminal_failed (definitive 422)'
     );
     mtuc115c2_assert(
-        (string) $result['message'] === MtUniCreditControlPanelOrderLifecycleService::CUSTOMER_FAILURE_MESSAGE,
-        'P1 ' . $actor . ' CP: definitive customer message'
+        (string) $result['bank_status'] === MtUniCreditBankStatus::SEND_FAILED_CP,
+        'P1 ' . $actor . ' CP: bank_send_failed_cp'
+    );
+    mtuc115c2_assert(
+        strpos((string) $result['message'], 'Поръчката е създадена') !== false,
+        'P1 ' . $actor . ' CP: definitive customer Thank You message'
     );
 
     $json = mtuc115c2_controllerJson($result);
+    mtuc115c2_assert(!empty($json['redirect']), 'P1 ' . $actor . ' CP: Thank You redirect');
     mtuc115c2_assert(
-        (string) $json['terminal_ui'] === MtUniCreditFinancingTerminalNavigationSupport::UI_ERROR_MODAL,
-        'P1 ' . $actor . ' CP: terminal_ui=error_modal'
+        strpos((string) $json['redirect'], 'checkout/success') !== false,
+        'P1 ' . $actor . ' CP: checkout/success'
     );
-    mtuc115c2_assert(!empty($json['stay_on_page']), 'P1 ' . $actor . ' CP: stay_on_page');
-    mtuc115c2_assert(empty($json['redirect']), 'P1 ' . $actor . ' CP: no redirect');
     mtuc115c2_assert(
-        mtuc115c2_noBadCheckoutRedirect($json, false),
-        'P1 ' . $actor . ' CP: no checkout/prepared navigation'
+        (string) $json['step'] === MtUniCreditFinancingTerminalNavigationSupport::STEP_CP_TERMINAL_FAILED,
+        'P1 ' . $actor . ' CP: step cp_terminal_failed'
     );
 }
 
 // ---------------------------------------------------------------------------
-// Cart P2 logged + guest — broken CP → error modal (no SmartUCF)
+// Cart P2 logged + guest — broken CP → Thank You (no SmartUCF)
 // ---------------------------------------------------------------------------
 foreach (array('logged' => 71, 'guest' => 0) as $actor => $customerId) {
     $transport = new Phase4FakeCpHttpTransport();
     $payloads = Phase7TestHarness::loginAndOrderSuccessPayloads();
     $transport->enqueueJson(200, $payloads['login']);
-    $transport->enqueueJson(422, array('success' => false, 'message' => 'invalid'));
+    $transport->enqueueJson(422, array('success' => false, 'error' => 'invalid_payload', 'message' => 'invalid', 'data' => new stdClass()));
     $stack = Phase9TestHarness::stack(
         $transport,
         null,
@@ -350,15 +365,15 @@ foreach (array('logged' => 71, 'guest' => 0) as $actor => $customerId) {
         count($stack['smartUcfProbe']->calls) === 0,
         'P2 ' . $actor . ' CP: zero SmartUCF'
     );
-    $json = mtuc115c2_controllerJson($result);
     mtuc115c2_assert(
-        (string) $json['terminal_ui'] === MtUniCreditFinancingTerminalNavigationSupport::UI_ERROR_MODAL,
-        'P2 ' . $actor . ' CP: error_modal'
+        (string) $result['bank_status'] === MtUniCreditBankStatus::SEND_FAILED_CP,
+        'P2 ' . $actor . ' CP: bank_send_failed_cp'
     );
-    mtuc115c2_assert(empty($json['redirect']), 'P2 ' . $actor . ' CP: no redirect');
+    $json = mtuc115c2_controllerJson($result);
+    mtuc115c2_assert(!empty($json['redirect']), 'P2 ' . $actor . ' CP: Thank You redirect');
     mtuc115c2_assert(
-        mtuc115c2_noBadCheckoutRedirect($json, false),
-        'P2 ' . $actor . ' CP: no checkout navigation'
+        strpos((string) $json['redirect'], 'checkout/success') !== false,
+        'P2 ' . $actor . ' CP: checkout/success'
     );
 }
 
@@ -402,7 +417,7 @@ mtuc115c2_assert(empty($jsonAmb['redirect']), 'ambiguous: no redirect');
 $transportRetry = new Phase4FakeCpHttpTransport();
 $payloadsRetry = Phase7TestHarness::loginAndOrderSuccessPayloads();
 $transportRetry->enqueueJson(200, $payloadsRetry['login']);
-$transportRetry->enqueueJson(422, array('success' => false, 'message' => 'invalid'));
+$transportRetry->enqueueJson(422, array('success' => false, 'error' => 'invalid_payload', 'message' => 'invalid', 'data' => new stdClass()));
 $stackRetry = Phase9TestHarness::stack($transportRetry);
 $orderRetry = 117420;
 $createsRetry = 0;

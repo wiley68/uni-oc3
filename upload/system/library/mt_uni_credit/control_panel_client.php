@@ -379,14 +379,32 @@ final class MtUniCreditControlPanelClient implements MtUniCreditControlPanelOrde
     {
         $statusCode = (int) $statusCode;
 
+        // HTTP 401 is authentication rejection evidence even without a canonical envelope.
+        // (Create-path lifecycle still maps this to outcome-unknown — never bank_send_failed_cp.)
+        if ($statusCode === 401) {
+            return new MtUniCreditCpAuthenticationException(
+                'The Control Panel rejected the authentication.'
+            );
+        }
+
         try {
             $decodedObject = $this->decodeJsonAsObject($body);
         } catch (MtUniCreditCpMalformedJsonException $exception) {
+            // Preserve HTTP status from non-2xx bodies (endpoint rejection vs post-send ambiguity).
+            if ($exception->getHttpStatusCode() === null && $statusCode > 0) {
+                return new MtUniCreditCpMalformedJsonException($exception->getMessage(), 0, $exception, $statusCode);
+            }
+
             return $exception;
         }
 
         if ($decodedObject === null) {
-            return new MtUniCreditCpMalformedJsonException('The Control Panel JSON error response is not an object.');
+            return new MtUniCreditCpMalformedJsonException(
+                'The Control Panel JSON error response is not an object.',
+                0,
+                null,
+                $statusCode
+            );
         }
 
         if (
@@ -401,16 +419,31 @@ final class MtUniCreditControlPanelClient implements MtUniCreditControlPanelOrde
             || !property_exists($decodedObject, 'data')
             || !($decodedObject->data instanceof stdClass)
         ) {
-            return new MtUniCreditCpInvalidPayloadException('The Control Panel error response is not a canonical failure envelope.');
+            return new MtUniCreditCpInvalidPayloadException(
+                'The Control Panel error response is not a canonical failure envelope.',
+                0,
+                null,
+                $statusCode
+            );
         }
 
         try {
             $decoded = json_decode(json_encode($decodedObject, JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR);
         } catch (JsonException $exception) {
-            return new MtUniCreditCpMalformedJsonException('The Control Panel JSON error response is not an object.', 0, $exception);
+            return new MtUniCreditCpMalformedJsonException(
+                'The Control Panel JSON error response is not an object.',
+                0,
+                $exception,
+                $statusCode
+            );
         }
         if (!is_array($decoded)) {
-            return new MtUniCreditCpMalformedJsonException('The Control Panel JSON error response is not an object.');
+            return new MtUniCreditCpMalformedJsonException(
+                'The Control Panel JSON error response is not an object.',
+                0,
+                null,
+                $statusCode
+            );
         }
 
         $message = is_string($decodedObject->message) ? $decodedObject->message : 'Control Panel HTTP error.';

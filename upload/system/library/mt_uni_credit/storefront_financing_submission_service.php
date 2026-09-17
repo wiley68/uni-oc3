@@ -641,7 +641,7 @@ final class MtUniCreditStorefrontFinancingSubmissionService
                     ? MtUniCreditControlPanelOrderLifecycleService::CUSTOMER_AMBIGUOUS_MESSAGE
                     : MtUniCreditControlPanelOrderLifecycleService::CUSTOMER_FAILURE_MESSAGE);
 
-            return array(
+            $failure = array(
                 'success' => false,
                 'error' => $result->errorClass !== null ? $result->errorClass : 'cp_submit_failed',
                 'message' => $message,
@@ -655,7 +655,22 @@ final class MtUniCreditStorefrontFinancingSubmissionService
                 'cart_unchanged' => true,
                 'bank_status' => $this->resolveBankStatusId($storeId, $orderId),
                 'session' => $sessionData,
+                'http_status' => $result->httpStatus,
             );
+
+            // Product/Cart parity with Checkout: definitive CP create failure → bank_send_failed_cp
+            // then Thank You / standard emails (AUD-014 F03 durable-before-native).
+            if (MtUniCreditFinancingTerminalNavigationSupport::isCheckoutCpFailureNativeFinalizationCandidate($failure)) {
+                if ($this->persistCpFailureBankStatus($storeId, $orderId)) {
+                    $failure['bank_status'] = MtUniCreditBankStatus::SEND_FAILED_CP;
+                    $failure['apply_native_order_status'] = true;
+                    $failure['message'] = MtUniCreditFinancingLeasingPresenter::CP_TERMINAL_FAILURE_TITLE
+                        . "\n\n"
+                        . MtUniCreditFinancingLeasingPresenter::CP_TERMINAL_FAILURE_MESSAGE;
+                }
+            }
+
+            return $failure;
         } finally {
             $this->locks->release($storeId, $entryPoint, $operationKeyHash, $lockOwnerToken);
         }
@@ -947,6 +962,24 @@ final class MtUniCreditStorefrontFinancingSubmissionService
             return isset($row['status_id']) ? (string) $row['status_id'] : '';
         } catch (Exception $exception) {
             return '';
+        }
+    }
+
+    /**
+     * Persist local bank_send_failed_cp after definitive Product/Cart CP create failure.
+     *
+     * @param int $storeId
+     * @param int|string $orderId
+     * @return bool
+     */
+    private function persistCpFailureBankStatus($storeId, $orderId)
+    {
+        try {
+            $repo = MtUniCreditProcess1ServiceFactory::bankStatuses($this->attempts->database());
+
+            return MtUniCreditBankStatus::persistLocalControlPanelFailure($repo, $storeId, $orderId);
+        } catch (Exception $ignored) {
+            return false;
         }
     }
 

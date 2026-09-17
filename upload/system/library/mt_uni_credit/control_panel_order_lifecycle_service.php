@@ -29,6 +29,14 @@ final class MtUniCreditControlPanelOrderLifecycleService
         'order_not_found',
     );
 
+    /**
+     * Explicit CP endpoint/access rejections that prove create was not accepted.
+     * HTTP context is required — bare malformed JSON alone is never definitive.
+     *
+     * @var array<int, int>
+     */
+    private static $definitiveEndpointRejectionStatuses = array(403, 404, 405, 410);
+
     /** @var MtUniCreditFinancingAttemptRepository */
     private $attempts;
 
@@ -474,7 +482,17 @@ final class MtUniCreditControlPanelOrderLifecycleService
                 true
             );
         } catch (MtUniCreditCpInvalidPayloadException $exception) {
-            // Malformed success / identity echo mismatch after HTTP 2xx → outcome_unknown.
+            $status = $exception->getHttpStatusCode();
+            if ($this->isDefinitiveEndpointRejectionStatus($status)) {
+                return $this->failDefinitiveCreateRejection(
+                    $attemptId,
+                    $storeId,
+                    $orderId,
+                    $entryPoint,
+                    (int) $status
+                );
+            }
+            // Malformed success / noncanonical 4xx without definitive HTTP proof → outcome_unknown.
             $this->attempts->persistFailure(
                 $attemptId,
                 MtUniCreditControlPanelErrorClass::INVALID_RESPONSE,
@@ -485,17 +503,27 @@ final class MtUniCreditControlPanelOrderLifecycleService
                 $orderId,
                 $entryPoint,
                 MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_OUTCOME_UNKNOWN,
-                null,
+                $status,
                 array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::INVALID_RESPONSE)
             );
 
             return MtUniCreditControlPanelOrderSubmissionResult::fail(
                 MtUniCreditControlPanelErrorClass::INVALID_RESPONSE,
                 false,
-                null,
+                $status,
                 true
             );
         } catch (MtUniCreditCpMalformedJsonException $exception) {
+            $status = $exception->getHttpStatusCode();
+            if ($this->isDefinitiveEndpointRejectionStatus($status)) {
+                return $this->failDefinitiveCreateRejection(
+                    $attemptId,
+                    $storeId,
+                    $orderId,
+                    $entryPoint,
+                    (int) $status
+                );
+            }
             // Response received but unusable — remote side-effect cannot be excluded.
             $this->attempts->persistFailure(
                 $attemptId,
@@ -507,14 +535,14 @@ final class MtUniCreditControlPanelOrderLifecycleService
                 $orderId,
                 $entryPoint,
                 MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_OUTCOME_UNKNOWN,
-                null,
+                $status,
                 array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::INVALID_RESPONSE)
             );
 
             return MtUniCreditControlPanelOrderSubmissionResult::fail(
                 MtUniCreditControlPanelErrorClass::INVALID_RESPONSE,
                 false,
-                null,
+                $status,
                 true
             );
         } catch (Exception $exception) {
@@ -1000,8 +1028,12 @@ final class MtUniCreditControlPanelOrderLifecycleService
     /**
      * Map create-order HTTP failures to terminal vs ambiguous outcomes (OC4 semantics).
      *
-     * Only allowlisted canonical machine codes are TERMINAL_FAILED.
-     * Bare/malformed 409, 429, 5xx, and noncanonical 4xx stay CP_OUTCOME_UNKNOWN —
+     * Definitive:
+     * - allowlisted canonical machine codes, or
+     * - explicit endpoint/access rejection HTTP statuses 403/404/405/410
+     *   (canonical or noncanonical body — HTTP proves create was not accepted).
+     *
+     * Bare/malformed 409, 429, 5xx, and other noncanonical 4xx stay CP_OUTCOME_UNKNOWN —
      * never blind re-POST and never bank_send_failed_cp from ambiguous create.
      *
      * @param int $attemptId
@@ -1019,23 +1051,21 @@ final class MtUniCreditControlPanelOrderLifecycleService
             : '';
 
         if ($error !== '' && in_array($error, self::$terminalCreateErrorCodes, true)) {
-            $this->attempts->persistFailure(
+            return $this->failDefinitiveCreateRejection(
                 $attemptId,
-                MtUniCreditControlPanelErrorClass::REJECTED,
-                MtUniCreditFinancingAttemptState::TERMINAL_FAILED
-            );
-            $this->recordCpCreateDiagnostic(
                 $storeId,
                 $orderId,
                 $entryPoint,
-                MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_REJECTED,
-                $status,
-                array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::REJECTED)
+                $status
             );
+        }
 
-            return MtUniCreditControlPanelOrderSubmissionResult::fail(
-                MtUniCreditControlPanelErrorClass::REJECTED,
-                false,
+        if ($this->isDefinitiveEndpointRejectionStatus($status)) {
+            return $this->failDefinitiveCreateRejection(
+                $attemptId,
+                $storeId,
+                $orderId,
+                $entryPoint,
                 $status
             );
         }
@@ -1087,7 +1117,7 @@ final class MtUniCreditControlPanelOrderLifecycleService
             );
         }
 
-        // 5xx and unknown/noncanonical 4xx: ambiguous — stop safely; never blind re-POST.
+        // 5xx and unknown/noncanonical other 4xx: ambiguous — stop safely; never blind re-POST.
         if ($status >= 500) {
             $this->attempts->persistFailure(
                 $attemptId,
@@ -1130,6 +1160,52 @@ final class MtUniCreditControlPanelOrderLifecycleService
             false,
             $status,
             true
+        );
+    }
+
+    /**
+     * @param int|null $statusCode
+     * @return bool
+     */
+    private function isDefinitiveEndpointRejectionStatus($statusCode)
+    {
+        if ($statusCode === null) {
+            return false;
+        }
+
+        return in_array((int) $statusCode, self::$definitiveEndpointRejectionStatuses, true);
+    }
+
+    /**
+     * Definitive CP create rejection: no CP order, no SmartUCF, terminal local failure.
+     *
+     * @param int $attemptId
+     * @param int $storeId
+     * @param int $orderId
+     * @param string $entryPoint
+     * @param int $status
+     * @return MtUniCreditControlPanelOrderSubmissionResult
+     */
+    private function failDefinitiveCreateRejection($attemptId, $storeId, $orderId, $entryPoint, $status)
+    {
+        $this->attempts->persistFailure(
+            $attemptId,
+            MtUniCreditControlPanelErrorClass::REJECTED,
+            MtUniCreditFinancingAttemptState::TERMINAL_FAILED
+        );
+        $this->recordCpCreateDiagnostic(
+            $storeId,
+            $orderId,
+            $entryPoint,
+            MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_REJECTED,
+            $status,
+            array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::REJECTED)
+        );
+
+        return MtUniCreditControlPanelOrderSubmissionResult::fail(
+            MtUniCreditControlPanelErrorClass::REJECTED,
+            false,
+            $status
         );
     }
 

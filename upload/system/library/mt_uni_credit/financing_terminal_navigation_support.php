@@ -293,7 +293,8 @@ final class MtUniCreditFinancingTerminalNavigationSupport
 
     /**
      * CP create did not succeed (no CP financing order). Local OC order/attempt may exist.
-     * Customer stays on Product/Cart — never prepared/cart/Thank You.
+     * Ambiguous / conflict / non-terminal Product/Cart failures stay on page with error modal.
+     * Definitive bank_send_failed_cp uses Thank You instead (see isDefinitiveCheckoutCpFailureTerminal).
      *
      * @param array<string, mixed> $result
      * @return bool
@@ -307,6 +308,10 @@ final class MtUniCreditFinancingTerminalNavigationSupport
             return false;
         }
         if (self::isDefinitiveRemoteRejectTerminal($result)) {
+            return false;
+        }
+        // Definitive CP failure with durable bank status → Thank You, not stay modal.
+        if (self::isDefinitiveCheckoutCpFailureTerminal($result)) {
             return false;
         }
 

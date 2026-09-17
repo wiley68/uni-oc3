@@ -420,7 +420,23 @@ class ControllerExtensionMtUniCreditProduct extends Controller
             return;
         }
 
-        // CP create failed (no CP order): stay on Product with error modal — not prepared/cart/Thank You.
+        // Definitive CP create failure (bank_send_failed_cp): Thank You — not stay-page modal.
+        if (MtUniCreditFinancingTerminalNavigationSupport::isDefinitiveCheckoutCpFailureTerminal($result)) {
+            if (!empty($result['bank_status'])) {
+                $json['bank_status'] = (string) $result['bank_status'];
+            }
+            $json = MtUniCreditFinancingTerminalNavigationSupport::enrichDefinitiveCheckoutCpFailureThankYou(
+                $json,
+                $this->session->data,
+                (int) $result['order_id'],
+                $this->url->link(MtUniCreditConstants::CHECKOUT_SUCCESS_ROUTE, '', true)
+            );
+            MtUniCreditStorefrontRuntime::respondJson($this, $json);
+
+            return;
+        }
+
+        // Ambiguous / non-terminal CP create failure: stay on Product with error modal.
         if (MtUniCreditFinancingTerminalNavigationSupport::isCpCreateFailureStayOnPage($result)) {
             $json = MtUniCreditFinancingTerminalNavigationSupport::enrichCpCreateFailureModal(
                 $json,
