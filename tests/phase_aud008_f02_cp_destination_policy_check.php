@@ -236,8 +236,9 @@ $tokens = new MtUniCreditCpTokenRepository($settings, Phase4TestHarness::cipher(
 $transport = new Phase4FakeCpHttpTransport();
 $transport->enqueueJson(200, Phase4TestHarness::loginSuccessPayload());
 
-$constructException = mtucAud008F02_catch(function () use ($credentials, $tokens, $transport) {
-    new MtUniCreditControlPanelClient(
+$httpClient = null;
+$constructException = mtucAud008F02_catch(function () use ($credentials, $tokens, $transport, &$httpClient) {
+    $httpClient = new MtUniCreditControlPanelClient(
         $credentials,
         $tokens,
         $transport,
@@ -246,11 +247,25 @@ $constructException = mtucAud008F02_catch(function () use ($credentials, $tokens
         'http://uni.avalonbg.com/api/v1'
     );
 });
-mtucAud008F02_assert($constructException instanceof InvalidArgumentException, 'client constructor rejects HTTP override');
+mtucAud008F02_assert(
+    $constructException === null && $httpClient instanceof MtUniCreditControlPanelClient,
+    'client constructor soft-accepts HTTP override (deferred)'
+);
+$httpUseException = mtucAud008F02_catch(function () use ($httpClient) {
+    if (!$httpClient instanceof MtUniCreditControlPanelClient) {
+        throw new RuntimeException('HTTP-override client was not constructed.');
+    }
+    $httpClient->login();
+});
+mtucAud008F02_assert(
+    $httpUseException instanceof MtUniCreditCpConfigurationException,
+    'client first use rejects HTTP override as configuration failure'
+);
 mtucAud008F02_assert(count($transport->requests) === 0, 'invalid destination performs zero transport calls');
 
-$userinfoException = mtucAud008F02_catch(function () use ($credentials, $tokens, $transport) {
-    new MtUniCreditControlPanelClient(
+$userinfoClient = null;
+$userinfoException = mtucAud008F02_catch(function () use ($credentials, $tokens, $transport, &$userinfoClient) {
+    $userinfoClient = new MtUniCreditControlPanelClient(
         $credentials,
         $tokens,
         $transport,
@@ -259,21 +274,37 @@ $userinfoException = mtucAud008F02_catch(function () use ($credentials, $tokens,
         'https://user:secret@uni.avalonbg.com/api/v1'
     );
 });
-mtucAud008F02_assert($userinfoException instanceof InvalidArgumentException, 'client constructor rejects userinfo override');
+mtucAud008F02_assert(
+    $userinfoException === null && $userinfoClient instanceof MtUniCreditControlPanelClient,
+    'client constructor soft-accepts userinfo override (deferred)'
+);
+$userinfoUseException = mtucAud008F02_catch(function () use ($userinfoClient) {
+    if (!$userinfoClient instanceof MtUniCreditControlPanelClient) {
+        throw new RuntimeException('Userinfo-override client was not constructed.');
+    }
+    $userinfoClient->login();
+});
+mtucAud008F02_assert(
+    $userinfoUseException instanceof MtUniCreditCpConfigurationException,
+    'client first use rejects userinfo override as configuration failure'
+);
 mtucAud008F02_assert(count($transport->requests) === 0, 'userinfo override still zero transport calls');
-if ($userinfoException instanceof Exception) {
-    $msg = $userinfoException->getMessage();
+if ($userinfoUseException instanceof Exception) {
+    $msg = $userinfoUseException->getMessage();
+    $prev = $userinfoUseException->getPrevious();
+    $prevMsg = $prev instanceof Exception ? $prev->getMessage() : '';
     mtucAud008F02_assert(
-        stripos($msg, 'secret') === false
-            && stripos($msg, 'bearer') === false
-            && stripos($msg, 'password') === false
-            && stripos($msg, 'Authorization') === false,
+        stripos($msg . $prevMsg, 'secret') === false
+            && stripos($msg . $prevMsg, 'bearer') === false
+            && stripos($msg . $prevMsg, 'password') === false
+            && stripos($msg . $prevMsg, 'Authorization') === false,
         'invalid destination error does not leak credentials'
     );
 }
 
-$testHostDefaultClient = mtucAud008F02_catch(function () use ($credentials, $tokens, $transport) {
-    new MtUniCreditControlPanelClient(
+$testHostClient = null;
+$testHostDefaultClient = mtucAud008F02_catch(function () use ($credentials, $tokens, $transport, &$testHostClient) {
+    $testHostClient = new MtUniCreditControlPanelClient(
         $credentials,
         $tokens,
         $transport,
@@ -283,8 +314,18 @@ $testHostDefaultClient = mtucAud008F02_catch(function () use ($credentials, $tok
     );
 });
 mtucAud008F02_assert(
-    $testHostDefaultClient instanceof InvalidArgumentException,
-    'direct ControlPanelClient default rejects test host'
+    $testHostDefaultClient === null && $testHostClient instanceof MtUniCreditControlPanelClient,
+    'direct ControlPanelClient default soft-accepts test host (deferred)'
+);
+$testHostUseException = mtucAud008F02_catch(function () use ($testHostClient) {
+    if (!$testHostClient instanceof MtUniCreditControlPanelClient) {
+        throw new RuntimeException('Test-host client was not constructed.');
+    }
+    $testHostClient->login();
+});
+mtucAud008F02_assert(
+    $testHostUseException instanceof MtUniCreditCpConfigurationException,
+    'direct ControlPanelClient default rejects test host on first use'
 );
 mtucAud008F02_assert(
     count($transport->requests) === 0,
@@ -314,11 +355,39 @@ $routeDb = Phase4TestHarness::memoryDb();
 $transport = new Phase4FakeCpHttpTransport();
 $transport->enqueueJson(200, Phase4TestHarness::loginSuccessPayload());
 $transport->enqueueJson(200, Phase4TestHarness::loginSuccessPayload());
-$transport->enqueueJson(200, array('success' => true));
+$transport->enqueueJson(200, array(
+    'success' => true,
+    'error' => null,
+    'message' => 'ok',
+    'data' => new stdClass(),
+));
 $transport->enqueueJson(200, Phase4TestHarness::loginSuccessPayload());
 $transport->enqueueJson(200, Phase4TestHarness::shopSuccessPayload());
-$transport->enqueueJson(200, array('success' => true, 'data' => array('id' => 1)));
-
+$transport->enqueueJson(200, array(
+    'success' => true,
+    'error' => null,
+    'message' => 'ok',
+    'data' => array(
+        'id' => 1,
+        'shop_id' => 1,
+        'order_id' => '1',
+        'unicid' => Phase4TestHarness::TEST_UNICID,
+        'created_at' => '2024-01-01T00:00:00Z',
+    ),
+));
+$transport->enqueueJson(200, array(
+    'success' => true,
+    'error' => null,
+    'message' => 'ok',
+    'data' => array(
+        'id' => 1,
+        'shop_id' => 1,
+        'order_id' => '1',
+        'status' => 'Approved',
+        'status_id' => 'bank_sent_process1',
+        'updated_at' => '2024-01-01T00:00:01Z',
+    ),
+));
 $stack = Phase4TestHarness::services($transport, $routeDb);
 $client = $stack['client'];
 $client->login();

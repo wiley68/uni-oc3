@@ -26,6 +26,9 @@ final class MtUniCreditControlPanelClient implements MtUniCreditControlPanelOrde
     /** @var callable */
     private $clock;
 
+    /** @var MtUniCreditCpConfigurationException|null Pre-send destination/config defect (request never sent). */
+    private $configurationError;
+
     /**
      * @param MtUniCreditCredentialsRepository $credentials
      * @param MtUniCreditCpTokenRepository $tokens
@@ -52,19 +55,33 @@ final class MtUniCreditControlPanelClient implements MtUniCreditControlPanelOrde
         // Shop identity is the validated CP Shop.name (provider already applied historical rtrim).
         $this->shopName = trim((string) $shopName);
         $this->storeId = (int) $storeId;
+        $this->configurationError = null;
+        $this->baseUrl = '';
 
         $policy = $destinationPolicy instanceof MtUniCreditCpDestinationPolicy
             ? $destinationPolicy
             : new MtUniCreditCpDestinationPolicy();
 
-        if ($baseUrl !== null && trim($baseUrl) !== '') {
-            $resolved = trim($baseUrl);
-        } else {
-            $resolved = (new MtUniCreditDeploymentEnvironment(null, $policy))->controlPanelApiBaseUrl();
+        // Soft-resolve destination here so Product/Cart/Checkout order materialization is not
+        // aborted by broken CP packaging URLs. First HTTP call raises ConfigurationException.
+        try {
+            if ($baseUrl !== null && trim($baseUrl) !== '') {
+                $resolved = trim($baseUrl);
+            } else {
+                $resolved = (new MtUniCreditDeploymentEnvironment(null, $policy))->controlPanelApiBaseUrl();
+            }
+
+            // Defense-in-depth: never accept an unsafe override that bypasses DeploymentEnvironment.
+            $this->baseUrl = $policy->assertTrustedApiBase($resolved);
+        } catch (Exception $exception) {
+            $this->baseUrl = '';
+            $this->configurationError = new MtUniCreditCpConfigurationException(
+                'The Control Panel destination is not configured for outbound create.',
+                0,
+                $exception
+            );
         }
 
-        // Defense-in-depth: never accept an unsafe override that bypasses DeploymentEnvironment.
-        $this->baseUrl = $policy->assertTrustedApiBase($resolved);
         $this->clock = is_callable($clock) ? $clock : function () {
             return time();
         };
@@ -347,6 +364,15 @@ final class MtUniCreditControlPanelClient implements MtUniCreditControlPanelOrde
      */
     private function send($method, $path, $payload = null, $token = null)
     {
+        if ($this->configurationError instanceof MtUniCreditCpConfigurationException) {
+            throw $this->configurationError;
+        }
+        if ($this->baseUrl === '') {
+            throw new MtUniCreditCpConfigurationException(
+                'The Control Panel destination is not configured for outbound create.'
+            );
+        }
+
         $headers = array(
             'Accept' => 'application/json',
             'Content-Type' => 'application/json',

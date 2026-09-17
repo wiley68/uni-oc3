@@ -193,3 +193,19 @@ final class MtUniCreditCpInvalidPayloadException extends MtUniCreditCpException
  * Prefer InvalidPayload for create identity / envelope failures (mapped to outcome_unknown).
  */
 final class MtUniCreditCpUncertainResponseException extends MtUniCreditCpException {}
+
+/**
+ * Pre-send Control Panel configuration / destination failure.
+ * No HTTP request was attempted, so a remote CP order cannot exist.
+ * Create-path lifecycle maps this to definitive terminal rejection.
+ */
+final class MtUniCreditCpConfigurationException extends MtUniCreditCpException
+{
+    /**
+     * @return bool
+     */
+    public function isPermanentAuthOrConfiguration()
+    {
+        return true;
+    }
+}

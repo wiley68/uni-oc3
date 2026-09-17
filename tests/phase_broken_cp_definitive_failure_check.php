@@ -281,6 +281,124 @@ foreach ($ambiguousCases as $name => $enqueue) {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Pre-order gate: broken CP destination must NOT abort local order materialization
+// (manual __broken_cp__ packaging URL → Client construct used to throw → error_generic).
+// ---------------------------------------------------------------------------
+$transportBrokenDest = new Phase4FakeCpHttpTransport();
+$memoryBroken = new Phase2MemoryDb();
+$servicesBroken = Phase4TestHarness::services(
+    $transportBrokenDest,
+    $memoryBroken,
+    Phase5TestHarness::STORE_A,
+    Phase9TestHarness::NOW
+);
+$stackBroken = Phase9TestHarness::stack($transportBrokenDest, null, $memoryBroken);
+$brokenClient = null;
+$constructThrew = false;
+try {
+    $brokenClient = new MtUniCreditControlPanelClient(
+        $servicesBroken['credentials'],
+        $servicesBroken['tokens'],
+        $transportBrokenDest,
+        Phase4TestHarness::TEST_SHOP_URL,
+        Phase5TestHarness::STORE_A,
+        'https://cp-test.example.com/__broken_cp__',
+        function () {
+            return Phase9TestHarness::NOW;
+        },
+        Phase4TestHarness::offlineDestinationPolicy()
+    );
+} catch (Exception $exception) {
+    $constructThrew = true;
+}
+mtucBrokenCp_assert($constructThrew === false && $brokenClient !== null, 'broken destination: Client construct soft-fails');
+
+$dbBroken = $stackBroken['db'];
+$clockBroken = $stackBroken['clock'];
+$attemptsBroken = $stackBroken['attempts'];
+$locksBroken = $stackBroken['locks'];
+$process1Broken = MtUniCreditProcess1ServiceFactory::coordinator(
+    $dbBroken,
+    null,
+    $clockBroken,
+    $brokenClient
+);
+$bankBroken = MtUniCreditProcess1ServiceFactory::bankStatuses($dbBroken, $clockBroken);
+$process2Broken = MtUniCreditProcessTwoServiceFactory::coordinator(
+    $dbBroken,
+    $brokenClient,
+    new MtUniCreditRecordingProcessTwoMailer(),
+    $clockBroken,
+    Phase4TestHarness::testSecretInput()
+);
+$lifecycleBroken = new MtUniCreditControlPanelOrderLifecycleService(
+    $attemptsBroken,
+    $locksBroken,
+    $brokenClient,
+    null,
+    $process1Broken,
+    $bankBroken,
+    $process2Broken
+);
+$storefrontBroken = new MtUniCreditStorefrontFinancingSubmissionService(
+    $attemptsBroken,
+    $locksBroken,
+    $lifecycleBroken,
+    $servicesBroken['credentials'],
+    new MtUniCreditShopConfigurationCache(
+        new MtUniCreditShopCacheRepository($dbBroken, $clockBroken),
+        null,
+        MtUniCreditBootstrap::shopCachePersistenceFromDb($dbBroken)
+    )
+);
+$orderBroken = 883001;
+$createsBroken = 0;
+$inputBroken = Phase9TestHarness::productStorefrontInput($stackBroken, $orderBroken);
+$originalAddBroken = $inputBroken['add_order'];
+$inputBroken['add_order'] = function ($orderData) use (&$createsBroken, $originalAddBroken) {
+    $createsBroken++;
+
+    return (int) call_user_func($originalAddBroken, $orderData);
+};
+$resultBroken = $storefrontBroken->submit($inputBroken);
+mtucBrokenCp_assert($createsBroken === 1, 'broken destination: local order materialization attempted/completed');
+mtucBrokenCp_assert((int) $resultBroken['order_id'] === $orderBroken, 'broken destination: local order exists');
+mtucBrokenCp_assert(empty($resultBroken['cp_succeeded']), 'broken destination: CP order absent');
+mtucBrokenCp_assert(
+    (string) (isset($resultBroken['bank_status']) ? $resultBroken['bank_status'] : '')
+        === MtUniCreditBankStatus::SEND_FAILED_CP,
+    'broken destination: bank_send_failed_cp'
+);
+mtucBrokenCp_assert(
+    MtUniCreditFinancingTerminalNavigationSupport::isDefinitiveCheckoutCpFailureTerminal($resultBroken),
+    'broken destination: Thank You terminal'
+);
+mtucBrokenCp_assert(
+    (string) (isset($resultBroken['error']) ? $resultBroken['error'] : '') !== 'unavailable'
+        && strpos((string) (isset($resultBroken['message']) ? $resultBroken['message'] : ''), 'не е налично') === false,
+    'broken destination: NOT financing-unavailable before order'
+);
+mtucBrokenCp_assert(count($transportBrokenDest->requests) === 0, 'broken destination: zero CP HTTP (pre-send config)');
+
+// Counter-test: invalid local scheme must not create an order.
+$transportInvalid = new Phase4FakeCpHttpTransport();
+$stackInvalid = Phase9TestHarness::stack($transportInvalid);
+$orderInvalid = 883010;
+$createsInvalid = 0;
+$inputInvalid = Phase9TestHarness::productStorefrontInput($stackInvalid, $orderInvalid);
+$inputInvalid['scheme_key'] = 'not-a-valid-scheme';
+$originalAddInvalid = $inputInvalid['add_order'];
+$inputInvalid['add_order'] = function ($orderData) use (&$createsInvalid, $originalAddInvalid) {
+    $createsInvalid++;
+
+    return (int) call_user_func($originalAddInvalid, $orderData);
+};
+$resultInvalid = $stackInvalid['storefront']->submit($inputInvalid);
+mtucBrokenCp_assert(empty($resultInvalid['success']), 'invalid local: failure');
+mtucBrokenCp_assert($createsInvalid === 0, 'invalid local: no order materialization');
+mtucBrokenCp_assert((int) (isset($resultInvalid['order_id']) ? $resultInvalid['order_id'] : 0) === 0, 'invalid local: no order_id');
+
 echo PHP_EOL . 'broken-cp definitive failure: ' . $passes . ' passed, ' . count($failures) . ' failed' . PHP_EOL;
 if ($failures) {
     foreach ($failures as $failure) {

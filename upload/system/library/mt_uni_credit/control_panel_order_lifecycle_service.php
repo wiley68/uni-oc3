@@ -414,6 +414,15 @@ final class MtUniCreditControlPanelOrderLifecycleService
                 401,
                 true
             );
+        } catch (MtUniCreditCpConfigurationException $exception) {
+            // Destination/config defect before any outbound create — CP order cannot exist.
+            return $this->failDefinitiveCreateRejection(
+                $attemptId,
+                $storeId,
+                $orderId,
+                $entryPoint,
+                0
+            );
         } catch (MtUniCreditCpTimeoutException $exception) {
             $this->attempts->persistFailure(
                 $attemptId,
