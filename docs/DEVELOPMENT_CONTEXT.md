@@ -11,6 +11,9 @@ References:
 **Current operational docs (release 2.0.2):** `docs/CONTRACTS.md`, `docs/RUNTIME_VERIFICATION.md`.
 Historical plan: `docs/MASTER_IMPLEMENTATION_PLAN.md`.
 
+**Authoritative public bank-status / leasing presentation rules:** `docs/CONTRACTS.md` section **F** (`STATUS-PUBLIC-001` … `STATUS-PUBLIC-017`).
+Those rules govern upcoming manual business tests. Do not treat internal lifecycle states as public bank statuses.
+
 Phase 11 (local): Admin Orders bank-status column + order-info financing panel (`ADMIN_PANEL`); homepage advertising from cache-only CP shop; shared presentation pipeline; presentation `oc_event` rows. See `docs/RUNTIME_VERIFICATION.md` Phase 11.
 
 Open audit doc dependencies:

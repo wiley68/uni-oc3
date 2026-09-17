@@ -16,6 +16,7 @@ When this plan’s early wording conflicts with the following, **CONTRACTS.md wi
 - P1 and P2 are **mutually incompatible** terminals — P2 does **not** follow P1; PATCH does **not** precede durable target admission.
 - Inbound callbacks authorize via `FinancingOrderResolver` (store + order + UNICID), **not** payment method alone.
 - Inbound body bound to **1 MiB**; exact `operation` binding; free-text / `order_id` never truncated.
+- **Public bank status authority (`STATUS-PUBLIC-*` in CONTRACTS §F):** exactly four initial standard bank statuses; later SmartUCF statuses stored/shown raw; internal lifecycle states are not public bank statuses; generic `Неуспешно изпратен Банка` is not an allowed public standard bank status; Process 2 success does not require SmartUCF proof; definitive CP failure → `Неуспешно изпратен Банка - КП` for both Process 1 and Process 2.
 - Offline proof: `tests/phase_canonical_*_check.php` + `tests/phase_canonical_aggregate_check.php` / `scripts/run_canonical_safe_tests.php`.
 
 ## Document status and boundaries
@@ -349,7 +350,7 @@ POST `/api/v1/orders` is idempotent by CP `(shop_id, order_id)` and semantic has
 
 ### 9.4 Status patch
 
-PATCH `/api/v1/orders/status` only after the corresponding bank-side action. Preserve exact IDs such as `bank_sent_process1`, `bank_sent_process2`, `bank_send_failed`, `bank_send_failed_cp`, `bank_send_failed_smartucf`. Local bank status is separate from native OC order status.
+PATCH `/api/v1/orders/status` only after the corresponding bank-side action. Preserve exact public-aligned IDs such as `bank_sent_process1`, `bank_sent_process2`, `bank_send_failed_cp`, `bank_send_failed_smartucf`. Local bank status is separate from native OC order status. **Public presentation** must follow CONTRACTS §F (`STATUS-PUBLIC-*`): do not treat generic `bank_send_failed` / `Неуспешно изпратен Банка` as an allowed public standard bank status; later SmartUCF statuses are shown raw.
 
 ### 9.5 Inbound endpoints
 

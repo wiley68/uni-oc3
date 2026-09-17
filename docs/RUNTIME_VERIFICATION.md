@@ -11,6 +11,12 @@
 > | **PENDING / NOT DIRECTLY VERIFIED**   | Still requires remote or later audit work                                                                                  |
 >
 > An old unchecked checkbox or a historical LOCAL PASS heading must **not** be read as the current release gate.
+>
+> **Authoritative public bank status / leasing UI rules** for manual business tests live in
+> `docs/CONTRACTS.md` §F (`STATUS-PUBLIC-*`). When a checklist below mentions machine IDs or older
+> labels, public customer/business presentation must still obey the four initial standard bank
+> statuses (or later raw SmartUCF text) — never internal lifecycle/debug values as “bank status”.
+> Generic `Неуспешно изпратен Банка` is **not** an allowed public standard bank status.
 
 ### Canonical CP↔OC3 offline suite (LOCAL)
 

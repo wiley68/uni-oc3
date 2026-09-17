@@ -3,6 +3,10 @@
 > **Operational authority (current release 2.0.2):** this document plus `docs/RUNTIME_VERIFICATION.md`.
 > Historical planning narrative lives in `docs/MASTER_IMPLEMENTATION_PLAN.md` and must not override
 > the current contracts below when they have been updated for AUD-032.
+>
+> **Public bank status / leasing presentation authority:** section **F** (`STATUS-PUBLIC-001` …
+> `STATUS-PUBLIC-017`) is business-owner AUTHORITATIVE for upcoming manual tests. It supersedes
+> older status/presentation wording elsewhere in this repository when they conflict.
 
 This document is the canonical implementation reference for later phases.
 
@@ -458,11 +462,16 @@ PATCH `/api/v1/orders/status` uses the **shop** `order_id` from create (local OC
 
 ---
 
-## F. Bank status vocabulary
+## F. Bank status vocabulary and public presentation (AUTHORITATIVE)
 
-Fixture: `tests/fixtures/status_vocabulary.json`.
+> **Business-owner authority for upcoming manual tests and runtime remediation.**
+> When older prose in this file, `docs/MASTER_IMPLEMENTATION_PLAN.md`, or historical phase notes
+> conflicts with **STATUS-PUBLIC-\*** below, the **STATUS-PUBLIC-\*** rules win.
+> Strings below are identical across OC3, OC4, Woo, PS8, PS9, CP and other shop modules — **do not rename**.
 
-**Do not rename status IDs for OC3 convenience.**
+Fixture: `tests/fixtures/status_vocabulary.json` (machine IDs). Public Bulgarian labels in this section are authoritative for customer/business-facing UI.
+
+Local bank status is stored separately from native OpenCart `order_status_id`. Inbound callbacks **must not** change native OC order status.
 
 ### STATUS-001 — Process flag
 
@@ -471,23 +480,267 @@ Shop field `uni_proces`:
 - `(int) uni_proces === 1` → **Process 2** (secondary / inverted numeric vs name)
 - otherwise → **Process 1**
 
-### STATUS-002 — Outbound module → CP
+### STATUS-PUBLIC-001 — Two classes of status / state
 
-| `status_id`                 | `status_label`                      | When it MAY be recorded                              | Must NOT                                                     |
-| --------------------------- | ----------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------ |
-| `bank_sent_process1`        | Изпратен Банка - Процес 1           | CP order exists **and** SmartUCF Process 1 succeeded | On CP create; on Process 2; on pre-send/ambiguous SmartUCF   |
-| `bank_sent_process2`        | Изпратен Банка - Процес 2           | Process 2 bank handoff after validation/encrypt      | On CP create; on Process 1; before EGN/phone2 valid          |
-| `bank_send_failed`          | Неуспешно изпратен Банка            | Legacy / Process 2 bank-send failure path            | As a substitute for SmartUCF unknown outcome                 |
-| `bank_send_failed_cp`       | Неуспешно изпратен Банка - КП       | CP create failed (attempt taxonomy)                  | As a bank-sent label on the create payload                   |
-| `bank_send_failed_smartucf` | Неуспешно изпратен Банка - SmartUCF | CP created **and** definitive SmartUCF rejection     | Pre-send cert failure; timeout; `outcome_unknown`; Process 2 |
+The system has **two conceptually different** classes:
 
-Local bank status is stored separately from native OpenCart `order_status_id`. Inbound callbacks **must not** change native OC order status.
+| Class | Name                                   | Role                                                                                         |
+| ----- | -------------------------------------- | -------------------------------------------------------------------------------------------- |
+| **A** | **Standard bank status**               | Official public/business bank outcome. Visible on agreed customer/admin/CP/email surfaces.   |
+| **B** | **Internal / service lifecycle state** | Technical progression (retry, transport, sync, diagnostics). **Not** a standard bank status. |
 
-### STATUS-003 — CP enum (inbound / display)
+Never present an internal/service lifecycle state as if it were a standard bank status.
 
-API does **not** enum-validate create/patch status strings. Default on create: `cp_sent` / `Създаден в КП Банка`.
+### STATUS-PUBLIC-002 — Exactly four initial standard bank statuses
 
-Inbound accepted `status_id` vocabulary includes at least:
+Until a **subsequent** status is obtained from SmartUCF (see STATUS-PUBLIC-003), there are **exactly four** admissible **standard bank statuses**. The Bulgarian strings are AUTHORITATIVE:
+
+```text
+Неуспешно изпратен Банка - КП
+Неуспешно изпратен Банка - SmartUCF
+Изпратен Банка - Процес 1
+Изпратен Банка - Процес 2
+```
+
+| Standard bank status (label)          | Typical machine `status_id` | When it is used                                                                                                                                                                                                                   |
+| ------------------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Неуспешно изпратен Банка - КП`       | `bank_send_failed_cp`       | Shop order exists; CP order was **not** successfully created / is not visible in CP; SmartUCF was **not** successfully created/sent. Definitive public failure **before** successful CP create. Same for Process 1 and Process 2. |
+| `Неуспешно изпратен Банка - SmartUCF` | `bank_send_failed_smartucf` | Shop order exists; CP order exists and is visible; SmartUCF create/send **definitively** failed/rejected.                                                                                                                         |
+| `Изпратен Банка - Процес 1`           | `bank_sent_process1`        | Shop + CP create succeeded; SmartUCF create/send succeeded; Process 1.                                                                                                                                                            |
+| `Изпратен Банка - Процес 2`           | `bank_sent_process2`        | Shop + CP create succeeded; Process 2. **Does not** require proof that the order was already created/sent to SmartUCF (business difference vs Process 1).                                                                         |
+
+**Not an allowed public standard bank status:**
+
+```text
+Неуспешно изпратен Банка
+```
+
+(generic / incomplete label). Do not use it as a public bank status for Process 1 or Process 2.
+
+Do not invent a fifth initial standard bank status (including for ambiguity).
+
+### STATUS-PUBLIC-003 — Subsequent statuses from SmartUCF
+
+After the initial standard bank status, Control Panel may request a current status from SmartUCF (manual CP action or CP automatic/periodic check). SmartUCF may return a new bank status.
+
+There is **no** guaranteed full mapping of all possible SmartUCF values. Authoritative rule:
+
+```text
+The status is stored and displayed exactly as returned by SmartUCF.
+```
+
+- Do **not** rename it.
+- Do **not** normalize it to a predefined list.
+- Do **not** alter its text.
+- Do **not** invent a presumed mapping.
+
+This rule is identical for OC3 and CP. Example of a later raw value used as the bank-status field value: `Изтекло време за регистрация` (illustrative only).
+
+### STATUS-PUBLIC-004 — Internal / service lifecycle states
+
+Besides standard bank statuses, the system may have internal states, for example:
+
+```text
+pending, created, submitting, retryable, timeout, outcome_unknown,
+definitive_failed, sent_unknown, sync_pending, sync_failed,
+transport_failure, internal progression / recovery states
+```
+
+(and OC3 equivalents such as attempt taxonomy, `cp_status_sync_*`, SmartUCF lifecycle rows).
+
+These are **service** states. They are **not** standard bank statuses. They must **not** appear as bank status on:
+
+- the customer;
+- standard OpenCart admin order UI bank-status surfaces;
+- standard emails;
+- CP order list / normal business-facing screens.
+
+Service information may appear **only** on predetermined diagnostic places (STATUS-PUBLIC-012).
+
+### STATUS-PUBLIC-005 — Allowed places for a standard bank status (OC3)
+
+A standard bank status (or a later raw SmartUCF status) may be shown only on officially intended surfaces, including:
+
+1. OpenCart admin order list, when the module provides a dedicated bank-status column/visualization.
+2. OpenCart admin order view, in the dedicated UniCredit / leasing panel.
+3. Customer order / confirmation UI only when that display is explicitly intended.
+4. Checkout success / order confirmation when bank status is part of the agreed customer-facing content.
+5. Standard OpenCart order emails when they are intended to include bank status.
+6. Control Panel order list / order table.
+7. Other pre-created, explicitly agreed bank-status display places.
+
+If a UI field is labelled as bank status, it must show **one of the four initial standard bank statuses** or a **subsequent raw SmartUCF status** — never an internal lifecycle/debug value.
+
+### STATUS-PUBLIC-006 — Standard customer/business-facing leasing information
+
+Standardized leasing information is used on predetermined places (admin UniCredit/leasing panel, checkout success / confirmation when intended, standard emails, agreed reports, other agreed surfaces).
+
+Adapt the block only in predetermined business cases (e.g. Process 2 may add second phone and/or EGN **only** where existing privacy/business rules already allow). Do **not** automatically extend the block with service lifecycle/debug data.
+
+**Authoritative base field set** (values are examples; structure is authoritative):
+
+```text
+Статус към банката    <standard bank status OR later raw SmartUCF status>
+КП поръчка (ID)       329
+КП shop order_id      920
+Срок (месеци)         12
+КОП                    POS COM 50
+Първоначална вноска   0.00
+Сума на заема         1000.00
+Месечна вноска        97.49
+Обща дължима сума     1169.88
+ГЛП / ГПР             30.00% / 34.50%
+```
+
+When a field has no value for a given lifecycle moment, follow the **existing** presentation behaviour of the module’s leasing presenter (omit or leave empty as already implemented). Do not invent new placeholder semantics in documentation.
+
+### STATUS-PUBLIC-007 — Forbidden service information in the standard leasing block
+
+Except on predetermined diagnostic surfaces, the standard leasing panel must **not** show technical information such as:
+
+```text
+КП създаване, SmartUCF резултат, SmartUCF lifecycle, SmartUCF сесия,
+Автоматично повторно изпращане, Препоръчано действие,
+Последна грешка (категория), Подсистема, Час на грешката, Корелация,
+CP synchronization state, lifecycle state, retry state,
+HTTP/transport classification, timeout/network details,
+internal error class, internal CP/SmartUCF stage
+```
+
+or other content that exposes internal architecture, retry/recovery, integration model, or developer/support diagnostics.
+
+### STATUS-PUBLIC-008 — Privacy / business-model rule
+
+```text
+Customer-facing and normal business-facing UI must contain only information
+needed for the order, the financing, and the agreed bank status.
+```
+
+Do not expose Shop → CP → SmartUCF internals, retry/recovery, timeout/outcome-unknown mechanics, internal state machines, correlation/error classification, transport implementation, or architectural details on those surfaces.
+
+### STATUS-PUBLIC-009 — Failure status semantics
+
+**Definitive CP failure** (Process 1 and Process 2 — identical):
+
+```text
+Shop order exists
+CP order definitively does NOT exist
+SmartUCF has not been successfully created/sent
+→ public bank status: Неуспешно изпратен Банка - КП
+```
+
+**Definitive SmartUCF rejection/failure:**
+
+```text
+Shop order exists
+CP order exists
+SmartUCF definitively rejects/fails creation/submission
+→ public bank status: Неуспешно изпратен Банка - SmartUCF
+```
+
+**Ambiguous technical outcome** (timeout, interrupted transport, or any technical state where remote create cannot be reliably asserted):
+
+- May have an **internal** lifecycle state (`outcome_unknown`, sync pending, etc.).
+- Does **not** automatically create a new public bank status.
+- Do **not** invent a fifth public status for ambiguity.
+
+### STATUS-PUBLIC-010 — Process 1 / Process 2 CP-failure consistency
+
+CP create failure semantics do **not** depend on financing process:
+
+```text
+Process 1 + definitive CP failure → Неуспешно изпратен Банка - КП
+Process 2 + definitive CP failure → Неуспешно изпратен Банка - КП
+```
+
+### STATUS-PUBLIC-011 — Terminal order UX rule (OpenCart 3)
+
+If a Shop order exists **and** a terminal public bank status exists, the business flow is a **terminal order result**.
+
+Customer UX must use the existing OpenCart 3 **checkout success / order confirmation** path when that is the intended OC3 flow.
+
+Terminal business failure must **not** be treated as a generic AJAX / popup / request failure.
+
+Examples of terminal public bank statuses after a created Shop order:
+
+```text
+Неуспешно изпратен Банка - КП
+Неуспешно изпратен Банка - SmartUCF
+```
+
+Customer-facing failure information appears on the agreed confirmation place, without internal diagnostics.
+
+### STATUS-PUBLIC-012 — Diagnostic / debug visibility
+
+Diagnostic information (internal lifecycle, transport classification, retry/recovery, correlation, raw error classes, SmartUCF debug payloads, etc.) may be visible **only** on predetermined places, for example:
+
+- SmartUCF debug information in CP;
+- debug information pulled from the OC3 shop;
+- specialized developer/support diagnostic panels;
+- module / application logs;
+- other explicitly designated service places.
+
+### STATUS-PUBLIC-013 — Standard email rule
+
+When a Shop order is created and the flow ends with a terminal public bank status, standard OpenCart order emails must use the **same canonical bank status** (e.g. `Неуспешно изпратен Банка - КП` or `Неуспешно изпратен Банка - SmartUCF`).
+
+Do not create separate technical email statuses. Internal lifecycle/debug information must not appear in standard emails.
+
+### STATUS-PUBLIC-014 — OpenCart 3 order / cart / session recovery
+
+OC3-specific mechanisms such as cart recreation, session restoration, checkout session data, native `session->data['order_id']`, order history mechanics, success-page cleanup, cart contents restoration, and guest/customer checkout compatibility are **implementation details**.
+
+They must **not** change the common business semantics for bank status, terminal result, emails, customer-facing leasing information, CP outcome, or SmartUCF outcome.
+
+If OC3 has `recreateCart()` or an equivalent recovery mechanism, it must **not** produce a new public bank status.
+
+### STATUS-PUBLIC-015 — OpenCart 3 architecture (Registry / Loader)
+
+OC3 is architecturally different from OC4. Integration uses the classic OC3 structure:
+
+```text
+Registry, Loader, Controller, Model, Library, Event system, OCMOD,
+catalog/controller|model|view, admin/controller|model|view, system/library
+```
+
+Thin controllers/models over module services/libraries are appropriate. Documentation does **not** require mechanical copying of OC4 architecture. Registry/Loader wiring is an integration mechanism — **not** the source of truth for bank status or financing lifecycle business outcomes.
+
+### STATUS-PUBLIC-016 — Events / OCMOD
+
+OC3 may use events, OCMOD, theme hooks, and controller/model overrides to integrate Product, Cart, Checkout, Success, Admin Order, or Mail UI.
+
+```text
+OCMOD/event placement != business state authority
+```
+
+Selector/hook/event failure may be a presentation/integration defect; it does **not** create a new public bank status.
+
+### STATUS-PUBLIC-017 — Journal / custom-theme compatibility
+
+Journal or other custom-theme compatibility (fragment-local CSS/JS, theme-specific selectors, OCMOD/event placement, fallback selectors) is a **presentation compatibility** concern. It must not change calculator results, order semantics, bank status, CP/SmartUCF lifecycle, email status, or terminal result.
+
+### STATUS-002 — Machine IDs for outbound module → CP (aligned with public labels)
+
+**Do not rename status IDs for OC3 convenience.** Public labels are STATUS-PUBLIC-002.
+
+| `status_id`                 | Public `status_label` (AUTHORITATIVE) | When it MAY be recorded as public bank outcome                    | Must NOT                                                                                  |
+| --------------------------- | ------------------------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `bank_sent_process1`        | Изпратен Банка - Процес 1             | CP order exists **and** SmartUCF Process 1 succeeded              | On Process 2; as success before SmartUCF success; as substitute for ambiguity             |
+| `bank_sent_process2`        | Изпратен Банка - Процес 2             | Process 2 after Shop+CP success (SmartUCF proof **not** required) | On Process 1; before required P2 validation/encrypt where applicable                      |
+| `bank_send_failed_cp`       | Неуспешно изпратен Банка - КП         | Definitive CP create failure (P1 and P2)                          | As a bank-sent success label; as substitute for ambiguity                                 |
+| `bank_send_failed_smartucf` | Неуспешно изпратен Банка - SmartUCF   | CP created **and** definitive SmartUCF rejection/failure          | Pre-send cert-only retryable failure; timeout / `outcome_unknown`; Process 2 success path |
+
+**Not a public standard bank status** (do not present to customer/business UI as bank status):
+
+| `status_id`        | Label (forbidden as public standard bank status) | Note                                                                |
+| ------------------ | ------------------------------------------------ | ------------------------------------------------------------------- |
+| `bank_send_failed` | Неуспешно изпратен Банка                         | Incomplete/generic. Not allowed as public bank status for P1 or P2. |
+
+### STATUS-003 — CP / inbound wire vocabulary (technical)
+
+API does **not** enum-validate every create/patch status string. Default on create may still use CP-side `cp_sent` / `Създаден в КП Банка` as an **internal CP progression** marker — that is **not** one of the four initial **public** standard bank statuses for shop customer/business bank-status fields (see STATUS-PUBLIC-002).
+
+Inbound accepted `status_id` vocabulary historically includes at least:
 
 - `cp_sent`, `smartucf_sent`
 - `bank_sent_process1`, `bank_sent_process2`
@@ -496,7 +749,7 @@ Inbound accepted `status_id` vocabulary includes at least:
 
 Unsupported → HTTP 400. Same status twice → idempotent upsert.
 
-CP display enum (labels may have null `status_id`): Създаден в КП Банка, Създаден в SmartUCF, Онлайн подписване на договор, В процес на онлайн идентификация, Отказана, Сключен договор, Въвежда се - фаза 1, Регистрирана, Отказана от клиент при контакт, Активиран договор, Отказана от клиент.
+**Subsequent SmartUCF statuses** shown in public bank-status fields follow STATUS-PUBLIC-003 (store/display **raw** text; no invented mapping). Historical CP display-enum lists in older notes are **not** a mandate to rename or normalize later SmartUCF values.
 
 ---
 
@@ -573,6 +826,7 @@ Product/Cart primary phone remains required. Checkout primary phone remains opti
 - **Never** send EGN/phone2 to CP.
 - Authenticated encryption (`enc:v1:` AES-256-GCM preferred). Fail closed if the key cannot be resolved. No plaintext fallback.
 - After encrypt: **admit durable CP sync target** → write local `bank_sent_process2` → PATCH from persisted target (shop order id = local OC order id). Local bank fact is not written before target admission.
+- Public label for that outcome is **`Изпратен Банка - Процес 2`**. Process 2 does **not** require proof of SmartUCF create/send (STATUS-PUBLIC-002).
 - Never write `bank_sent_process1` or `bank_send_failed_smartucf` for Process 2.
 - Once `bank_sent_process2` is recorded, retry must not repeat the bank handoff.
 
@@ -697,7 +951,7 @@ Logged-customer Thank You additionally matches `customer_id`. Guests use unpredi
 
 Fixture: `tests/fixtures/privacy_retention.json`.
 
-Do not weaken privacy because OC3 is older.
+Do not weaken privacy because OC3 is older. Customer/business-facing leasing and bank-status presentation must also obey **STATUS-PUBLIC-\*** (section F): no internal lifecycle/debug fields in the standard leasing block; diagnostic content only on predetermined service surfaces.
 
 ### PII-001 — Audiences and exclusions
 
