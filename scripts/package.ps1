@@ -1,5 +1,5 @@
 ﻿# Build deterministic UniCredit OpenCart 3 distributable package.
-# Output (default): dist/CC_OpenCartv.3.x_UNI_v.2.0.2.ocmod.zip
+# Output (default): dist/CC_OpenCartv.3.x_UNI_v.2.0.3.ocmod.zip
 #
 # AUD-031-F02: exclusion policy + full manifest / byte-integrity validation.
 # Optional -OutputPath for disposable test ZIPs (must not be required to overwrite frozen artifact).
@@ -27,7 +27,7 @@ if (-not [string]::IsNullOrWhiteSpace($PackageRoot)) {
     $DistDir = Join-Path $Root 'dist'
 }
 $StagingDir = Join-Path $DistDir $StagingDirName
-$Version = '2.0.2'
+$Version = '2.0.3'
 $PackageName = "CC_OpenCartv.3.x_UNI_v.$Version.ocmod.zip"
 if ([string]::IsNullOrWhiteSpace($OutputPath)) {
     $OutputPath = Join-Path $DistDir $PackageName

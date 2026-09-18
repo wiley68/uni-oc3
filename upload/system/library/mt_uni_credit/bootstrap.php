@@ -41,6 +41,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'request_authenticator.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'inbound_bank_status_vocabulary.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'bank_status.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'bank_status_transition_policy.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'satrudnik_failure_notifier.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'payment_identity.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'order_ownership_resolver.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'financing_order_ambiguous_exception.php';

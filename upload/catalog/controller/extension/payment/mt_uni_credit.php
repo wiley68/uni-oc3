@@ -876,13 +876,19 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
         if (MtUniCreditFinancingTerminalNavigationSupport::isSuccessfulBankHandoff($submit)) {
             return;
         }
-        $this->applyPreparedOrderStatus($orderId, $submit);
+        if (empty($submit['order_id']) && $orderId > 0) {
+            $submit['order_id'] = $orderId;
+        }
+        $diag = $this->applyPreparedOrderStatus($orderId, $submit);
+        if (!empty($diag['history_called'])) {
+            MtUniCreditSatrudnikFailureNotifier::maybeNotifyAfterNativeHistory($this, $submit);
+        }
     }
 
     /**
      * @param int $orderId
      * @param array<string, mixed> $submit
-     * @return void
+     * @return array<string, mixed>
      */
     private function applyPreparedOrderStatus($orderId, array $submit = array())
     {
@@ -903,13 +909,13 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
             $diag['skipped_reason'] = 'order_id';
             $this->recordNativeOrderStatusDiagnostic($diag);
 
-            return;
+            return $diag;
         }
         if ($statusId <= 0) {
             $diag['skipped_reason'] = 'configured_status_id';
             $this->recordNativeOrderStatusDiagnostic($diag);
 
-            return;
+            return $diag;
         }
 
         $current = MtUniCreditNativeOrderStatusSupport::readOrderStatusId($this->db, $orderId);
@@ -918,7 +924,7 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
             $diag['skipped_reason'] = 'order_missing';
             $this->recordNativeOrderStatusDiagnostic($diag);
 
-            return;
+            return $diag;
         }
 
         try {
@@ -943,6 +949,8 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
             $diag['skipped_reason'] = 'finalization_error';
             $this->recordNativeOrderStatusDiagnostic($diag);
         }
+
+        return $diag;
     }
 
     /**

@@ -249,6 +249,7 @@ final class MtUniCreditCheckoutFinancingSubmissionService
             'attempt' => $fresh !== null ? $fresh : $attempt,
             'apply_native_order_status' => $result->applyNativeOrderStatus,
             'bank_status' => $this->resolveBankStatusId($storeId, $orderId),
+            'bank_status_transitioned' => !empty($result->bankStatusTransitioned),
             // Structural only — controller branch isolation / remote CP classification.
             'http_status' => $result->httpStatus,
         );
@@ -256,9 +257,11 @@ final class MtUniCreditCheckoutFinancingSubmissionService
         // Definitive CP create failure → local bank_send_failed_cp
         // (no CP PATCH — no CP order). Native/Thank You only after durable status is proven (AUD-014 F03).
         if (MtUniCreditFinancingTerminalNavigationSupport::isCheckoutCpFailureNativeFinalizationCandidate($failure)) {
-            if ($this->persistCheckoutCpFailureBankStatus($storeId, $orderId)) {
+            $persist = $this->persistCheckoutCpFailureBankStatus($storeId, $orderId);
+            if (!empty($persist['ok'])) {
                 $failure['bank_status'] = MtUniCreditBankStatus::SEND_FAILED_CP;
                 $failure['apply_native_order_status'] = true;
+                $failure['bank_status_transitioned'] = !empty($persist['bank_status_transitioned']);
                 $failure['message'] = MtUniCreditFinancingLeasingPresenter::CP_TERMINAL_FAILURE_TITLE
                     . "\n\n"
                     . MtUniCreditFinancingLeasingPresenter::CP_TERMINAL_FAILURE_MESSAGE;
@@ -448,11 +451,11 @@ final class MtUniCreditCheckoutFinancingSubmissionService
 
     /**
      * Persist local bank_send_failed_cp after definitive Checkout CP create failure.
-     * No CP PATCH (no remote CP order). Returns true only when durable status is proven.
+     * No CP PATCH (no remote CP order). Returns metadata when durable status is proven.
      *
      * @param int $storeId
      * @param string $orderId Canonical shop order id
-     * @return bool
+     * @return array{ok: bool, bank_status_transitioned: bool}
      */
     private function persistCheckoutCpFailureBankStatus($storeId, $orderId)
     {
@@ -461,7 +464,7 @@ final class MtUniCreditCheckoutFinancingSubmissionService
 
             return MtUniCreditBankStatus::persistLocalControlPanelFailure($repo, $storeId, $orderId);
         } catch (Exception $ignored) {
-            return false;
+            return array('ok' => false, 'bank_status_transitioned' => false);
         }
     }
 }

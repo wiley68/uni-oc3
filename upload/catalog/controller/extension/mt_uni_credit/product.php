@@ -469,6 +469,7 @@ class ControllerExtensionMtUniCreditProduct extends Controller
         }
         $this->load->model('checkout/order');
         $this->model_checkout_order->addOrderHistory((int) $result['order_id'], $statusId);
+        MtUniCreditSatrudnikFailureNotifier::maybeNotifyAfterNativeHistory($this, $result);
     }
 
     /**

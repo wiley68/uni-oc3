@@ -613,14 +613,21 @@ final class MtUniCreditSmartUcfSessionCoordinator
             );
         } catch (Throwable $ignored) {
         }
+        $bankStatusTransitioned = false;
         if ($classification->errorClass() === MtUniCreditSmartUcfFailureClassification::CLASS_REMOTE_REJECT) {
-            $this->persistFailureBankStatus($attemptId, $storeId, $localOrderId, $bankStatuses);
+            $bankStatusTransitioned = $this->persistFailureBankStatus(
+                $attemptId,
+                $storeId,
+                $localOrderId,
+                $bankStatuses
+            );
         }
 
         return MtUniCreditSmartUcfCoordinationResult::failed(
             self::CUSTOMER_FAILED,
             $classification->isRetryable(),
-            $classification->errorClass()
+            $classification->errorClass(),
+            $bankStatusTransitioned
         );
     }
 
@@ -743,20 +750,28 @@ final class MtUniCreditSmartUcfSessionCoordinator
      * @param int $storeId
      * @param int|string $localOrderId
      * @param MtUniCreditOrderBankStatusRepository|null $bankStatuses
-     * @return void
+     * @return bool True when this request first-transitioned into bank_send_failed_smartucf
      */
     private function persistFailureBankStatus($attemptId, $storeId, $localOrderId, $bankStatuses)
     {
         if (!$this->statusSync instanceof MtUniCreditControlPanelStatusSyncService) {
-            return;
+            return false;
         }
 
         $status = MtUniCreditBankStatus::smartUcfFailure();
         $shopOrderId = MtUniCreditShopOrderId::tryNormalize($localOrderId);
         if ($shopOrderId === null) {
-            return;
+            return false;
         }
         $attemptId = (int) $attemptId;
+
+        $previousId = '';
+        if ($bankStatuses instanceof MtUniCreditOrderBankStatusRepository) {
+            $existing = $bankStatuses->findByOrderId((int) $storeId, $shopOrderId);
+            if ($existing !== null && isset($existing['status_id'])) {
+                $previousId = (string) $existing['status_id'];
+            }
+        }
 
         $decision = $this->statusSync->admitTarget(
             $attemptId,
@@ -773,7 +788,7 @@ final class MtUniCreditSmartUcfSessionCoordinator
                     . ' attempt_id=' . $attemptId
             );
 
-            return;
+            return false;
         }
 
         try {
@@ -786,10 +801,24 @@ final class MtUniCreditSmartUcfSessionCoordinator
                     . ' (pending CP target retained)'
             );
 
-            return;
+            return false;
         }
 
         $this->statusSync->retryPending($attemptId, $shopOrderId);
+
+        $persistedId = '';
+        if ($bankStatuses instanceof MtUniCreditOrderBankStatusRepository) {
+            $row = $bankStatuses->findByOrderId((int) $storeId, $shopOrderId);
+            if ($row !== null && isset($row['status_id'])) {
+                $persistedId = (string) $row['status_id'];
+            }
+        }
+
+        return MtUniCreditSatrudnikFailureNotifier::isFirstTransition(
+            $previousId,
+            $persistedId,
+            MtUniCreditBankStatus::SEND_FAILED_SMARTUCF
+        );
     }
 
     /**

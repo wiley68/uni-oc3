@@ -76,24 +76,35 @@ final class MtUniCreditBankStatus
 
     /**
      * Persist local bank_send_failed_cp after definitive CP create failure.
-     * No CP PATCH (no remote CP order). Returns true only when durable status is proven.
+     * No CP PATCH (no remote CP order).
+     *
+     * Returns request-local metadata only (not a durable marker):
+     * - ok: durable current status_id is bank_send_failed_cp
+     * - bank_status_transitioned: previous (pre-write) status_id != target AND ok
      *
      * @param MtUniCreditOrderBankStatusRepository $repo
      * @param int $storeId
      * @param int|string $orderId
-     * @return bool
+     * @return array{ok: bool, bank_status_transitioned: bool}
      */
     public static function persistLocalControlPanelFailure($repo, $storeId, $orderId)
     {
+        $fail = array('ok' => false, 'bank_status_transitioned' => false);
         if (!$repo instanceof MtUniCreditOrderBankStatusRepository) {
-            return false;
+            return $fail;
         }
         $storeId = (int) $storeId;
         $orderId = MtUniCreditShopOrderId::tryNormalize($orderId);
         if ($storeId < 0 || $orderId === null) {
-            return false;
+            return $fail;
         }
         try {
+            $previousId = '';
+            $existing = $repo->findByOrderId($storeId, $orderId);
+            if ($existing !== null && isset($existing['status_id'])) {
+                $previousId = (string) $existing['status_id'];
+            }
+
             $status = self::controlPanelFailure(false);
             $updated = $repo->upsertAuthorizedLocal(
                 $storeId,
@@ -103,17 +114,22 @@ final class MtUniCreditBankStatus
                 MtUniCreditBankStatusTransitionPolicy::SOURCE_LOCAL_LIFECYCLE
             );
             if ($updated === null) {
-                return false;
+                return $fail;
             }
             $row = $repo->findByOrderId($storeId, $orderId);
             if ($row === null) {
-                return false;
+                return $fail;
+            }
+            if (!isset($row['status_id']) || (string) $row['status_id'] !== self::SEND_FAILED_CP) {
+                return $fail;
             }
 
-            return isset($row['status_id'])
-                && (string) $row['status_id'] === self::SEND_FAILED_CP;
+            return array(
+                'ok' => true,
+                'bank_status_transitioned' => $previousId !== self::SEND_FAILED_CP,
+            );
         } catch (Exception $ignored) {
-            return false;
+            return $fail;
         }
     }
 

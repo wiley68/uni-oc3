@@ -110,7 +110,7 @@ mtuc_assert($identity['code'] === 'mt_uni_credit', 'module code mt_uni_credit');
 mtuc_assert($identity['extension_type_primary'] === 'payment', 'primary type payment');
 mtuc_assert(isset($identity['oc3_module_settings_code']), 'fixture module settings code');
 mtuc_assert(isset($identity['oc3_payment_settings_code']), 'fixture payment settings code');
-mtuc_assert($identity['version'] === '2.0.2', 'module version 2.0.2 frozen');
+mtuc_assert($identity['version'] === '2.0.3', 'module version 2.0.3 frozen');
 mtuc_assert($identity['release_version_status'] === 'closed_d2', 'D2 version closed');
 
 $life = mtuc_phase0_load_fixture('oc3_lifecycle.json');

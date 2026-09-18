@@ -136,7 +136,7 @@ mtucAud031_assert(empty($uploadHits['UNIPAYMENT_ENABLE_TEST_FAILURES']), 'prior 
 mtucAud031_assert(empty($uploadHits['ShopApiTestFailure']), 'prior exclusion: ShopApiTestFailure');
 mtucAud031_assert(empty($uploadHits['test_force_reject']), 'prior exclusion: test_force_reject');
 
-$packagePath = $root . DIRECTORY_SEPARATOR . 'dist' . DIRECTORY_SEPARATOR . 'CC_OpenCartv.3.x_UNI_v.2.0.2.ocmod.zip';
+$packagePath = $root . DIRECTORY_SEPARATOR . 'dist' . DIRECTORY_SEPARATOR . 'CC_OpenCartv.3.x_UNI_v.2.0.3.ocmod.zip';
 if (is_file($packagePath)) {
     $zip = new ZipArchive();
     mtucAud031_assert($zip->open($packagePath) === true, 'package opens');

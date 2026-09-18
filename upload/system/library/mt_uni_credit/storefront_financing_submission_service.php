@@ -654,6 +654,7 @@ final class MtUniCreditStorefrontFinancingSubmissionService
                 'apply_native_order_status' => $result->applyNativeOrderStatus,
                 'cart_unchanged' => true,
                 'bank_status' => $this->resolveBankStatusId($storeId, $orderId),
+                'bank_status_transitioned' => !empty($result->bankStatusTransitioned),
                 'session' => $sessionData,
                 'http_status' => $result->httpStatus,
             );
@@ -661,9 +662,11 @@ final class MtUniCreditStorefrontFinancingSubmissionService
             // Product/Cart parity with Checkout: definitive CP create failure → bank_send_failed_cp
             // then Thank You / standard emails (AUD-014 F03 durable-before-native).
             if (MtUniCreditFinancingTerminalNavigationSupport::isCheckoutCpFailureNativeFinalizationCandidate($failure)) {
-                if ($this->persistCpFailureBankStatus($storeId, $orderId)) {
+                $persist = $this->persistCpFailureBankStatus($storeId, $orderId);
+                if (!empty($persist['ok'])) {
                     $failure['bank_status'] = MtUniCreditBankStatus::SEND_FAILED_CP;
                     $failure['apply_native_order_status'] = true;
+                    $failure['bank_status_transitioned'] = !empty($persist['bank_status_transitioned']);
                     $failure['message'] = MtUniCreditFinancingLeasingPresenter::CP_TERMINAL_FAILURE_TITLE
                         . "\n\n"
                         . MtUniCreditFinancingLeasingPresenter::CP_TERMINAL_FAILURE_MESSAGE;
@@ -970,7 +973,7 @@ final class MtUniCreditStorefrontFinancingSubmissionService
      *
      * @param int $storeId
      * @param int|string $orderId
-     * @return bool
+     * @return array{ok: bool, bank_status_transitioned: bool}
      */
     private function persistCpFailureBankStatus($storeId, $orderId)
     {
@@ -979,7 +982,7 @@ final class MtUniCreditStorefrontFinancingSubmissionService
 
             return MtUniCreditBankStatus::persistLocalControlPanelFailure($repo, $storeId, $orderId);
         } catch (Exception $ignored) {
-            return false;
+            return array('ok' => false, 'bank_status_transitioned' => false);
         }
     }
 

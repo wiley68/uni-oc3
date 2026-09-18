@@ -150,7 +150,7 @@ foreach ($fixture['ps9_create_field_order'] as $field) {
     mtuc7_assert(array_key_exists($field, $payload), 'payload field present: ' . $field);
 }
 mtuc7_assert(!isset($payload['status']) && !isset($payload['status_id']), 'create payload omits status/status_id');
-mtuc7_assert($payload['version'] === '2.0.2', 'payload version frozen 2.0.2');
+mtuc7_assert($payload['version'] === '2.0.3', 'payload version frozen 2.0.3');
 mtuc7_assert($payload['products_name'] === 'Example_Product', 'product name underscore preserved');
 
 // Attempt persistence + reuse

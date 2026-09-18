@@ -133,7 +133,7 @@ foreach ($k in $approvedKeys.Keys) {
         $missingDetected = $true
     }
     # Force missing detection logic:
-    $fakeApproved = @{'install.xml' = $true; 'upload/missing-only.php' = $true}
+    $fakeApproved = @{'install.xml' = $true; 'upload/missing-only.php' = $true }
     foreach ($fk in $fakeApproved.Keys) {
         if (-not $zipNames.ContainsKey($fk)) { $missingDetected = $true }
     }
@@ -184,7 +184,7 @@ Assert-True ($pkgFailed) 'package.ps1 fails non-zero/throws on forbidden source'
 Assert-True (-not (Test-Path -LiteralPath $failZip)) 'failed packaging does not leave a success ZIP'
 
 # Frozen release ZIP must not have been this temp path
-$frozen = Join-Path $RepoRoot 'dist\CC_OpenCartv.3.x_UNI_v.2.0.2.ocmod.zip'
+$frozen = Join-Path $RepoRoot 'dist\CC_OpenCartv.3.x_UNI_v.2.0.3.ocmod.zip'
 Assert-True ($zipPath -ne $frozen) 'temp ZIP path is not frozen release artifact'
 
 # Cleanup fixture

@@ -47,6 +47,14 @@ final class MtUniCreditControlPanelOrderSubmissionResult
     public $applyNativeOrderStatus;
 
     /**
+     * Request-local first bank-status transition into a Satrudnik target failure.
+     * Not persisted; default false.
+     *
+     * @var bool
+     */
+    public $bankStatusTransitioned = false;
+
+    /**
      * @param bool $success
      * @param int $controlPanelOrderId
      * @param bool $localReplay
@@ -83,6 +91,7 @@ final class MtUniCreditControlPanelOrderSubmissionResult
         $this->cpSucceeded = (bool) $cpSucceeded;
         $this->customerMessage = $customerMessage;
         $this->applyNativeOrderStatus = (bool) $applyNativeOrderStatus;
+        $this->bankStatusTransitioned = false;
     }
 
     /**

@@ -30,12 +30,20 @@ final class MtUniCreditSmartUcfCoordinationResult
     private $errorClass;
 
     /**
+     * Request-local: first transition into bank_send_failed_smartucf on this attempt.
+     *
+     * @var bool
+     */
+    private $bankStatusTransitioned;
+
+    /**
      * @param string $kind
      * @param string $redirectUrl
      * @param string $sessionId
      * @param string $customerMessage
      * @param bool $retryable
      * @param string $errorClass
+     * @param bool $bankStatusTransitioned
      */
     private function __construct(
         $kind,
@@ -43,7 +51,8 @@ final class MtUniCreditSmartUcfCoordinationResult
         $sessionId = '',
         $customerMessage = '',
         $retryable = false,
-        $errorClass = ''
+        $errorClass = '',
+        $bankStatusTransitioned = false
     ) {
         $this->kind = (string) $kind;
         $this->redirectUrl = (string) $redirectUrl;
@@ -51,6 +60,7 @@ final class MtUniCreditSmartUcfCoordinationResult
         $this->customerMessage = (string) $customerMessage;
         $this->retryable = (bool) $retryable;
         $this->errorClass = (string) $errorClass;
+        $this->bankStatusTransitioned = (bool) $bankStatusTransitioned;
     }
 
     /**
@@ -85,11 +95,20 @@ final class MtUniCreditSmartUcfCoordinationResult
      * @param string $message
      * @param bool $retryable
      * @param string $errorClass
+     * @param bool $bankStatusTransitioned
      * @return self
      */
-    public static function failed($message, $retryable = false, $errorClass = '')
+    public static function failed($message, $retryable = false, $errorClass = '', $bankStatusTransitioned = false)
     {
-        return new self(self::KIND_FAILED, '', '', $message, $retryable, $errorClass);
+        return new self(
+            self::KIND_FAILED,
+            '',
+            '',
+            $message,
+            $retryable,
+            $errorClass,
+            $bankStatusTransitioned
+        );
     }
 
     /**
@@ -178,5 +197,13 @@ final class MtUniCreditSmartUcfCoordinationResult
     public function errorClass()
     {
         return $this->errorClass;
+    }
+
+    /**
+     * @return bool
+     */
+    public function bankStatusTransitioned()
+    {
+        return $this->bankStatusTransitioned;
     }
 }

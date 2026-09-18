@@ -26,7 +26,7 @@
     "products_q": {"required": false, "type": "string", "cp_max": null, "ps9": "implode('_', qty) qty>=1"},
     "type_client": {"required": false, "type": "integer", "min": 0, "max": 255, "default": 0, "ps9": "0 if shop _is_mobile else 1"},
     "currency": {"required": false, "type": "string", "max": 3, "in": ["BGN", "EUR"], "api_default": "BGN", "db_default": "EUR"},
-    "version": {"required": false, "type": "string", "max": 11, "regex": "^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$", "current_module": "2.0.2"},
+    "version": {"required": false, "type": "string", "max": 11, "regex": "^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$", "current_module": "2.0.3"},
     "status": {"required": false, "type": "string", "max": 255, "not_enum": true, "default": "Създаден в КП Банка"},
     "status_id": {"required": false, "type": "string", "max": 255, "default": "cp_sent"}
   },
@@ -73,7 +73,7 @@
     "products_q": "1",
     "type_client": 1,
     "currency": "BGN",
-    "version": "2.0.2"
+    "version": "2.0.3"
   },
   "invalid_samples": [
     {"reason": "order_id longer than 13", "override": {"order_id": "TEST-ORDER-0014"}},

@@ -384,7 +384,7 @@ mtuc4_assert(strpos($packageScript, 'upload/system/library/mt_uni_credit/keys/.h
 mtuc4_assert(strpos($packageScript, 'upload/system/library/mt_uni_credit/secrets/.htaccess') !== false, 'package script expects secrets directory protection');
 mtuc4_assert(strpos($packageScript, "'upload/system/library/mt_uni_credit/secrets/smartucf-key.php'") !== false, 'package script expects packaged smartucf-key.php placeholder');
 
-$packagePath = $root . DIRECTORY_SEPARATOR . 'dist' . DIRECTORY_SEPARATOR . 'CC_OpenCartv.3.x_UNI_v.2.0.2.ocmod.zip';
+$packagePath = $root . DIRECTORY_SEPARATOR . 'dist' . DIRECTORY_SEPARATOR . 'CC_OpenCartv.3.x_UNI_v.2.0.3.ocmod.zip';
 if (is_file($packagePath)) {
     $zip = new ZipArchive();
     mtuc4_assert($zip->open($packagePath) === true, 'distributable package opens');

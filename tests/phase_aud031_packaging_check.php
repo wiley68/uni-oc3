@@ -4,7 +4,7 @@
  * AUD-031-F02 — packaging exclusion policy + manifest assertions.
  * Run: php tests/phase_aud031_packaging_check.php
  *
- * Does NOT rebuild or replace dist/CC_OpenCartv.3.x_UNI_v.2.0.2.ocmod.zip
+ * Does NOT rebuild or replace dist/CC_OpenCartv.3.x_UNI_v.2.0.3.ocmod.zip
  * PHP 7.3 compatible. Offline (invokes local PowerShell harness only).
  */
 require_once __DIR__ . '/bootstrap.php';
@@ -50,7 +50,7 @@ mtucAud031_assert(strpos($policyPs1, '.vscode') !== false, 'policy rejects IDE m
 mtucAud031_assert(strpos($policyPs1, '.pem') !== false, 'policy rejects credential extensions');
 mtucAud031_assert(strpos($policyPs1, 'Get-ChildItem') !== false && strpos($policyPs1, '-Force') !== false, 'approved set enumerates with -Force (hidden)');
 
-$frozen = $root . DIRECTORY_SEPARATOR . 'dist' . DIRECTORY_SEPARATOR . 'CC_OpenCartv.3.x_UNI_v.2.0.2.ocmod.zip';
+$frozen = $root . DIRECTORY_SEPARATOR . 'dist' . DIRECTORY_SEPARATOR . 'CC_OpenCartv.3.x_UNI_v.2.0.3.ocmod.zip';
 $frozenHashBefore = is_file($frozen) ? hash_file('sha256', $frozen) : null;
 
 $harness = $root . DIRECTORY_SEPARATOR . 'tests' . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'aud031_packaging_harness.ps1';

@@ -750,7 +750,7 @@ final class MtUniCreditControlPanelOrderLifecycleService
         $applyNative = !$process1->isRetryable()
             && $errorClass === MtUniCreditSmartUcfFailureClassification::CLASS_REMOTE_REJECT;
 
-        return MtUniCreditControlPanelOrderSubmissionResult::failAfterCp(
+        $result = MtUniCreditControlPanelOrderSubmissionResult::failAfterCp(
             $cpId,
             $localReplay,
             $errorClass,
@@ -761,6 +761,9 @@ final class MtUniCreditControlPanelOrderLifecycleService
                 : MtUniCreditSmartUcfSessionCoordinator::CUSTOMER_FAILED,
             $applyNative
         );
+        $result->bankStatusTransitioned = $process1->bankStatusTransitioned();
+
+        return $result;
     }
 
     /**

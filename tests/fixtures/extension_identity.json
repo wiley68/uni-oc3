@@ -1,7 +1,7 @@
 {
   "contract_ids": ["MODULE-001", "MODULE-002", "MODULE-003", "MODULE-004", "MODULE-005"],
   "code": "mt_uni_credit",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "display_name": "УниКредит покупки на Кредит",
   "module_display_name": "УниКредит покупки на Кредит",
   "author": "Авалон ООД",
@@ -33,11 +33,11 @@
   "oc3_payment_listing_image": "upload/admin/view/image/payment/uni_logo.svg",
   "oc3_payment_listing_image_style": "max-width:200px;height:auto;",
   "oc3_language_locales": ["en-gb", "bg-bg"],
-  "package_filename": "CC_OpenCartv.3.x_UNI_v.2.0.2.ocmod.zip",
+  "package_filename": "CC_OpenCartv.3.x_UNI_v.2.0.3.ocmod.zip",
   "package_root": "module.ocmod.zip",
   "package_layout": ["install.xml", "upload/admin/", "upload/catalog/", "upload/system/"],
   "cp_payload_version_format": "^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$",
-  "cp_payload_version": "2.0.2",
+  "cp_payload_version": "2.0.3",
   "release_version_status": "closed_d2",
   "namespace_note": "OC3 uses classic non-namespaced class names; do not copy OC4 Opencart\\... namespaces.",
   "admin_split": {
