@@ -57,7 +57,13 @@ final class MtUniCreditCpServiceFactory
         );
 
         $cache = new MtUniCreditShopCacheRepository($db);
-        $shopCachePersistence = MtUniCreditBootstrap::shopCachePersistenceFromDb($db);
+        // ONE exact-scope lock instance serializes refresh AND push/manual persistence: the
+        // refresh owner's already-verified ownership is reused for the validated write instead of
+        // a nested named-lock acquisition.
+        $scopeLock = new MtUniCreditShopConfigurationRefreshLock($db);
+        $shopCachePersistence = MtUniCreditBootstrap::shopCachePersistenceFromDb($db, $scopeLock);
+        // Single shared resolver: presentation (LKG-eligible), submission (never LKG) and manual
+        // refresh all use the same classification authority and single-flight owner protocol.
         $shopConfiguration = new MtUniCreditShopConfigurationService(
             $credentials,
             $cache,
@@ -65,7 +71,9 @@ final class MtUniCreditCpServiceFactory
             $tokens,
             $storeId,
             null,
-            $shopCachePersistence
+            $shopCachePersistence,
+            new MtUniCreditShopConfigurationFailureClassifier(),
+            $scopeLock
         );
         $credentialChange = new MtUniCreditCredentialChangeHandler($tokens, $cache, $storeId);
 

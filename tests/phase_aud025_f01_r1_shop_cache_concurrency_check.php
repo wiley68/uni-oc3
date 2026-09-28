@@ -177,7 +177,7 @@ function mtucAud025R1_stackFromMemory(Phase2MemoryDb $memory, $fault = null)
     $settings = new MtUniCreditSettingStore($db, MtUniCreditConstants::MODULE_SETTINGS_CODE);
     $creds = MtUniCreditBootstrap::smartucfCredentialsRepositoryFromDb($db);
     $cache = new MtUniCreditShopCacheRepository($db);
-    $lock = new MtUniCreditShopCachePersistenceLock($db);
+    $lock = new MtUniCreditShopConfigurationRefreshLock($db);
     $persistence = new MtUniCreditShopCachePersistence(
         $cache,
         new MtUniCreditShopConfigurationSnapshotValidator(),
@@ -260,13 +260,67 @@ function mtucAud025R1_assertCache(array $stack, $marker, $label)
     mtucAud025R1_assert(is_string($encoded) && strpos($encoded, $marker) !== false, $label . ': cache ' . $marker);
 }
 
+/**
+ * Acquire the stack lock for an explicit scope and assert success.
+ *
+ * @param array<string, mixed> $stack
+ * @param string $label
+ * @param int|null $storeId
+ * @param string|null $unicid
+ * @return string|null
+ */
+function mtucAud025R1_lockAcquire(array $stack, $label, $storeId = null, $unicid = null)
+{
+    $storeId = $storeId !== null ? (int) $storeId : (int) $stack['storeId'];
+    $unicid = $unicid !== null ? (string) $unicid : (string) $stack['unicid'];
+    $token = $stack['lock']->acquire($storeId, $unicid);
+    mtucAud025R1_assert(is_string($token) && $token !== '', $label);
+
+    return is_string($token) ? $token : null;
+}
+
+/**
+ * Release the stack lock for an explicit scope and assert success.
+ *
+ * @param array<string, mixed> $stack
+ * @param string|null $token
+ * @param string $label
+ * @param int|null $storeId
+ * @param string|null $unicid
+ * @return array<string, mixed>|null
+ */
+function mtucAud025R1_lockRelease(array $stack, $token, $label, $storeId = null, $unicid = null)
+{
+    $storeId = $storeId !== null ? (int) $storeId : (int) $stack['storeId'];
+    $unicid = $unicid !== null ? (string) $unicid : (string) $stack['unicid'];
+    $result = $stack['lock']->release($storeId, $unicid, (string) $token);
+    mtucAud025R1_assert(is_array($result) && !empty($result['ok']), $label);
+
+    return is_array($result) ? $result : null;
+}
+
+/**
+ * Prove the lock is free: a second connection can acquire, then releases.
+ *
+ * @param array<string, mixed> $stack
+ * @param string $label
+ * @return void
+ */
+function mtucAud025R1_peerCanAcquire(array $stack, $label)
+{
+    $token = mtucAud025R1_lockAcquire($stack, $label);
+    if ($token !== null) {
+        mtucAud025R1_lockRelease($stack, $token, $label . ' (peer release)');
+    }
+}
+
 Phase2MemoryDb::resetAdvisoryLocks();
 
 // -------------------------------------------------------------------------
 // Lock identity: deterministic, hashed, distinct for different scopes
 // -------------------------------------------------------------------------
 $lockProbeDb = new MtUniCreditDbAdapter(new Phase2MemoryDb(), 'oc_');
-$lockProbe = new MtUniCreditShopCachePersistenceLock($lockProbeDb);
+$lockProbe = new MtUniCreditShopConfigurationRefreshLock($lockProbeDb);
 $name1 = $lockProbe->lockName(Phase4TestHarness::TEST_STORE_ID, Phase4TestHarness::TEST_UNICID);
 $name1b = $lockProbe->lockName(Phase4TestHarness::TEST_STORE_ID, Phase4TestHarness::TEST_UNICID);
 $name2 = $lockProbe->lockName(Phase4TestHarness::TEST_STORE_ID_B, Phase4TestHarness::TEST_UNICID);
@@ -277,11 +331,14 @@ mtucAud025R1_assert($name1 !== $name2, 'different store → distinct lock name')
 mtucAud025R1_assert($name1 !== $name3, 'different unicid → distinct lock name');
 mtucAud025R1_assert(strpos($name1, Phase4TestHarness::TEST_UNICID) === false, 'lock name does not contain raw UNICID');
 mtucAud025R1_assert(strlen($name1) <= 64, 'lock name respects MySQL 64-char limit');
-mtucAud025R1_assert(strpos($name1, MtUniCreditShopCachePersistenceLock::LOCK_NAME_PREFIX) === 0, 'lock name uses mtuc_sc_ prefix');
 mtucAud025R1_assert(
-    MtUniCreditShopCachePersistenceLock::ACQUIRE_TIMEOUT_SECONDS === 5
-        && MtUniCreditSecurityConstants::SHOP_CACHE_PERSISTENCE_LOCK_TIMEOUT_SECONDS
-        === MtUniCreditShopCachePersistenceLock::ACQUIRE_TIMEOUT_SECONDS,
+    strpos($name1, MtUniCreditShopConfigurationRefreshLock::LOCK_NAME_PREFIX) === 0,
+    'lock name uses the single mtuc_sr_ scope prefix (refresh + push share it)'
+);
+mtucAud025R1_assert(
+    MtUniCreditShopConfigurationRefreshLock::ACQUIRE_TIMEOUT_SECONDS === 5
+        && MtUniCreditSecurityConstants::SHOP_CONFIGURATION_REFRESH_LOCK_TIMEOUT_SECONDS
+        === MtUniCreditShopConfigurationRefreshLock::ACQUIRE_TIMEOUT_SECONDS,
     'bounded GET_LOCK timeout constant is 5s'
 );
 
@@ -294,7 +351,7 @@ $memB = $memA->newSharedConnection();
 $stackA = mtucAud025R1_stackFromMemory($memA);
 $stackB = mtucAud025R1_stackFromMemory($memB);
 
-mtucAud025R1_assert($stackA['lock']->acquire($stackA['storeId'], $stackA['unicid']) === true, 'A acquires same-key lock');
+$stackAToken = mtucAud025R1_lockAcquire($stackA, 'A acquires same-key lock');
 $busy = mtucAud025R1_catch(function () use ($stackB) {
     $stackB['persistence']->replaceValidatedSnapshot(
         $stackB['storeId'],
@@ -318,11 +375,11 @@ mtucAud025R1_assert(
     'busy error leaks neither UNICID nor credentials'
 );
 
-$releaseResult = $stackA['lock']->release($stackA['storeId'], $stackA['unicid']);
+$releaseResult = $stackA['lock']->release($stackA['storeId'], $stackA['unicid'], (string) $stackAToken);
 mtucAud025R1_assert(
     is_array($releaseResult)
         && !empty($releaseResult['ok'])
-        && $releaseResult['outcome'] === MtUniCreditShopCachePersistenceLock::RELEASE_OUTCOME_RELEASED,
+        && $releaseResult['outcome'] === MtUniCreditShopConfigurationRefreshLock::RELEASE_OUTCOME_RELEASED,
     'A releases lock after hold'
 );
 
@@ -418,7 +475,7 @@ $toA['persistence']->replaceValidatedSnapshot(
         'uni_password' => 'HOLD-P',
     ))
 );
-mtucAud025R1_assert($toA['lock']->acquire($toA['storeId'], $toA['unicid']) === true, 'timeout fixture: A re-acquires after success release');
+$toAToken = mtucAud025R1_lockAcquire($toA, 'timeout fixture: A re-acquires after success release');
 $timeoutEx = mtucAud025R1_catch(function () use ($toB) {
     $toB['persistence']->replaceValidatedSnapshot(
         $toB['storeId'],
@@ -436,7 +493,7 @@ mtucAud025R1_assert(
 );
 mtucAud025R1_assertCreds($toA, 'HOLD-U', 'HOLD-P', 'timeout: A credentials intact');
 mtucAud025R1_assertCache($toA, 'cache-timeout-base@example.test', 'timeout: A cache intact');
-$toA['lock']->release($toA['storeId'], $toA['unicid']);
+mtucAud025R1_lockRelease($toA, $toAToken, 'timeout fixture: A releases');
 
 // -------------------------------------------------------------------------
 // Different stores do not share lock identity / can proceed while other held
@@ -445,7 +502,7 @@ Phase2MemoryDb::resetAdvisoryLocks();
 $dsMem = new Phase2MemoryDb();
 $dsA = mtucAud025R1_stackFromMemory($dsMem);
 $dsB = mtucAud025R1_stackFromMemory($dsMem->newSharedConnection());
-mtucAud025R1_assert($dsA['lock']->acquire($dsA['storeId'], $dsA['unicid']) === true, 'diff-store: A holds store A lock');
+$dsAToken = mtucAud025R1_lockAcquire($dsA, 'diff-store: A holds store A lock');
 $dsB['persistence']->replaceValidatedSnapshot(
     Phase4TestHarness::TEST_STORE_ID_B,
     $dsB['unicid'],
@@ -458,10 +515,7 @@ mtucAud025R1_assert(
     $dsB['creds']->getUser(Phase4TestHarness::TEST_STORE_ID_B) === 'STORE-B-U',
     'diff-store: store B credentials written while store A lock held'
 );
-mtucAud025R1_assert(
-    $dsA['lock']->release($dsA['storeId'], $dsA['unicid'])['ok'] === true,
-    'diff-store: A still owns its lock after B completed'
-);
+mtucAud025R1_lockRelease($dsA, $dsAToken, 'diff-store: A still owns its lock after B completed');
 
 // -------------------------------------------------------------------------
 // Lock released after persistence failure + after rollback-failure path
@@ -486,11 +540,7 @@ $relFail = mtucAud025R1_catch(function () use ($rel) {
     );
 });
 mtucAud025R1_assert($relFail instanceof Exception, 'release-after-failure: threw');
-mtucAud025R1_assert(
-    $peer['lock']->acquire($peer['storeId'], $peer['unicid']) === true,
-    'lock released after persistence failure (peer can acquire)'
-);
-$peer['lock']->release($peer['storeId'], $peer['unicid']);
+mtucAud025R1_peerCanAcquire($peer, 'lock released after persistence failure (peer can acquire)');
 
 $relFault->failOnShopCacheUpsert = true;
 $relFault->failOnCredentialDelete = true;
@@ -510,11 +560,7 @@ mtucAud025R1_assert(
         && strpos($rbFail->getMessage(), 'rollback failed') !== false,
     'rollback-failure path still surfaces PersistenceException'
 );
-mtucAud025R1_assert(
-    $peer['lock']->acquire($peer['storeId'], $peer['unicid']) === true,
-    'lock released after rollback-failure path'
-);
-$peer['lock']->release($peer['storeId'], $peer['unicid']);
+mtucAud025R1_peerCanAcquire($peer, 'lock released after rollback-failure path');
 
 // -------------------------------------------------------------------------
 // Lock released after success
@@ -531,11 +577,7 @@ $ok['persistence']->replaceValidatedSnapshot(
         'uni_password' => 'OK-P',
     ))
 );
-mtucAud025R1_assert(
-    $okPeer['lock']->acquire($okPeer['storeId'], $okPeer['unicid']) === true,
-    'lock released after successful persistence'
-);
-$okPeer['lock']->release($okPeer['storeId'], $okPeer['unicid']);
+mtucAud025R1_peerCanAcquire($okPeer, 'lock released after successful persistence');
 
 // Nested self-call is not reachable from replaceValidatedSnapshot body.
 mtucAud025R1_assert(true, 'nested same-connection reentry of replaceValidatedSnapshot is not reachable');

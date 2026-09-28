@@ -22,8 +22,8 @@ final class MtUniCreditStorefrontFinancingSubmissionService
     /** @var MtUniCreditCredentialsRepository */
     private $credentials;
 
-    /** @var MtUniCreditShopConfigurationCache */
-    private $shopCache;
+    /** @var MtUniCreditShopConfigurationService|MtUniCreditShopConfigurationCache */
+    private $shopConfiguration;
 
     /** @var MtUniCreditCalculator */
     private $calculator;
@@ -42,7 +42,7 @@ final class MtUniCreditStorefrontFinancingSubmissionService
      * @param MtUniCreditOperationLockRepository $locks
      * @param MtUniCreditControlPanelOrderLifecycleService $lifecycle
      * @param MtUniCreditCredentialsRepository $credentials
-     * @param MtUniCreditShopConfigurationCache $shopCache
+     * @param MtUniCreditShopConfigurationService|MtUniCreditShopConfigurationCache $shopConfiguration
      * @param MtUniCreditCalculator|null $calculator
      * @param MtUniCreditCartSchemeResolver|null $cartSchemes
      * @param MtUniCreditOperationOrderClaimRepository|null $orderClaims
@@ -52,7 +52,7 @@ final class MtUniCreditStorefrontFinancingSubmissionService
         MtUniCreditOperationLockRepository $locks,
         MtUniCreditControlPanelOrderLifecycleService $lifecycle,
         MtUniCreditCredentialsRepository $credentials,
-        MtUniCreditShopConfigurationCache $shopCache,
+        $shopConfiguration,
         $calculator = null,
         $cartSchemes = null,
         $orderClaims = null
@@ -61,7 +61,7 @@ final class MtUniCreditStorefrontFinancingSubmissionService
         $this->locks = $locks;
         $this->lifecycle = $lifecycle;
         $this->credentials = $credentials;
-        $this->shopCache = $shopCache;
+        $this->shopConfiguration = $shopConfiguration;
         $this->calculator = $calculator instanceof MtUniCreditCalculator
             ? $calculator
             : new MtUniCreditCalculator();
@@ -105,7 +105,9 @@ final class MtUniCreditStorefrontFinancingSubmissionService
             return $this->fail('not_configured', false);
         }
 
-        $shop = $this->shopCache->getFreshShopData($storeId, $unicid);
+        // STRICT: valid fresh snapshot or a successful current-request coordinated refresh.
+        // Submission NEVER accepts LKG. Resolution happens before any order/CP/SmartUCF effect.
+        $shop = $this->resolveSubmissionShop($storeId, $unicid);
         if (!is_array($shop) || $shop === array()) {
             return $this->fail('shop_cache_stale', false);
         }
@@ -677,6 +679,37 @@ final class MtUniCreditStorefrontFinancingSubmissionService
         } finally {
             $this->locks->release($storeId, $entryPoint, $operationKeyHash, $lockOwnerToken);
         }
+    }
+
+    /**
+     * Strict submission snapshot resolution — never LKG.
+     *
+     * @param int $storeId
+     * @param string $unicid
+     * @return array<string, mixed>|null
+     */
+    private function resolveSubmissionShop($storeId, $unicid)
+    {
+        if ($this->shopConfiguration instanceof MtUniCreditShopConfigurationService) {
+            try {
+                $shop = $this->shopConfiguration->getForSubmission();
+            } catch (MtUniCreditShopConfigurationUnavailableException $exception) {
+                return null;
+            } catch (Exception $exception) {
+                return null;
+            }
+
+            return is_array($shop) && $shop !== array() ? $shop : null;
+        }
+
+        if ($this->shopConfiguration instanceof MtUniCreditShopConfigurationCache) {
+            // Legacy offline wiring: fresh-only fail-closed path (no LKG, no coordinated refresh).
+            $shop = $this->shopConfiguration->getFreshShopData($storeId, $unicid);
+
+            return is_array($shop) && $shop !== array() ? $shop : null;
+        }
+
+        return null;
     }
 
     /**

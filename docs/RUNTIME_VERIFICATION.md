@@ -25,9 +25,16 @@ Run without network:
 ```text
 php tests/phase_canonical_aggregate_check.php
 php scripts/run_canonical_safe_tests.php
+php tests/phase_rem_oc3_cache_lifecycle_check.php
+php tests/phase_rem_oc3_cache_mysql_concurrency_probe.php   # opt-in real DB probe (see below)
 ```
 
 Covers inbound bound body / operation binding / envelopes, FinancingOrderResolver ownership, bank-status P1↔P2 CONFLICT, SmartUCF debug opacity, CP client no-create-replay, durable status sync CAS, P1/P2 target-first lifecycle, and free-text / order_id max-13 preservation. Version remains **2.0.2**.
+
+`phase_rem_oc3_cache_lifecycle_check.php` covers the frozen shop-cache lifecycle: 24h TTL, 6h
+presentation-only LKG, submission never LKG, Class A/B/C failure taxonomy, exact
+`usable_until` cleanup, single-flight contention, push/manual semantics and secret-free
+diagnostics (offline, in-memory DB + fake CP transport).
 
 This document separates facts established from the workspace/references from facts that **must** be collected on the test server.
 
@@ -753,7 +760,9 @@ Automated gate: `php tests/phase8_check.php` (no live network).
 4. [ ] Secondary **Add to cart** triggers native `#button-cart` only — no order created.
 5. [ ] Secondary **Buy** stashes preference + adds to cart + redirects checkout — no order fabricated on Buy.
 6. [ ] Primary Apply → customer form → Submit materializes **one** OC order (`addOrder`) then shared Phase 7 CP lifecycle; cart is not cleared.
-7. [ ] Fresh shop cache only; stale/missing cache hides UI (fail soft).
+7. [ ] Presentation resolution: fresh local snapshot (no CP HTTP) → UI renders. Stale snapshot triggers
+   at most one coordinated refresh; a TRANSIENT failure may render the ≤6h LKG snapshot, a
+   Class B/C failure hides the UI (fail soft). Submission never uses LKG.
 8. [ ] Assets load via fragment-local `<link>`/`<script>` with guarded `filemtime` (Journal-compatible).
 
 ### Popup Step 2 (Process 1 / Process 2)
@@ -1169,6 +1178,74 @@ Do **not** claim remote PASS. Do **not** invent production workarounds
 A coordinated CP-side test hook may be revisited only when the real CP development
 repository is intentionally opened for that work. Local `uni.avalonbg.com` is a
 **read-only reference copy** and must not be modified from this workspace.
+
+---
+
+## Phase REM-OC3-CACHE-001 — shop-cache lifecycle (24h TTL + 6h presentation-only LKG)
+
+Automated gates (offline, no live network):
+
+```text
+php tests/phase_rem_oc3_cache_lifecycle_check.php
+php tests/phase_rem_oc3_cache_mysql_concurrency_probe.php   # opt-in; requires an isolated DB
+```
+
+### Frozen lifecycle
+
+1. [ ] TTL remains **86400** s; LKG window is **21600** s after `expires_at`.
+2. [ ] `fresh`: `now < expires_at` → resolution is local-only, **zero** `GET /shop`.
+3. [ ] `stale`: `expires_at <= now <= expires_at + 21600` → presentation may use LKG **only after THIS
+   request's own refresh fails TRANSIENTLY**; submission never uses LKG.
+4. [ ] `purge-eligible`: `now > expires_at + 21600`; the exact `usable_until` boundary is retained.
+5. [ ] Ordinary cleanup deletes only `expires_at < now - 21600` (never at `expires_at <= now`).
+
+### Presentation vs submission
+
+6. [ ] Homepage, product, cart and checkout presentation resolve through the shared lazy resolver.
+7. [ ] Presentation LKG is used only after a **current-attempt (own-request)** TRANSIENT failure; Class B/C hide the UI.
+8. [ ] Product/Cart strict resolution happens **before** `addOrder()`; Checkout strict resolution before CP/SmartUCF.
+9. [ ] The same resolved snapshot is carried through the whole submission (no second resolution).
+10. [ ] Strict-resolution failure ⇒ `addOrder = 0`, CP calls `= 0`, SmartUCF calls `= 0`.
+
+### Failure taxonomy
+
+11. [ ] Class A (connection/timeout/408/429/5xx) preserves known-good state — no purge.
+12. [ ] Class B (401 / explicit auth / revocation / proven wrong identity / canonical gone state) purges exact scope + token, and a later transient failure cannot resurrect old state.
+13. [ ] Class C (422 / malformed JSON / envelope / schema / invalid payload) preserves the row and token byte-identically and never uses same-attempt LKG; a later independent transient request may use LKG.
+14. [ ] `InvalidPayload` no longer purges automatically; `403`/`404`/`410` are Class B only with trusted canonical evidence.
+15. [ ] `uni_status = 0` blocks financing; `uni_container_status = 0` hides the homepage surface only.
+
+### Single-flight (concurrency)
+
+16. [ ] One owner per exact `(store_id, UNICID)` through the `mtuc_sr_` advisory lock; the lock name never contains the raw UNICID.
+17. [ ] Stale, missing, too-old and corrupt scopes each perform **exactly one** remote `GET /shop` per burst.
+18. [ ] Contenders never call CP and never serve LKG: only a bounded wait + re-read that observes a freshly published snapshot may succeed; otherwise they fail closed. A contender whose own `GET_LOCK` later succeeds becomes the owner and may refresh.
+19. [ ] One public validated replacement entry point; no nested refresh/persistence advisory lock; the refresh owner writes under its connection-verified scope ownership.
+20. [ ] Owner crash (connection close) leaves the scope recoverable; different scopes are independently acquirable; a non-owner cannot release the owner's lock.
+
+### Push / manual
+
+21. [ ] Valid signed push validates identity/schema, atomically replaces and resets the TTL — without calling CP.
+22. [ ] Class-C invalid push is rejected while preserving the known-good cache and token/credentials.
+23. [ ] Manual refresh performs one live refresh, never reports LKG as success, and applies the A/B/C taxonomy.
+
+### Diagnostics / secrets
+
+24. [ ] Lifecycle diagnostics expose only state, stale age, LKG eligibility/use, refresh class and lock outcome — never CP token, module secret, SmartUCF credentials, signatures, PII, full payloads or raw UNICID.
+25. [ ] Token validate-then-commit: a malformed login/refresh response (Class C) preserves the exact stored token/type/expiry (no `invalidate()`, no partial write); a trusted 401 still invalidates.
+26. [ ] Local credential gate: missing/unreadable/undecryptable Secret or missing UNICID ⇒ presentation `null`, submission `REASON_NOT_CONFIGURED`, zero network, zero lock, zero purge/cache mutation; never TRANSIENT.
+27. [ ] Unknown/unclassified `Throwable` and unproven local infrastructure/config defects ⇒ `CONTRACT_INVALID` (`unknown` / `local_infrastructure`), known-good state preserved, no LKG, fail closed.
+28. [ ] Connection-bound ownership proof: valid only for the current owner connection (`CONNECTION_ID()` = `IS_USED_LOCK(name)` = captured id); disconnect/reconnect drops the proof and a stale proof cannot persist.
+29. [ ] Push and refresh serialize through ONE lock identity; a push commit that follows an earlier refresh remains final, and a blocked push leaves no partial write.
+30. [ ] Storefront request memo is exact-scope (`store_id` + UNICID): the same store with a different UNICID is never served another scope's memoized snapshot.
+31. [ ] No UTF-8 BOM in shipped PHP sources: `upload/system/library/mt_uni_credit/satrudnik_failure_notifier.php` starts with `<?php` (`3C 3F 70 68 70`).
+
+### Real MySQL/MariaDB concurrency probe (opt-in, isolated DB only)
+
+Run only against a disposable database; **never** a production or live shop DB. Configure through
+environment variables (for example `MTUC_PROBE_DB_HOST`, `MTUC_PROBE_DB_PORT`, `MTUC_PROBE_DB_USER`,
+`MTUC_PROBE_DB_PASSWORD`). When no isolated database is configured the probe reports the environment
+blocker explicitly and exits without touching any database.
 
 ---
 

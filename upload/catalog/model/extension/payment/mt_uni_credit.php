@@ -4,6 +4,9 @@ require_once DIR_SYSTEM . 'library/mt_uni_credit/bootstrap.php';
 
 class ModelExtensionPaymentMtUniCredit extends Model
 {
+    /** @var MtUniCreditShopConfigurationService|null Request-scoped shared resolver. */
+    private $shopConfigurationService = null;
+
     /**
      * @param array<string, mixed> $address
      * @param float $total
@@ -168,7 +171,8 @@ class ModelExtensionPaymentMtUniCredit extends Model
         if ($unicid === '') {
             return null;
         }
-        $shop = MtUniCreditBootstrap::shopConfigurationCacheFromDb($db)->getFreshShopData($storeId, $unicid);
+        // PRESENTATION surface — shared lazy resolver (LKG only for a transient current failure).
+        $shop = $stack['shopConfiguration']->getForPresentation();
         if (!is_array($shop) || $shop === array()) {
             return null;
         }
@@ -278,7 +282,7 @@ class ModelExtensionPaymentMtUniCredit extends Model
             $attempts,
             $lifecycle,
             $stack['credentials'],
-            MtUniCreditBootstrap::shopConfigurationCacheFromDb($db)
+            $stack['shopConfiguration']
         );
     }
 
@@ -365,16 +369,42 @@ class ModelExtensionPaymentMtUniCredit extends Model
      */
     private function createPaymentAvailability()
     {
-        $db = MtUniCreditBootstrap::dbFromModel($this);
-
         return new MtUniCreditCheckoutPaymentAvailability(
-            MtUniCreditBootstrap::shopConfigurationCacheFromDb($db),
-            MtUniCreditBootstrap::credentialsRepositoryFromDb($db),
+            $this->shopConfigurationService(),
+            MtUniCreditBootstrap::credentialsRepositoryFromDb(MtUniCreditBootstrap::dbFromModel($this)),
             new MtUniCreditOc3CartContextFactory(
                 $this->createCategoryLoaderCallable(),
                 $this->createTaxCalculatorCallable()
             )
         );
+    }
+
+    /**
+     * One shared resolver instance per request — avoids repeated presentation resolution
+     * (and repeated lazy refresh attempts) inside a single Checkout request.
+     *
+     * @return MtUniCreditShopConfigurationService
+     */
+    private function shopConfigurationService()
+    {
+        if ($this->shopConfigurationService instanceof MtUniCreditShopConfigurationService) {
+            return $this->shopConfigurationService;
+        }
+
+        $db = MtUniCreditBootstrap::dbFromModel($this);
+        $storeId = $this->resolveStoreId();
+        $settings = new MtUniCreditSettingStore($db, MtUniCreditConstants::MODULE_SETTINGS_CODE);
+        $stack = MtUniCreditCpServiceFactory::create(
+            $db,
+            $settings,
+            $storeId,
+            (string) $this->config->get('config_ssl'),
+            (string) $this->config->get('config_url')
+        );
+
+        $this->shopConfigurationService = $stack['shopConfiguration'];
+
+        return $this->shopConfigurationService;
     }
 
     /**

@@ -277,35 +277,33 @@ class ModelExtensionModuleMtUniCredit extends Model
                 'scheme_count' => $schemeCount,
                 'cache_fresh' => (bool) (isset($meta['is_fresh']) ? $meta['is_fresh'] : true),
             );
-        } catch (MtUniCreditCpAuthenticationException $exception) {
+        } catch (Throwable $exception) {
+            // Manual/admin refresh taxonomy: Class A preserves state and reports a technical
+            // failure, Class B purges exact scoped state, Class C preserves row/token and reports
+            // an invalid response. LKG is never reported as manual-refresh success.
+            $classifier = new MtUniCreditShopConfigurationFailureClassifier();
+            $description = $classifier->describe($exception);
+            $code = 'request_failed';
+            if ($description['class'] === MtUniCreditShopConfigurationFailureClassifier::AUTHORITATIVE_SECURITY) {
+                $code = 'authoritative_failure';
+            } elseif ($description['class'] === MtUniCreditShopConfigurationFailureClassifier::CONTRACT_INVALID) {
+                $code = 'shop_snapshot_invalid';
+            } elseif ($description['class'] === MtUniCreditShopConfigurationFailureClassifier::TRANSIENT) {
+                $code = 'transient_failure';
+            }
+
             $this->writeRefreshLog(
-                'authentication_failed',
+                $code,
                 array(
                     'store_id' => $storeId,
                     'shop_name' => isset($shopName) ? (string) $shopName : '',
-                    'exception_class' => get_class($exception),
+                    'failure_class' => (string) $description['class'],
+                    'failure_reason' => (string) $description['reason'],
+                    'exception_class' => (string) $description['exception_class'],
                 )
             );
-
-            return array('error' => 'authentication_failed');
-        } catch (MtUniCreditShopSnapshotValidationException $exception) {
-            $this->writeRefreshLog('shop_snapshot_invalid');
-
-            return array('error' => 'shop_snapshot_invalid');
-        } catch (MtUniCreditCpException $exception) {
-            $code = $exception->isTransient() ? 'transient_failure' : 'request_failed';
-            $this->writeRefreshLog($code);
 
             return array('error' => $code);
-        } catch (Exception $exception) {
-            $this->writeRefreshLog(
-                'request_failed',
-                array(
-                    'exception_class' => get_class($exception),
-                )
-            );
-
-            return array('error' => 'request_failed');
         }
     }
 

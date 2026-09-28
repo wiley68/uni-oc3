@@ -1,7 +1,9 @@
 <?php
 
 /**
- * Resolves homepage advertising view-model once per request (cache-only CP shop).
+ * Resolves homepage advertising view-model once per request through the shared presentation
+ * resolver (local fresh hit, otherwise one coordinated lazy refresh, LKG only for a transient
+ * current-attempt failure).
  */
 final class MtUniCreditHomepageAdvertisingContextResolver
 {
@@ -81,12 +83,16 @@ final class MtUniCreditHomepageAdvertisingContextResolver
             return null;
         }
 
-        $shop = $this->shopConfiguration->getCachedOnly();
+        $shop = $this->shopConfiguration->getForPresentation(function () use ($moduleEnabled, $advertisingEnabled) {
+            return (bool) $moduleEnabled && (bool) $advertisingEnabled;
+        });
         if ($shop === null || $shop === array()) {
             self::$requestCache[$cacheKey] = false;
 
             return null;
         }
+
+        // uni_status / uni_container_status remain presentation gates for the homepage surface only.
 
         $context = $this->presenter->present($shop, (bool) $isMobile, (string) $defaultLogoUrl);
         self::$requestCache[$cacheKey] = $context !== null ? $context : false;

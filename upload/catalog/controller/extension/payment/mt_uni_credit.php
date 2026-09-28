@@ -591,7 +591,8 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
             if ($unicid === '') {
                 return false;
             }
-            $shop = MtUniCreditBootstrap::shopConfigurationCacheFromDb($db)->getFreshShopData($storeId, $unicid);
+            // PRESENTATION surface — shared lazy resolver (LKG only for a transient failure).
+            $shop = $stack['shopConfiguration']->getForPresentation();
 
             return is_array($shop) && MtUniCreditShopConfigurationFlags::isSecondaryProcess($shop);
         } catch (Exception $ignored) {
@@ -995,11 +996,10 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
                 $credentials = MtUniCreditBootstrap::credentialsRepositoryFromDb($db);
                 $unicid = $credentials->getUnicid($storeId);
                 if ($unicid !== '') {
-                    $cache = MtUniCreditBootstrap::shopConfigurationCacheFromDb($db);
-                    $fresh = $cache->getFreshShopData($storeId, $unicid);
-                    $latest = $cache->getLatestShopData($storeId, $unicid);
-                    $shopCacheAvailable = is_array($latest) && $latest !== array();
-                    $shopCacheFresh = is_array($fresh) && $fresh !== array();
+                    // Diagnostic-only lifecycle state (no CP activity, no raw UNICID in the trace).
+                    $inspection = (new MtUniCreditShopCacheRepository($db))->inspectScope($storeId, $unicid);
+                    $shopCacheAvailable = $inspection['state'] !== MtUniCreditShopCacheRepository::STATE_MISSING;
+                    $shopCacheFresh = $inspection['state'] === MtUniCreditShopCacheRepository::STATE_FRESH;
                 }
             } catch (Exception $ignored) {
             }

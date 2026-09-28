@@ -21,6 +21,7 @@ $scripts = array(
     'phase_canonical_p2_lifecycle_check.php',
     'phase_canonical_freetext_check.php',
     'phase_canonical_order_id_string_check.php',
+    'phase_rem_oc3_cache_lifecycle_check.php',
 );
 
 // Optional safe historical scripts that remain offline and usually green.

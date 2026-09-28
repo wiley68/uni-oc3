@@ -2,6 +2,13 @@
   "contract_ids": ["CACHE-001", "CACHE-002", "CACHE-003"],
   "scope_key": ["store_id", "unicid"],
   "ttl_seconds": 86400,
+  "lkg_seconds": 21600,
+  "lifecycle": {
+    "fresh": "now < expires_at",
+    "stale_usable_lkg": "expires_at <= now <= expires_at + 21600",
+    "purge_eligible": "now > expires_at + 21600",
+    "usable_until_boundary": "exact expires_at + 21600 boundary is retained"
+  },
   "pull": "GET /api/v1/shop Bearer → validate → replace exact (store_id, unicid)",
   "push": "signed inbound shop_cache POST validates and replaces the same record without calling CP",
   "invalid_snapshot_does_not_overwrite_known_good": true,
@@ -20,11 +27,40 @@
   ],
   "coefficient_entry": ["onlineProductCode", "installmentCount", "coeff", "interestPercent"],
   "installment_count_range": [3, 36],
-  "display_allowed": "last-known validated snapshot while TTL not expired",
+  "display_allowed": "validated fresh snapshot, or last-known validated snapshot within 6h after expires_at and only when the current refresh attempt failed TRANSIENTLY",
+  "presentation_may_use_lkg": true,
+  "presentation_lkg_conditions": [
+    "snapshot was previously validated",
+    "exact store_id + unicid scope matches",
+    "snapshot is structurally valid",
+    "stale age <= 21600s",
+    "local gates allow the surface",
+    "current refresh attempt failed TRANSIENTLY"
+  ],
   "submission_requires_fresh": true,
-  "stale_grace_after_ttl": {
-    "status": "unresolved_d11",
-    "recommendation": "No extra grace after TTL. Display uses last-known only while expires_at is in the future. Side-effecting order submission requires a fresh validated snapshot or fails safely."
+  "submission_may_use_lkg": false,
+  "submission_accepts": [
+    "VALID_FRESH snapshot",
+    "successful current-request coordinated refresh"
+  ],
+  "failure_taxonomy": {
+    "TRANSIENT": "connection/timeout/transport/408/429/5xx → preserve known-good state, presentation may use eligible LKG, submission fails closed, no purge, no security fence",
+    "AUTHORITATIVE_SECURITY": "401/auth failure/explicit revocation/proven wrong identity/canonical authoritative forbidden-deleted-gone → fail closed, never LKG, purge exact scoped cache+token",
+    "CONTRACT_INVALID": "422/malformed JSON/malformed envelope/invalid schema/invalid payload/missing authoritative fields → current attempt fails closed, no same-attempt LKG, rejected payload never replaces known-good, token/credentials unchanged, no purge"
+  },
+  "status_classification": {
+    "401": "AUTHORITATIVE_SECURITY",
+    "403_404_410": "AUTHORITATIVE_SECURITY only with trusted canonical authoritative evidence, otherwise CONTRACT_INVALID",
+    "408_429_5xx": "TRANSIENT",
+    "422": "CONTRACT_INVALID"
+  },
+  "cleanup_rule": "ordinary cleanup deletes only when expires_at < now - 21600; exact usable_until is retained",
+  "single_flight": {
+    "scope": "exact (store_id, unicid)",
+    "primitive": "MySQL/MariaDB named advisory lock",
+    "lock_name": "mtuc_sr_ + sha256(store_id + '|' + unicid) truncated to 64 chars (no raw UNICID)",
+    "owners": "at most one remote GET /shop per scope per refresh burst",
+    "contenders": "never call CP; eligible presentation LKG returned immediately, otherwise bounded wait + re-read"
   },
   "bearer_token_not_in_snapshot": true
 }

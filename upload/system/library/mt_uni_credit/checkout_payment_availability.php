@@ -1,7 +1,12 @@
 <?php
 
 /**
- * Local-only checkout payment availability (no CP network).
+ * Checkout payment availability — PRESENTATION surface.
+ *
+ * Uses the shared shop configuration presentation resolver (local fresh hit, otherwise one
+ * coordinated lazy refresh per exact scope, LKG only after a transiently failed attempt).
+ * A legacy offline MtUniCreditShopConfigurationCache is still accepted for local-only wiring
+ * (fresh-only, fail closed) so offline harnesses keep their frozen semantics.
  */
 final class MtUniCreditCheckoutPaymentAvailability
 {
@@ -11,25 +16,25 @@ final class MtUniCreditCheckoutPaymentAvailability
     /** @var MtUniCreditOc3CartContextFactory */
     private $cartContextFactory;
 
-    /** @var MtUniCreditShopConfigurationCache */
-    private $shopCache;
+    /** @var MtUniCreditShopConfigurationService|MtUniCreditShopConfigurationCache */
+    private $shopConfiguration;
 
     /** @var MtUniCreditCredentialsRepository */
     private $credentials;
 
     /**
-     * @param MtUniCreditShopConfigurationCache $shopCache
+     * @param MtUniCreditShopConfigurationService|MtUniCreditShopConfigurationCache $shopConfiguration
      * @param MtUniCreditCredentialsRepository $credentials
      * @param MtUniCreditOc3CartContextFactory $cartContextFactory
      * @param MtUniCreditCheckoutFinancingEligibility|null $eligibility
      */
     public function __construct(
-        MtUniCreditShopConfigurationCache $shopCache,
+        $shopConfiguration,
         MtUniCreditCredentialsRepository $credentials,
         MtUniCreditOc3CartContextFactory $cartContextFactory,
         $eligibility = null
     ) {
-        $this->shopCache = $shopCache;
+        $this->shopConfiguration = $shopConfiguration;
         $this->credentials = $credentials;
         $this->cartContextFactory = $cartContextFactory;
         $this->eligibility = $eligibility instanceof MtUniCreditCheckoutFinancingEligibility
@@ -70,7 +75,7 @@ final class MtUniCreditCheckoutPaymentAvailability
             return false;
         }
 
-        $shop = $this->loadFreshShopSnapshot((int) $storeId);
+        $shop = $this->loadPresentationShopSnapshot((int) $storeId);
         if ($shop === null) {
             return false;
         }
@@ -107,7 +112,7 @@ final class MtUniCreditCheckoutPaymentAvailability
             return false;
         }
 
-        $shop = $this->loadFreshShopSnapshot((int) $storeId);
+        $shop = $this->loadPresentationShopSnapshot((int) $storeId);
         if ($shop === null) {
             return false;
         }
@@ -153,7 +158,7 @@ final class MtUniCreditCheckoutPaymentAvailability
      * @param int $storeId
      * @return array<string, mixed>|null
      */
-    private function loadFreshShopSnapshot($storeId)
+    private function loadPresentationShopSnapshot($storeId)
     {
         $unicid = $this->credentials->getUnicid($storeId);
         if ($unicid === '') {
@@ -163,6 +168,15 @@ final class MtUniCreditCheckoutPaymentAvailability
             return null;
         }
 
-        return $this->shopCache->getFreshShopData($storeId, $unicid);
+        if ($this->shopConfiguration instanceof MtUniCreditShopConfigurationService) {
+            return $this->shopConfiguration->getForPresentation();
+        }
+
+        if ($this->shopConfiguration instanceof MtUniCreditShopConfigurationCache) {
+            // Legacy offline wiring: fresh-only, never LKG, never CP.
+            return $this->shopConfiguration->getFreshShopData($storeId, $unicid);
+        }
+
+        return null;
     }
 }

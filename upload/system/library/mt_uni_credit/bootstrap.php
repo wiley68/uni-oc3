@@ -27,6 +27,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'deployment_paths.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'shop_snapshot_validation_exception.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'shop_configuration_snapshot_validator.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'shop_cache_repository.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'shop_configuration_failure_classifier.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'shop_snapshot_sanitizer.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'smartucf_credentials_repository.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'shop_cache_persistence_lock.php';
@@ -247,15 +248,18 @@ final class MtUniCreditBootstrap
 
     /**
      * @param MtUniCreditDbAdapter $db
+     * @param MtUniCreditShopConfigurationRefreshLock|null $scopeLock Shared exact-scope lock instance.
      * @return MtUniCreditShopCachePersistence
      */
-    public static function shopCachePersistenceFromDb(MtUniCreditDbAdapter $db)
+    public static function shopCachePersistenceFromDb(MtUniCreditDbAdapter $db, $scopeLock = null)
     {
         return new MtUniCreditShopCachePersistence(
             new MtUniCreditShopCacheRepository($db),
             new MtUniCreditShopConfigurationSnapshotValidator(),
             self::smartucfCredentialsRepositoryFromDb($db),
-            new MtUniCreditShopCachePersistenceLock($db)
+            $scopeLock instanceof MtUniCreditShopConfigurationRefreshLock
+                ? $scopeLock
+                : new MtUniCreditShopConfigurationRefreshLock($db)
         );
     }
 

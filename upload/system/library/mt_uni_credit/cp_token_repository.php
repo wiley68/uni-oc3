@@ -52,6 +52,85 @@ final class MtUniCreditCpTokenRepository
     }
 
     /**
+     * Capture the EXACT raw stored token state so it can be restored byte-identically.
+     *
+     * @return array<string, string|null>
+     */
+    public function captureRawState()
+    {
+        $state = array();
+        foreach (array(self::ACCESS_TOKEN, self::TOKEN_TYPE, self::EXPIRES_AT) as $key) {
+            $raw = $this->settings->get($this->storeId, $key);
+            $state[$key] = $raw === null ? null : (string) $raw;
+        }
+
+        return $state;
+    }
+
+    /**
+     * Restore an exact previously-captured raw token state (absolute values, including deletions).
+     *
+     * @param array<string, string|null> $state
+     * @return void
+     */
+    public function restoreRawState(array $state)
+    {
+        foreach (array(self::ACCESS_TOKEN, self::TOKEN_TYPE, self::EXPIRES_AT) as $key) {
+            $raw = array_key_exists($key, $state) ? $state[$key] : null;
+            if ($raw === null) {
+                $this->settings->delete($this->storeId, $key);
+                continue;
+            }
+            $this->settings->set($this->storeId, $key, (string) $raw);
+        }
+    }
+
+    /**
+     * Validate-then-commit token replacement.
+     *
+     * The caller must have already validated the response completely. This method captures the
+     * exact previous raw values and restores them if the replacement write fails, so a failed or
+     * partially applied replacement never leaves a mutated/absent token behind. It performs no
+     * invalidation of its own — trusted 401/revocation invalidation stays explicit.
+     *
+     * @param string $accessToken
+     * @param string $tokenType
+     * @param int $expiresAt
+     * @return bool
+     */
+    public function replaceValidated($accessToken, $tokenType, $expiresAt)
+    {
+        if (!is_string($accessToken) || $accessToken === '' || (int) $expiresAt <= 0) {
+            return false;
+        }
+
+        $previous = $this->captureRawState();
+
+        try {
+            $this->settings->set($this->storeId, self::ACCESS_TOKEN, $this->cipher->encrypt($accessToken));
+            $this->settings->set(
+                $this->storeId,
+                self::TOKEN_TYPE,
+                is_string($tokenType) && $tokenType !== '' ? $tokenType : 'Bearer'
+            );
+            $this->settings->set($this->storeId, self::EXPIRES_AT, (string) (int) $expiresAt);
+        } catch (Exception $exception) {
+            try {
+                $this->restoreRawState($previous);
+            } catch (Exception $rollbackException) {
+                // Keep the original persistence failure primary; never mask it.
+                unset($rollbackException);
+            }
+
+            unset($exception);
+
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
      * @return string|null
      */
     public function getAccessToken()

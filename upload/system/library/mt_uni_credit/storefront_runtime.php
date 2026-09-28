@@ -1,10 +1,21 @@
 <?php
 
 /**
- * Shared storefront helpers for Product/Cart controllers (fresh cache only, fail soft).
+ * Shared storefront helpers for Product/Cart controllers.
+ *
+ * Presentation surfaces resolve the shop configuration through the shared lazy resolver
+ * (MtUniCreditShopConfigurationService::getForPresentation): local fresh hit, otherwise one
+ * coordinated refresh per exact scope, with LKG fallback ONLY for a transiently failed attempt.
  */
 final class MtUniCreditStorefrontRuntime
 {
+    /**
+     * Request-scoped presentation snapshot per store scope; false = resolved-unavailable.
+     *
+     * @var array<string, array<string, mixed>|false>
+     */
+    private static $presentationShopCache = array();
+
     /**
      * @param object $registry OpenCart registry-like controller ($this)
      * @return array{css:string,js:string,fonts:string,logo_standard:string,logo_alternative:string,badge:string}
@@ -90,10 +101,16 @@ final class MtUniCreditStorefrontRuntime
     }
 
     /**
+     * Request-scoped presentation resolution memoized by the exact (store_id, UNICID) scope.
+     *
+     * The memo key includes the configured UNICID so the same store with a different shop identity
+     * is never served a snapshot resolved for another scope. The module Secret is never part of
+     * the key.
+     *
      * @param object $controller
-     * @return array<string, mixed>|null Fresh shop data or null
+     * @return array<string, mixed>|null Validated (or transiently degraded) shop data, else null
      */
-    public static function loadFreshShop($controller)
+    public static function loadPresentationShop($controller)
     {
         try {
             $storeId = (int) $controller->config->get('config_store_id');
@@ -103,16 +120,63 @@ final class MtUniCreditStorefrontRuntime
             if ($unicid === '') {
                 return null;
             }
-            $cache = MtUniCreditBootstrap::shopConfigurationCacheFromDb($db);
-            $shop = $cache->getFreshShopData($storeId, $unicid);
+
+            $cacheKey = self::presentationMemoKey($storeId, $unicid);
+            if (array_key_exists($cacheKey, self::$presentationShopCache)) {
+                $cached = self::$presentationShopCache[$cacheKey];
+
+                return is_array($cached) ? $cached : null;
+            }
+
+            $settings = new MtUniCreditSettingStore($db, MtUniCreditConstants::MODULE_SETTINGS_CODE);
+            $stack = MtUniCreditCpServiceFactory::create(
+                $db,
+                $settings,
+                $storeId,
+                (string) $controller->config->get('config_ssl'),
+                (string) $controller->config->get('config_url')
+            );
+
+            // Local module gates run before any network activity.
+            $shop = $stack['shopConfiguration']->getForPresentation(function () use ($controller) {
+                return (bool) $controller->config->get(MtUniCreditConstants::MODULE_SETTING_STATUS)
+                    && (bool) $controller->config->get(MtUniCreditConstants::PAYMENT_SETTING_STATUS);
+            });
+
             if (!is_array($shop) || $shop === array()) {
+                self::$presentationShopCache[$cacheKey] = false;
+
                 return null;
             }
+
+            self::$presentationShopCache[$cacheKey] = $shop;
 
             return $shop;
         } catch (Exception $exception) {
             return null;
         }
+    }
+
+    /**
+     * Exact-scope request memo key: store_id + hashed UNICID (never the Secret).
+     *
+     * @param int $storeId
+     * @param string $unicid
+     * @return string
+     */
+    private static function presentationMemoKey($storeId, $unicid)
+    {
+        $material = (int) $storeId . '|' . trim((string) $unicid);
+
+        return (int) $storeId . '|' . substr(hash('sha256', $material), 0, 16);
+    }
+
+    /**
+     * @return void
+     */
+    public static function resetPresentationShopCache()
+    {
+        self::$presentationShopCache = array();
     }
 
     /**
@@ -149,7 +213,7 @@ final class MtUniCreditStorefrontRuntime
             $locks,
             $lifecycle,
             $stack['credentials'],
-            MtUniCreditBootstrap::shopConfigurationCacheFromDb($db),
+            $stack['shopConfiguration'],
             null,
             null,
             $orderClaims

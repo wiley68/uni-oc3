@@ -27,7 +27,7 @@ final class MtUniCreditSatrudnikFailureNotifier
     }
 
     /**
-     * Test seam: inject shop snapshot resolver. Pass null to restore loadFreshShop.
+     * Test seam: inject shop snapshot resolver. Pass null to restore loadPresentationShop.
      *
      * @param callable|null $resolver
      * @return void
@@ -88,7 +88,7 @@ final class MtUniCreditSatrudnikFailureNotifier
             if (self::$shopResolver !== null) {
                 $loaded = call_user_func(self::$shopResolver, $controller);
             } elseif (class_exists('MtUniCreditStorefrontRuntime', false)) {
-                $loaded = MtUniCreditStorefrontRuntime::loadFreshShop($controller);
+                $loaded = MtUniCreditStorefrontRuntime::loadPresentationShop($controller);
             } else {
                 $loaded = null;
             }

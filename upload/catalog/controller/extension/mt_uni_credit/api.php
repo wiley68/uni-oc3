@@ -14,6 +14,16 @@ class ControllerExtensionMtUniCreditApi extends Controller
 {
     public function shop_cache()
     {
+        /*
+         * Push taxonomy (REM-OC3-CACHE-001 / CACHE-003):
+         * - Valid signed push: validate exact identity/schema, atomically replace, reset TTL.
+         * - Class C (invalid payload / schema / identity echo): reject with 4xx and preserve the
+         *   known-good cache + token/credentials byte-identically. No purge, no unlocked write.
+         * - Class B is NOT inferred from a push body here: a mismatched/echoed identity is not
+         *   trusted authoritative evidence, so it is rejected as contract-invalid instead of
+         *   purging the exact scope.
+         * Push does not join the storefront refresh wait protocol (serialized persistence only).
+         */
         MtUniCreditInboundApiRunner::run($this, function (array $payload, $unicid) {
             $data = isset($payload['data']) ? $payload['data'] : null;
             if (!is_array($data) || $data === array() || $this->isListArray($data)) {

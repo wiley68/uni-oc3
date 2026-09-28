@@ -5,6 +5,21 @@
  */
 final class MtUniCreditShopCacheRepository
 {
+    /** No row exists for the exact (store_id, UNICID) scope. */
+    const STATE_MISSING = 'missing';
+
+    /** Row exists but stored JSON is not a usable snapshot (never replaces known-good). */
+    const STATE_CORRUPT = 'corrupt';
+
+    /** now < expires_at — local-only usable without any CP GET. */
+    const STATE_FRESH = 'fresh';
+
+    /** expires_at <= now <= expires_at + LKG — presentation-only LKG candidate. */
+    const STATE_STALE = 'stale';
+
+    /** now > expires_at + LKG — purge-eligible, never usable. */
+    const STATE_TOO_OLD = 'too_old';
+
     /** @var MtUniCreditDbAdapter */
     private $db;
 
@@ -76,6 +91,136 @@ final class MtUniCreditShopCacheRepository
     public function findFresh($storeId, $unicid)
     {
         return $this->findRow($storeId, $unicid, true);
+    }
+
+    /**
+     * Exact-scope lifecycle inspection used by the shared shop configuration resolver.
+     *
+     * Returns the decoded snapshot together with the frozen lifecycle state. Stale rows are
+     * NOT storefront-usable by themselves: callers must run the presentation/submission
+     * decision algorithm (structural validation, LKG eligibility, refresh attempt).
+     *
+     * states: missing | corrupt | fresh | stale | too_old
+     *
+     * @param int $storeId
+     * @param string $unicid
+     * @return array{
+     *   state: string,
+     *   row_present: bool,
+     *   shop_data: array<string, mixed>|null,
+     *   fetched_at: string,
+     *   expires_at: string,
+     *   usable_until: string,
+     *   stale_seconds: int,
+     *   lkg_eligible: bool
+     * }
+     */
+    public function inspectScope($storeId, $unicid)
+    {
+        MtUniCreditStoreScope::requireStoreId($storeId);
+        $unicid = trim((string) $unicid);
+        if ($unicid === '') {
+            return $this->inspection(MtUniCreditShopCacheRepository::STATE_MISSING);
+        }
+
+        $table = $this->tableName();
+        $result = $this->db->query(
+            "SELECT `shop_data`, `fetched_at`, `expires_at` FROM `{$table}`"
+                . " WHERE `store_id` = " . (int) $storeId
+                . " AND `unicid` = '" . $this->db->escape($unicid) . "'"
+                . " LIMIT 1"
+        );
+
+        if (!is_object($result) || !isset($result->num_rows) || (int) $result->num_rows !== 1) {
+            return $this->inspection(MtUniCreditShopCacheRepository::STATE_MISSING);
+        }
+
+        $fetchedAt = isset($result->row['fetched_at']) ? (string) $result->row['fetched_at'] : '';
+        $expiresAt = isset($result->row['expires_at']) ? (string) $result->row['expires_at'] : '';
+        $now = $this->clock->now();
+        $expiresTimestamp = $this->parseUtc($expiresAt);
+        $usableUntilTimestamp = $expiresTimestamp !== null
+            ? $expiresTimestamp + (int) MtUniCreditSecurityConstants::SHOP_CACHE_LKG_SECONDS
+            : null;
+
+        if (!isset($result->row['shop_data']) || !is_string($result->row['shop_data'])) {
+            return $this->inspection(
+                MtUniCreditShopCacheRepository::STATE_CORRUPT,
+                true,
+                $fetchedAt,
+                $expiresAt,
+                $usableUntilTimestamp
+            );
+        }
+
+        $decoded = json_decode($result->row['shop_data'], true);
+        if (!is_array($decoded) || $decoded === array()) {
+            return $this->inspection(
+                MtUniCreditShopCacheRepository::STATE_CORRUPT,
+                true,
+                $fetchedAt,
+                $expiresAt,
+                $usableUntilTimestamp
+            );
+        }
+
+        if ($expiresTimestamp === null) {
+            return $this->inspection(
+                MtUniCreditShopCacheRepository::STATE_CORRUPT,
+                true,
+                $fetchedAt,
+                $expiresAt,
+                null
+            );
+        }
+
+        if ($now < $expiresTimestamp) {
+            return $this->inspection(
+                MtUniCreditShopCacheRepository::STATE_FRESH,
+                true,
+                $fetchedAt,
+                $expiresAt,
+                $usableUntilTimestamp,
+                $decoded,
+                0
+            );
+        }
+
+        // Exact usable_until boundary is retained: now <= expires_at + LKG is still eligible.
+        if ($now <= $usableUntilTimestamp) {
+            return $this->inspection(
+                MtUniCreditShopCacheRepository::STATE_STALE,
+                true,
+                $fetchedAt,
+                $expiresAt,
+                $usableUntilTimestamp,
+                $decoded,
+                (int) ($now - $expiresTimestamp)
+            );
+        }
+
+        return $this->inspection(
+            MtUniCreditShopCacheRepository::STATE_TOO_OLD,
+            true,
+            $fetchedAt,
+            $expiresAt,
+            $usableUntilTimestamp,
+            $decoded,
+            (int) ($now - $expiresTimestamp)
+        );
+    }
+
+    /**
+     * Frozen purge boundary — a row is purge-eligible only strictly after usable_until.
+     *
+     * @param int $timestamp
+     * @return string UTC datetime above which rows are purge-eligible
+     */
+    private function purgeEligibleCutoffUtc($timestamp)
+    {
+        return $this->clock->formatUtc(
+            (int) $timestamp - (int) MtUniCreditSecurityConstants::SHOP_CACHE_LKG_SECONDS
+        );
     }
 
     /**
@@ -186,12 +331,71 @@ final class MtUniCreditShopCacheRepository
     {
         $limit = max(1, min(1000, (int) $limit));
         $table = $this->tableName();
-        $now = $this->clock->formatUtc($this->clock->now());
+        // Ordinary cleanup retains the whole usable_until window: delete only when
+        // expires_at < now - LKG (i.e. strictly after expires_at + LKG).
+        $cutoff = $this->purgeEligibleCutoffUtc($this->clock->now());
         $this->db->query(
-            "DELETE FROM `{$table}` WHERE `expires_at` <= '" . $this->db->escape($now) . "' LIMIT " . (int) $limit
+            "DELETE FROM `{$table}` WHERE `expires_at` < '" . $this->db->escape($cutoff) . "' LIMIT " . (int) $limit
         );
 
         return $this->db->countAffected();
+    }
+
+    /**
+     * @param string $state
+     * @param bool $rowPresent
+     * @param string $fetchedAt
+     * @param string $expiresAt
+     * @param int|null $usableUntilTimestamp
+     * @param array<string, mixed>|null $shopData
+     * @param int $staleSeconds
+     * @return array<string, mixed>
+     */
+    private function inspection(
+        $state,
+        $rowPresent = false,
+        $fetchedAt = '',
+        $expiresAt = '',
+        $usableUntilTimestamp = null,
+        $shopData = null,
+        $staleSeconds = 0
+    ) {
+        $state = (string) $state;
+
+        return array(
+            'state' => $state,
+            'row_present' => (bool) $rowPresent,
+            'shop_data' => $state === MtUniCreditShopCacheRepository::STATE_FRESH
+                || $state === MtUniCreditShopCacheRepository::STATE_STALE
+                ? $shopData
+                : null,
+            'fetched_at' => (string) $fetchedAt,
+            'expires_at' => (string) $expiresAt,
+            'usable_until' => $usableUntilTimestamp !== null
+                ? $this->clock->formatUtc($usableUntilTimestamp)
+                : '',
+            'stale_seconds' => max(0, (int) $staleSeconds),
+            'lkg_eligible' => $state === MtUniCreditShopCacheRepository::STATE_STALE,
+        );
+    }
+
+    /**
+     * @param string $utc
+     * @return int|null
+     */
+    private function parseUtc($utc)
+    {
+        $utc = trim((string) $utc);
+        if ($utc === '') {
+            return null;
+        }
+
+        $parsed = strtotime($utc . ' UTC');
+        if (!is_int($parsed)) {
+            return null;
+        }
+
+        return $parsed;
     }
 
     /**

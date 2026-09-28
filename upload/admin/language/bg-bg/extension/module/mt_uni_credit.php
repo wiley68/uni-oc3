@@ -51,6 +51,7 @@ $_['error_bank_secret_missing'] = 'Липсва Secret.';
 $_['error_bank_secret_unreadable'] = 'Съхраненият Secret не може да бъде прочетен. Въведете го отново и запишете.';
 $_['error_bank_shop_url_missing'] = 'Липсва URL на магазина за връзка с Control Panel.';
 $_['error_bank_authentication_failed'] = 'Неуспешно удостоверяване към Control Panel.';
+$_['error_bank_authoritative_failure'] = 'Control Panel отхвърли магазина (удостоверяване/сигурност). Локалният кеш на магазина е изчистен.';
 $_['error_bank_shop_snapshot_invalid'] = 'Получени са невалидни банкови данни.';
 $_['error_bank_transient_failure'] = 'Control Panel временно не отговаря.';
 $_['error_bank_request_failed'] = 'Банковите данни не могат да бъдат обновени поради техническа грешка.';

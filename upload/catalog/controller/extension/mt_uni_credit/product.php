@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 require_once DIR_SYSTEM . 'library/mt_uni_credit/bootstrap.php';
 
@@ -31,7 +31,7 @@ class ControllerExtensionMtUniCreditProduct extends Controller
             $option = $this->postedOptions();
             $sequence = (int) $this->posted('sequence', 0);
 
-            $shop = MtUniCreditStorefrontRuntime::loadFreshShop($this);
+            $shop = MtUniCreditStorefrontRuntime::loadPresentationShop($this);
             $line = $shop !== null
                 ? MtUniCreditStorefrontRuntime::resolveProductLine($this, $productId, $quantity, $option)
                 : null;
@@ -105,7 +105,7 @@ class ControllerExtensionMtUniCreditProduct extends Controller
             $firstInstallment = (float) str_replace(',', '.', (string) $this->posted('first_installment', '0'));
             $sequence = (int) $this->posted('sequence', 0);
 
-            $shop = MtUniCreditStorefrontRuntime::loadFreshShop($this);
+            $shop = MtUniCreditStorefrontRuntime::loadPresentationShop($this);
             $line = $shop !== null
                 ? MtUniCreditStorefrontRuntime::resolveProductLine($this, $productId, $quantity, $option)
                 : null;
@@ -226,7 +226,7 @@ class ControllerExtensionMtUniCreditProduct extends Controller
                 return;
             }
 
-            $shop = MtUniCreditStorefrontRuntime::loadFreshShop($this);
+            $shop = MtUniCreditStorefrontRuntime::loadPresentationShop($this);
             $consent = isset($this->request->post['consent']) ? $this->request->post['consent'] : array();
             if (!$this->consentAccepted($consent, $shop)) {
                 $json['error'] = 'consent';
@@ -489,7 +489,7 @@ class ControllerExtensionMtUniCreditProduct extends Controller
             return '';
         }
 
-        $shop = MtUniCreditStorefrontRuntime::loadFreshShop($this);
+        $shop = MtUniCreditStorefrontRuntime::loadPresentationShop($this);
         if ($shop === null) {
             return '';
         }
@@ -615,7 +615,7 @@ class ControllerExtensionMtUniCreditProduct extends Controller
      */
     private function customerPayload()
     {
-        $shop = MtUniCreditStorefrontRuntime::loadFreshShop($this);
+        $shop = MtUniCreditStorefrontRuntime::loadPresentationShop($this);
         $shopData = is_array($shop) ? $shop : array();
         $process2 = ((int) (isset($shopData['uni_proces']) ? $shopData['uni_proces'] : 0)) === 1;
         $normalized = (new MtUniCreditStorefrontPopupFormNormalizer())->normalize(

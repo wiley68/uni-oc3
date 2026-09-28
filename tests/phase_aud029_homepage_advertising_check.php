@@ -637,10 +637,10 @@ mtucAud029_assert(
 $resolverSrc = (string) file_get_contents($lib . '/homepage_advertising_context_resolver.php');
 $presenterSrc = (string) file_get_contents($lib . '/homepage_advertising_presenter.php');
 mtucAud029_assert(
-    strpos($resolverSrc, 'getCachedOnly') !== false
+    strpos($resolverSrc, 'getForPresentation') !== false
         && strpos($resolverSrc, 'refreshRemote') === false
         && strpos($resolverSrc, 'ControlPanelClient') === false,
-    'cache-only: resolver uses getCachedOnly, no CP client'
+    'presentation resolver: resolver uses getForPresentation, no direct CP client'
 );
 mtucAud029_assert(
     strpos($presenterSrc, 'ControlPanelClient') === false

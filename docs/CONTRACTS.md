@@ -357,10 +357,112 @@ Unique cache key: **`(store_id, unicid)`**.
 
 ### CACHE-003 — Fresh / stale / display vs submit (D11 related)
 
-- Cache TTL: **86400** seconds (frozen from completed module `SecurityConstants::SHOP_CACHE_TTL_SECONDS`).
-- **Display:** last-known validated snapshot may be shown only while TTL has not expired.
-- **Side-effecting order submission:** requires a sufficiently fresh validated snapshot or must fail safely.
-- An extra stale-grace window **after** TTL is **not** frozen in the OC4 source. Recommendation (D11): no extra grace. Do not silently widen.
+Cache TTL: **86400** seconds (frozen from `MtUniCreditSecurityConstants::SHOP_CACHE_TTL_SECONDS`).
+Presentation-only last-known-good (LKG) window: **21600** seconds (`SHOP_CACHE_LKG_SECONDS`).
+
+Definitions:
+
+- `fresh_until = expires_at`
+- `usable_until = expires_at + 21600` (exact boundary retained)
+
+Exact lifecycle:
+
+- **fresh:** `now < expires_at` — local-only; no `GET /shop`.
+- **stale but LKG-eligible:** `expires_at <= now <= expires_at + 21600` — **presentation only**.
+- **purge-eligible:** `now > expires_at + 21600`.
+
+Ordinary cleanup deletes only rows with `expires_at < (now - 21600)`. It must **not** delete at
+`expires_at <= now`.
+
+**Presentation** surfaces (homepage advertising, product financing UI, product calculator,
+cart financing UI, cart calculator, checkout payment visibility, checkout preview/recalculation)
+may use LKG only when **all** hold:
+
+1. the snapshot was previously validated;
+2. the exact `store_id` + `unicid` scope matches;
+3. the snapshot is structurally valid (canonical validator);
+4. stale age `<= 21600` s;
+5. local gates allow the surface;
+6. the **current** refresh attempt failed TRANSIENTLY.
+
+Storefront presentation resolves lazily through the shared
+`MtUniCreditShopConfigurationService::getForPresentation()`: a local fresh hit performs **zero**
+HTTP; otherwise exactly one coordinated refresh is attempted for the exact scope
+(`MtUniCreditShopConfigurationRefreshLock`, `mtuc_sr_ + sha256(store_id|unicid)`), and only a
+transient failure of that attempt allows the eligible LKG snapshot.
+
+  **LKG authorization is owner-only (frozen).** LKG may be returned **only** when THIS request owns
+  the exact-scope refresh, performs the remote refresh, and receives an explicit TRANSIENT (Class A)
+  failure. A contender never serves LKG, never infers Class A, and never consumes another request's
+  failure class; it may only return a snapshot the owner published during a bounded wait + re-read,
+  otherwise it returns `null` / fails closed. If a contender's own bounded `GET_LOCK` later succeeds,
+  it becomes the new legitimate owner and only its own Class A may authorize LKG.
+
+  **Local credential gate (frozen).** When UNICID is missing, the module Secret is missing,
+  unreadable, or undecryptable, or the local credential pair is otherwise incomplete: presentation
+  returns `null` (never LKG), submission fails closed as `REASON_NOT_CONFIGURED`, and there is **no**
+  network call, **no** scope-lock acquisition, and **no** purge/cache mutation. Known-good state may
+  remain stored but must not be served, and these conditions are never classified TRANSIENT.
+
+  **Unknown / local defects are conservative (frozen).** An unknown or unclassified `Throwable`, and
+  any local infrastructure/configuration defect not PROVEN to be network/timeout/408/429/5xx, is
+  `CONTRACT_INVALID` (reason `unknown` / `local_infrastructure`): known-good state is preserved, no
+  LKG is authorized, and both surfaces fail closed. Programming/runtime defects are never
+  transformed into an availability signal.
+
+  **Exact-scope write ownership (frozen).** Refresh and push/manual persistence serialize through ONE
+  lock identity (`mtuc_sr_ + substr(sha256(store_id|UNICID), 0, 56)`). Ownership proof is bound to the
+  lock instance and the DB connection that issued `GET_LOCK`: token + captured `CONNECTION_ID()`, and
+  it is re-verified immediately before writing with `CONNECTION_ID()` / `IS_USED_LOCK(<exact name>)`.
+  `IS_FREE_LOCK()` is never ownership proof, `GET_LOCK()` is never re-issued to verify ownership, and
+  a stale/invalid proof fails closed without re-acquiring or writing an already-fetched response.
+  There is exactly one public validated replacement entry point; owner-proven writes re-use the
+  verified ownership without a nested named-lock acquisition.
+
+  **Every protected write passes the same hardened authorization (frozen).** Immediately before the
+  write, `replaceValidatedSnapshot()` must prove: the exact acquisition token returned by `acquire()`
+  equals the stored token for the exact lock name, the exact lock name is the one derived from the
+  written `(store_id, UNICID)` scope, and the live connection satisfies
+  `CONNECTION_ID() = captured owner CONNECTION_ID() = IS_USED_LOCK(<exact name>)`. The refresh owner
+  passes its own acquisition token into that write; when the persistence acquires the lock itself it
+  runs the same proof on the token it just received. A missing/mismatched token, a replaced
+  connection or a lost advisory lock between `acquire()` and the write fails closed: the
+  already-fetched snapshot/credential payload is not written and is never silently re-acquired,
+  retried or downgraded into a transient/LKG path.
+
+  **Token validate-then-commit (frozen).** A login/refresh response is parsed and validated
+  COMPLETELY before the stored token is touched. A malformed/untrusted response (Class C) throws
+  without mutating the existing token/type/expiry (no `invalidate()`, no partial write); trusted
+  401/revocation keeps its existing invalidation semantics. Local credential failures never purge a
+  still-stored token.
+
+**Submission** surfaces (product final apply, cart final apply, checkout final submit, CP order
+creation boundary, P1/P2/SmartUCF initiation) accept only:
+
+A. a `VALID_FRESH` snapshot, or
+B. a successful current-request coordinated refresh.
+
+`getForSubmission()` never returns LKG. When strict resolution fails, the caller fails closed
+before any `addOrder()`, CP or SmartUCF side effect. There is no boolean "allow stale" flag.
+
+**Failure taxonomy (one classification authority:**
+`MtUniCreditShopConfigurationFailureClassifier`**):**
+
+| Class                       | Evidence                                                                                          | Behaviour                                                                                                          |
+| --------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `TRANSIENT` (A)             | connection failure, timeout, transport error, 408, 429, 5xx                                        | preserve known-good state; presentation may use eligible LKG; submission fails closed; **no purge**, no fence        |
+| `AUTHORITATIVE_SECURITY` (B) | 401, explicit auth failure, explicit revocation, proven wrong identity, canonical authoritative forbidden/deleted/gone | fail closed; never LKG; purge the exact scoped cache **and** token; later transient failures cannot resurrect state |
+| `CONTRACT_INVALID` (C)      | 422, malformed JSON/envelope, invalid schema, invalid payload, missing authoritative fields        | current attempt fails closed; **no same-attempt LKG**; rejected payload never replaces known-good (row/token byte-identical); no purge; a later independent transient request may use LKG |
+
+`403` / `404` / `410` are Class B **only** with trusted canonical authoritative evidence;
+otherwise they are Class C. A bare status code or malformed/untrusted body never establishes
+Class B. `InvalidPayload` no longer purges automatically.
+
+  Push (`shop_cache`) and manual refresh follow the same taxonomy. Push does not join the storefront
+  contender wait protocol, but it serializes through the SAME exact-scope lock identity as the pull
+  refresh, so a successful push commit wins over every refresh that began before the push acquired
+  the shared lock. Manual refresh performs one live refresh, validates, replaces and resets the TTL,
+  and never returns LKG as success.
 
 ---
 
@@ -960,7 +1062,10 @@ Do not weaken privacy because OC3 is older. Customer/business-facing leasing and
 - Customer email, customer Thank You: never EGN/phone2.
 - Admin order detail (`ADMIN_PANEL`) and admin native mail (`ADMIN_EMAIL`): EGN/phone2 only for Process 2 when decrypt succeeds (OC4 parity).
 - Thank You identity is session-only; GET `order_id` is never trusted.
-- Admin Orders list / homepage advertising: local DB / cache-only; no CP HTTP on page render.
+- Admin Orders list: local DB only; no CP HTTP on page render.
+- Homepage advertising: local DB + shared lazy shop-configuration resolution. A home-page render
+  never sends customer data to CP; at most one coordinated credential-less `GET /shop` per exact
+  scope (see CACHE-003) may occur when the local snapshot is not fresh.
 - Logs: identifiers, state, error class, HTTP status only — never secrets, keys, EGN, email, phone, address, raw payloads.
 
 ### RETENTION-001 — Windows (implemented)
@@ -1131,7 +1236,7 @@ Going back and forth on native OC3 confirm can create additional status-0 drafts
 
 Phase 5 catalog payment (`extension/payment/mt_uni_credit`) implements:
 
-- **`getMethod($address, $total)`** — local-only eligibility via fresh shop cache, credentials, geo zone, currency gate, calculator bounds/scheme intersection; `$total` is the native totals pipeline value passed by OC3 (model also exposes `calculateCheckoutGrandTotal()` using the same extension/total chain for confirm revalidation).
+- **`getMethod($address, $total)`** — eligibility via the shared **presentation** resolver (CACHE-003: local fresh hit, otherwise one coordinated refresh, eligible LKG only after a TRANSIENT failure), credentials, geo zone, currency gate, calculator bounds/scheme intersection; `$total` is the native totals pipeline value passed by OC3 (model also exposes `calculateCheckoutGrandTotal()` using the same extension/total chain for confirm revalidation).
 - **`confirm()`** — reads `session.order_id`, loads order via `model_checkout_order->getOrder()`, validates store scope, status **0**, cart/order parity, and re-eligibility; acquires Phase 2 checkout operation lock for idempotency; sets `session.mt_uni_credit_checkout_prepared_order_id`; redirects to **`extension/payment/mt_uni_credit/prepared`** (Phase 5 continuation boundary — **not** native `checkout/success`).
 - **`prepared()`** — GET read-only placeholder; requires matching `session.order_id` and prepared marker; does not clear cart/checkout session, mutate order history, or call CP/SmartUCF.
 - **Must not** call `addOrder()`, `addOrderHistory()`, any CP client, or SmartUCF in Phase 5.
@@ -1271,7 +1376,10 @@ This is **Checkout default-selection** behaviour, not the generic calculator pre
 
 **Storefront transport**
 
-- Fresh shop cache only; never CP refresh from storefront; fail soft (hide UI / empty widget).
+- Storefront presentation uses the shared lazy shop-configuration resolver (CACHE-003): local
+  fresh hit performs no HTTP; otherwise at most one coordinated `GET /shop` per exact scope, with
+  LKG only after a TRANSIENT current-attempt failure. Submission never uses LKG and fails closed.
+- Fail soft on presentation surfaces (hide UI / empty widget); never fail soft on submission.
 - CSRF: session `mt_uni_credit_storefront_csrf` (32-byte hex, `hash_equals`).
 - Assets under `catalog/view/theme/default/template/extension/mt_uni_credit/` with guarded `filemtime`.
 - Journal: fragment-local link/script; bounded jQuery wait `50ms × 200`; idempotent `data-mtuc-bound`; namespaced delegated events `.mtuc`.

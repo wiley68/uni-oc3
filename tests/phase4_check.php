@@ -139,25 +139,35 @@ mtuc4_assert($stack['tokens']->hasToken() === false, 'failed login does not pers
 
 $memoryDb->reset();
 $transport = new Phase4FakeCpHttpTransport();
+$transport->enqueueJson(200, Phase4TestHarness::loginSuccessPayload());
 $transport->enqueueJson(200, array('success' => true, 'access_token' => '', 'token_type' => 'Bearer', 'expires_in' => 86400, 'shop' => array()));
 $stack = Phase4TestHarness::services($transport, $memoryDb);
+$stack['client']->login();
+$tokenBeforeMalformedLogin = $stack['tokens']->getAccessToken();
+$typeBeforeMalformedLogin = $stack['tokens']->getTokenType();
+$expiryBeforeMalformedLogin = $stack['tokens']->getExpiresAt();
 try {
     $stack['client']->login();
     mtuc4_assert(false, 'malformed auth response throws');
 } catch (MtUniCreditCpInvalidPayloadException $exception) {
     mtuc4_assert(true, 'malformed auth response throws invalid payload');
 }
-mtuc4_assert($stack['tokens']->hasToken() === false, 'malformed auth response invalidates token');
+mtuc4_assert(
+    $stack['tokens']->hasToken() === true
+        && $stack['tokens']->getAccessToken() === $tokenBeforeMalformedLogin
+        && $stack['tokens']->getTokenType() === $typeBeforeMalformedLogin
+        && $stack['tokens']->getExpiresAt() === $expiryBeforeMalformedLogin,
+    'malformed auth response (Class C) preserves the existing token/type/expiry'
+);
 
 $memoryDb->reset();
 $transport = new Phase4FakeCpHttpTransport();
 $transport->enqueueJson(200, Phase4TestHarness::loginSuccessPayload());
 $transport->enqueueJson(200, array(
     'success' => true,
-    'access_token' => str_repeat('b', 64),
-    'token_type' => 'Bearer',
-    'expires_in' => 86400,
-    'shop' => array('id' => 1, 'name' => Phase4TestHarness::TEST_SHOP_URL, 'unicid' => Phase4TestHarness::TEST_UNICID),
+    'error' => null,
+    'message' => 'ok',
+    'data' => array('access_token' => str_repeat('b', 64), 'token_type' => 'Bearer', 'expires_in' => 86400),
 ));
 $stack = Phase4TestHarness::services($transport, $memoryDb, $storeId, 1700000000);
 $stack['client']->login();
@@ -181,7 +191,7 @@ mtuc4_assert($stack['tokens']->hasToken() === false, 'refresh failure clears tok
 $memoryDb->reset();
 $transport = new Phase4FakeCpHttpTransport();
 $transport->enqueueJson(200, Phase4TestHarness::loginSuccessPayload());
-$transport->enqueueJson(200, array('success' => true));
+$transport->enqueueJson(200, array('success' => true, 'error' => null, 'message' => 'ok', 'data' => new stdClass()));
 $stack = Phase4TestHarness::services($transport, $memoryDb);
 $stack['client']->login();
 $stack['client']->logout();
@@ -282,7 +292,12 @@ $transport->enqueueJson(200, Phase4TestHarness::loginSuccessPayload());
 $transport->enqueueJson(200, Phase4TestHarness::shopSuccessPayload());
 $stack = Phase4TestHarness::services($transport, $memoryDb);
 $stack['shopConfiguration']->refreshRemote();
-$transport->enqueueJson(503, array('error' => 'down'));
+$transport->enqueueJson(503, array(
+    'success' => false,
+    'error' => 'internal_error',
+    'message' => 'down',
+    'data' => new stdClass(),
+));
 try {
     $stack['shopConfiguration']->refreshRemote();
     mtuc4_assert(false, 'HTTP failure on refresh throws');
@@ -298,7 +313,12 @@ $transport->enqueueJson(200, Phase4TestHarness::loginSuccessPayload());
 $transport->enqueueJson(200, Phase4TestHarness::shopSuccessPayload());
 $stack = Phase4TestHarness::services($transport, $memoryDb);
 $stack['shopConfiguration']->refreshRemote();
-$transport->enqueueJson(403, array('error' => 'forbidden'));
+$transport->enqueueJson(403, array(
+    'success' => false,
+    'error' => 'forbidden',
+    'message' => 'forbidden',
+    'data' => new stdClass(),
+));
 try {
     $stack['shopConfiguration']->refreshRemote();
     mtuc4_assert(false, 'auth failure on refresh throws');

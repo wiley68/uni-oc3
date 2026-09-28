@@ -173,7 +173,7 @@ function mtucAud025R2_build(array &$logSink, $fault = null)
     $settings = new MtUniCreditSettingStore($db, MtUniCreditConstants::MODULE_SETTINGS_CODE);
     $creds = MtUniCreditBootstrap::smartucfCredentialsRepositoryFromDb($db);
     $cache = new MtUniCreditShopCacheRepository($db);
-    $lock = new MtUniCreditShopCachePersistenceLock($db);
+    $lock = new MtUniCreditShopConfigurationRefreshLock($db);
     $persistence = new MtUniCreditShopCachePersistence(
         $cache,
         new MtUniCreditShopConfigurationSnapshotValidator(),
@@ -338,17 +338,17 @@ function mtucAud025R2_successAnomalyCase($releaseOverride, $expectedOutcome, $la
 
 mtucAud025R2_successAnomalyCase(
     0,
-    MtUniCreditShopCachePersistenceLock::RELEASE_OUTCOME_NOT_OWNED,
+    MtUniCreditShopConfigurationRefreshLock::RELEASE_OUTCOME_NOT_OWNED,
     'success + RELEASE_LOCK=0'
 );
 mtucAud025R2_successAnomalyCase(
     null,
-    MtUniCreditShopCachePersistenceLock::RELEASE_OUTCOME_MISSING_OR_ERROR,
+    MtUniCreditShopConfigurationRefreshLock::RELEASE_OUTCOME_MISSING_OR_ERROR,
     'success + RELEASE_LOCK=NULL'
 );
 mtucAud025R2_successAnomalyCase(
     'throw',
-    MtUniCreditShopCachePersistenceLock::RELEASE_OUTCOME_QUERY_EXCEPTION,
+    MtUniCreditShopConfigurationRefreshLock::RELEASE_OUTCOME_QUERY_EXCEPTION,
     'success + RELEASE_LOCK throws'
 );
 
@@ -408,17 +408,17 @@ function mtucAud025R2_failureAnomalyCase($releaseOverride, $expectedOutcome, $la
 
 mtucAud025R2_failureAnomalyCase(
     0,
-    MtUniCreditShopCachePersistenceLock::RELEASE_OUTCOME_NOT_OWNED,
+    MtUniCreditShopConfigurationRefreshLock::RELEASE_OUTCOME_NOT_OWNED,
     'failure + RELEASE_LOCK=0'
 );
 mtucAud025R2_failureAnomalyCase(
     null,
-    MtUniCreditShopCachePersistenceLock::RELEASE_OUTCOME_MISSING_OR_ERROR,
+    MtUniCreditShopConfigurationRefreshLock::RELEASE_OUTCOME_MISSING_OR_ERROR,
     'failure + RELEASE_LOCK=NULL'
 );
 mtucAud025R2_failureAnomalyCase(
     'throw',
-    MtUniCreditShopCachePersistenceLock::RELEASE_OUTCOME_QUERY_EXCEPTION,
+    MtUniCreditShopConfigurationRefreshLock::RELEASE_OUTCOME_QUERY_EXCEPTION,
     'failure + RELEASE_LOCK throws'
 );
 
@@ -454,7 +454,7 @@ $rbLine = mtucAud025R2_anomalyLog($logsRb);
 mtucAud025R2_assertSafeAnomaly($rbLine, 'rollback-failure + release anomaly');
 mtucAud025R2_assert(
     is_string($rbLine)
-        && strpos($rbLine, 'outcome=' . MtUniCreditShopCachePersistenceLock::RELEASE_OUTCOME_NOT_OWNED) !== false
+        && strpos($rbLine, 'outcome=' . MtUniCreditShopConfigurationRefreshLock::RELEASE_OUTCOME_NOT_OWNED) !== false
         && strpos($rbLine, 'persistence=failed') !== false,
     'rollback-failure + release anomaly: release diagnostic secondary'
 );
@@ -475,7 +475,7 @@ $persistenceLogFail = new MtUniCreditShopCachePersistence(
     new MtUniCreditShopCacheRepository($dbLogFail),
     new MtUniCreditShopConfigurationSnapshotValidator(),
     MtUniCreditBootstrap::smartucfCredentialsRepositoryFromDb($dbLogFail),
-    new MtUniCreditShopCachePersistenceLock($dbLogFail),
+    new MtUniCreditShopConfigurationRefreshLock($dbLogFail),
     function () {
         throw new RuntimeException('injected logger failure');
     }
@@ -500,32 +500,39 @@ mtucAud025R2_assert($credsLogFail->getUser(Phase4TestHarness::TEST_STORE_ID) ===
 Phase2MemoryDb::resetAdvisoryLocks();
 $classMem = new Phase2MemoryDb();
 $classFault = new MtucAud025R2FaultDb($classMem);
-$classLock = new MtUniCreditShopCachePersistenceLock(new MtUniCreditDbAdapter($classFault, 'oc_'));
-mtucAud025R2_assert($classLock->acquire(Phase4TestHarness::TEST_STORE_ID, Phase4TestHarness::TEST_UNICID), 'unit: acquire');
+$classLock = new MtUniCreditShopConfigurationRefreshLock(new MtUniCreditDbAdapter($classFault, 'oc_'));
+$classToken = $classLock->acquire(Phase4TestHarness::TEST_STORE_ID, Phase4TestHarness::TEST_UNICID);
+mtucAud025R2_assert(is_string($classToken) && $classToken !== '', 'unit: acquire');
 $classFault->releaseOverride = 0;
-$r0 = $classLock->release(Phase4TestHarness::TEST_STORE_ID, Phase4TestHarness::TEST_UNICID);
+$r0 = $classLock->release(Phase4TestHarness::TEST_STORE_ID, Phase4TestHarness::TEST_UNICID, $classToken);
 mtucAud025R2_assert(
-    $r0['ok'] === false && $r0['outcome'] === MtUniCreditShopCachePersistenceLock::RELEASE_OUTCOME_NOT_OWNED,
+    $r0['ok'] === false && $r0['outcome'] === MtUniCreditShopConfigurationRefreshLock::RELEASE_OUTCOME_NOT_OWNED,
     'unit: RELEASE_LOCK=0 classified not_owned'
 );
+// A stale proof is dropped on an uncertain release, so re-acquire before the next probe.
+$classToken = $classLock->acquire(Phase4TestHarness::TEST_STORE_ID, Phase4TestHarness::TEST_UNICID);
+mtucAud025R2_assert(is_string($classToken) && $classToken !== '', 'unit: re-acquire after uncertain release');
 $classFault->releaseOverride = null;
-$rNull = $classLock->release(Phase4TestHarness::TEST_STORE_ID, Phase4TestHarness::TEST_UNICID);
+$rNull = $classLock->release(Phase4TestHarness::TEST_STORE_ID, Phase4TestHarness::TEST_UNICID, $classToken);
 mtucAud025R2_assert(
-    $rNull['ok'] === false && $rNull['outcome'] === MtUniCreditShopCachePersistenceLock::RELEASE_OUTCOME_MISSING_OR_ERROR,
+    $rNull['ok'] === false && $rNull['outcome'] === MtUniCreditShopConfigurationRefreshLock::RELEASE_OUTCOME_MISSING_OR_ERROR,
     'unit: RELEASE_LOCK=NULL classified missing_or_error'
 );
+$classToken = $classLock->acquire(Phase4TestHarness::TEST_STORE_ID, Phase4TestHarness::TEST_UNICID);
+mtucAud025R2_assert(is_string($classToken) && $classToken !== '', 'unit: re-acquire after NULL release');
 $classFault->releaseOverride = 'throw';
-$rThrow = $classLock->release(Phase4TestHarness::TEST_STORE_ID, Phase4TestHarness::TEST_UNICID);
+$rThrow = $classLock->release(Phase4TestHarness::TEST_STORE_ID, Phase4TestHarness::TEST_UNICID, $classToken);
 mtucAud025R2_assert(
-    $rThrow['ok'] === false && $rThrow['outcome'] === MtUniCreditShopCachePersistenceLock::RELEASE_OUTCOME_QUERY_EXCEPTION,
+    $rThrow['ok'] === false && $rThrow['outcome'] === MtUniCreditShopConfigurationRefreshLock::RELEASE_OUTCOME_QUERY_EXCEPTION,
     'unit: RELEASE_LOCK throw classified query_exception'
 );
 $classFault->releaseOverride = false;
 Phase2MemoryDb::resetAdvisoryLocks();
-mtucAud025R2_assert($classLock->acquire(Phase4TestHarness::TEST_STORE_ID, Phase4TestHarness::TEST_UNICID), 'unit: re-acquire');
-$rOk = $classLock->release(Phase4TestHarness::TEST_STORE_ID, Phase4TestHarness::TEST_UNICID);
+$classToken = $classLock->acquire(Phase4TestHarness::TEST_STORE_ID, Phase4TestHarness::TEST_UNICID);
+mtucAud025R2_assert(is_string($classToken) && $classToken !== '', 'unit: re-acquire');
+$rOk = $classLock->release(Phase4TestHarness::TEST_STORE_ID, Phase4TestHarness::TEST_UNICID, $classToken);
 mtucAud025R2_assert(
-    $rOk['ok'] === true && $rOk['outcome'] === MtUniCreditShopCachePersistenceLock::RELEASE_OUTCOME_RELEASED,
+    $rOk['ok'] === true && $rOk['outcome'] === MtUniCreditShopConfigurationRefreshLock::RELEASE_OUTCOME_RELEASED,
     'unit: RELEASE_LOCK=1 classified released'
 );
 

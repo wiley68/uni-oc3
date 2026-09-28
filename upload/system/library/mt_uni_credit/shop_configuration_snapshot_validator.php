@@ -54,6 +54,37 @@ final class MtUniCreditShopConfigurationSnapshotValidator
     }
 
     /**
+     * Validate a PERSISTED `shop_data` artifact.
+     *
+     * Persisted snapshots are the sanitized shape: the SmartUCF credential pair lives outside
+     * `shop_data` as encrypted store-scoped settings (CACHE-001a), so the CP-response pair
+     * presence rule cannot apply to the stored artifact. Every other canonical structural and
+     * business rule is enforced unchanged.
+     *
+     * Used for last-known-good (LKG) eligibility checks on an already-persisted row.
+     *
+     * @param array<string, mixed> $shopData
+     * @param string $authenticatedUnicid
+     * @return void
+     * @throws MtUniCreditShopSnapshotValidationException
+     */
+    public function validateStoredSnapshot(array $shopData, $authenticatedUnicid = '')
+    {
+        $candidate = $shopData;
+        foreach (array('uni_user', 'uni_password') as $credentialKey) {
+            $present = array_key_exists($credentialKey, $candidate)
+                && is_string($candidate[$credentialKey])
+                && trim($candidate[$credentialKey]) !== '';
+            if (!$present) {
+                // Presence rule only — the stored value (when present) is still validated.
+                $candidate[$credentialKey] = 'stored-outside-snapshot';
+            }
+        }
+
+        $this->validate($candidate, $authenticatedUnicid);
+    }
+
+    /**
      * @param array<string, mixed> $shopData
      * @param string $authenticatedUnicid
      * @return void

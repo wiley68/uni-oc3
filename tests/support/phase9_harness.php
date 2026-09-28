@@ -377,7 +377,7 @@ final class Phase9TestHarness
             new MtUniCreditShopCacheRepository($db, $clock),
             new MtUniCreditShopConfigurationSnapshotValidator(),
             MtUniCreditBootstrap::smartucfCredentialsRepositoryFromDb($db),
-            new MtUniCreditShopCachePersistenceLock($db)
+            new MtUniCreditShopConfigurationRefreshLock($db)
         );
         $persistence->replaceValidatedSnapshot(
             $storeId,

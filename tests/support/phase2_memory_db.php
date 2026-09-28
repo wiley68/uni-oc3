@@ -77,20 +77,23 @@ final class Phase2MemoryDb
     /** @var string */
     private $prefix = 'oc_';
 
-    /** @var string Unique connection id for advisory-lock ownership simulation. */
+    /** @var int Unique numeric connection id (CONNECTION_ID() / IS_USED_LOCK() simulation). */
     private $connectionId;
 
     /** @var bool When true, INSERT into order_bank_status throws (AUD-014 F03 tests). */
     public $throwOnBankStatusInsert = false;
 
     /**
-     * @var array<string, string> lock name => connectionId
+     * @var array<string, int> lock name => owning connection id
      */
     private static $advisoryLocks = array();
 
+    /** @var int Monotonic connection-id source (MySQL hands out unique ids). */
+    private static $nextConnectionId = 1;
+
     public function __construct()
     {
-        $this->connectionId = uniqid('phase2db_', true);
+        $this->connectionId = self::$nextConnectionId++;
     }
 
     /**
@@ -192,6 +195,74 @@ final class Phase2MemoryDb
     public static function resetAdvisoryLocks()
     {
         self::$advisoryLocks = array();
+    }
+
+    /**
+     * Test helper: simulate an abrupt connection close for THIS "connection".
+     *
+     * MySQL/MariaDB release all named advisory locks owned by a connection when that
+     * connection dies, so a crashed single-flight owner must not deadlock the scope.
+     *
+     * @return void
+     */
+    public function simulateConnectionClose()
+    {
+        $this->releaseAllAdvisoryLocksForConnection();
+    }
+
+    /**
+     * Test helper: simulate a dropped + re-established connection for THIS "connection".
+     *
+     * MySQL/MariaDB assign a NEW connection id after a reconnect and release every named lock
+     * owned by the dead connection. A PHP object that captured the previous connection id must
+     * therefore no longer be able to prove ownership of a previously issued proof.
+     *
+     * @return void
+     */
+    public function simulateReconnect()
+    {
+        $this->releaseAllAdvisoryLocksForConnection();
+        $this->connectionId = self::$nextConnectionId++;
+    }
+
+    /**
+     * Test helper: write an exact-shape shop_cache row (including intentionally corrupt JSON
+     * or a pre-dated expires_at) without going through validation.
+     *
+     * @param int $storeId
+     * @param string $unicid
+     * @param string $rawShopData
+     * @param string $fetchedAt
+     * @param string $expiresAt
+     * @return void
+     */
+    public function seedRawShopCache($storeId, $unicid, $rawShopData, $fetchedAt, $expiresAt)
+    {
+        $key = $this->shopCacheKey((int) $storeId, (string) $unicid);
+        $existing = isset($this->shopCache[$key]);
+        $this->shopCache[$key] = array(
+            'shop_cache_id' => $existing ? $this->shopCache[$key]['shop_cache_id'] : $this->nextShopCacheId++,
+            'store_id' => (int) $storeId,
+            'unicid' => (string) $unicid,
+            'shop_data' => (string) $rawShopData,
+            'fetched_at' => (string) $fetchedAt,
+            'expires_at' => (string) $expiresAt,
+            'created_at' => $existing ? $this->shopCache[$key]['created_at'] : (string) $fetchedAt,
+            'updated_at' => (string) $fetchedAt,
+        );
+        $this->affected = 1;
+    }
+
+    /**
+     * @param int $storeId
+     * @param string $unicid
+     * @return array<string, mixed>|null
+     */
+    public function rawShopCacheRow($storeId, $unicid)
+    {
+        $key = $this->shopCacheKey((int) $storeId, (string) $unicid);
+
+        return isset($this->shopCache[$key]) ? $this->shopCache[$key] : null;
     }
 
     /**
@@ -340,6 +411,10 @@ final class Phase2MemoryDb
 
         if (stripos($sql, 'DELETE FROM') === 0 && strpos($sql, 'setting') !== false) {
             return $this->deleteSetting($sql);
+        }
+
+        if (stripos($sql, 'SELECT') === 0 && stripos($sql, 'CONNECTION_ID()') !== false) {
+            return $this->selectConnectionIdentity($sql);
         }
 
         if (stripos($sql, 'SELECT') === 0 && (strpos($sql, 'GET_LOCK(') !== false || strpos($sql, 'RELEASE_LOCK(') !== false)) {
@@ -1144,14 +1219,25 @@ final class Phase2MemoryDb
     private function deleteShopCache($sql)
     {
         $storeId = (int) $this->extractWhereInt($sql, 'store_id');
-        if (strpos($sql, 'expires_at <= ') !== false) {
-            $cutoff = $this->extractQuoted($sql, 'expires_at <= \'', '\'');
+        // REM-OC3-CACHE-001: ordinary cleanup uses `expires_at <` (now - LKG) so the exact
+        // usable_until window is retained. Keep supporting `<=` for legacy callers/tests.
+        $isStrictCutoff = strpos($sql, 'expires_at < ') !== false
+            || strpos($sql, 'expires_at` < ') !== false;
+        $isInclusiveCutoff = strpos($sql, 'expires_at <= ') !== false
+            || strpos($sql, 'expires_at` <= ') !== false;
+        if ($isStrictCutoff || $isInclusiveCutoff) {
+            $needle = $isStrictCutoff ? 'expires_at < \'' : 'expires_at <= \'';
+            $needleQuoted = $isStrictCutoff ? 'expires_at` < \'' : 'expires_at` <= \'';
+            $cutoff = $this->extractQuoted($sql, $needle, '\'');
             if ($cutoff === '') {
-                $cutoff = $this->extractQuoted($sql, 'expires_at` <= \'', '\'');
+                $cutoff = $this->extractQuoted($sql, $needleQuoted, '\'');
             }
             $deleted = 0;
             foreach ($this->shopCache as $key => $row) {
-                if ((string) $row['expires_at'] <= $cutoff) {
+                $expired = $isStrictCutoff
+                    ? ((string) $row['expires_at'] < $cutoff)
+                    : ((string) $row['expires_at'] <= $cutoff);
+                if ($expired) {
                     unset($this->shopCache[$key]);
                     $deleted++;
                 }
@@ -2219,6 +2305,32 @@ final class Phase2MemoryDb
         });
 
         return $this->rowsResult($rows);
+    }
+
+    /**
+     * Simulate MySQL CONNECTION_ID() and IS_USED_LOCK(name).
+     *
+     * @param string $sql
+     * @return object
+     */
+    private function selectConnectionIdentity($sql)
+    {
+        $row = array('mtuc_connection_id' => $this->connectionId);
+
+        if (stripos($sql, 'IS_USED_LOCK(') !== false) {
+            $owner = null;
+            if (preg_match("/IS_USED_LOCK\\('((?:\\\\'|[^'])*)'\\)/i", $sql, $match)) {
+                $name = stripcslashes($match[1]);
+                if (isset(self::$advisoryLocks[$name])) {
+                    // IS_USED_LOCK returns the owning connection id, or NULL when free.
+                    $owner = (int) self::$advisoryLocks[$name];
+                }
+            }
+            $row['current_connection_id'] = $this->connectionId;
+            $row['owner_connection_id'] = $owner;
+        }
+
+        return $this->singleRow($row);
     }
 
     /**

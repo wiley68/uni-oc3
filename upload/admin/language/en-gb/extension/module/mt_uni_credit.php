@@ -51,6 +51,7 @@ $_['error_bank_secret_missing'] = 'Secret is missing.';
 $_['error_bank_secret_unreadable'] = 'The stored Secret cannot be read. Re-enter it and save.';
 $_['error_bank_shop_url_missing'] = 'Shop URL is missing for Control Panel connection.';
 $_['error_bank_authentication_failed'] = 'Control Panel authentication failed.';
+$_['error_bank_authoritative_failure'] = 'Control Panel rejected this shop (authentication/security). The local shop cache was purged.';
 $_['error_bank_shop_snapshot_invalid'] = 'Invalid bank data was received.';
 $_['error_bank_transient_failure'] = 'Control Panel is temporarily unavailable.';
 $_['error_bank_request_failed'] = 'Bank data could not be refreshed due to a technical error.';

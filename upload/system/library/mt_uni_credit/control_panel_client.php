@@ -95,7 +95,8 @@ final class MtUniCreditControlPanelClient implements MtUniCreditControlPanelOrde
         $unicid = $this->credentials->getUnicid($this->storeId);
         $secret = $this->credentials->getSecret($this->storeId);
         if ($unicid === '' || $secret === null || $this->shopName === '') {
-            $this->tokens->invalidate();
+            // Local configuration defect: fail closed WITHOUT purging a still-valid token or
+            // touching any other state (no network, no side effects).
             throw new MtUniCreditCpAuthenticationException('The Control Panel credentials are incomplete.');
         }
 
@@ -336,7 +337,8 @@ final class MtUniCreditControlPanelClient implements MtUniCreditControlPanelOrde
         $expiresAt = $this->tokens->getExpiresAt();
 
         if ($token === null || $expiresAt <= $now) {
-            $this->tokens->invalidate();
+            // No usable token. Login itself fails closed without purging local state, so a
+            // local/contract failure here cannot destroy a still-stored token.
             $this->login();
 
             return (string) $this->tokens->getAccessToken();
@@ -578,6 +580,12 @@ final class MtUniCreditControlPanelClient implements MtUniCreditControlPanelOrde
     }
 
     /**
+     * PARSE → VALIDATE COMPLETELY → THEN COMMIT.
+     *
+     * A malformed/untrusted token response (Class C) throws WITHOUT mutating the stored
+     * token/type/expiry: no invalidate(), no partial write. Only a fully validated response is
+     * committed, atomically-with-restore through the token repository.
+     *
      * @param array<string, mixed> $response
      * @param bool $requireShop
      * @return void
@@ -586,14 +594,12 @@ final class MtUniCreditControlPanelClient implements MtUniCreditControlPanelOrde
     {
         $data = isset($response['data']) ? $response['data'] : null;
         if (!is_array($data) || !$this->isAssociativeObject($data)) {
-            $this->tokens->invalidate();
             throw new MtUniCreditCpInvalidPayloadException('The Control Panel token response has no valid data object.');
         }
 
         // Tokens ONLY from response.data — reject legacy top-level token fields when data.access_token is absent.
         if (isset($response['access_token']) || isset($response['token_type']) || isset($response['expires_in'])) {
             if (!isset($data['access_token'])) {
-                $this->tokens->invalidate();
                 throw new MtUniCreditCpInvalidPayloadException('The Control Panel token response uses legacy top-level token fields.');
             }
         }
@@ -607,14 +613,12 @@ final class MtUniCreditControlPanelClient implements MtUniCreditControlPanelOrde
             || !is_string($tokenType) || strcasecmp($tokenType, 'Bearer') !== 0
             || !is_numeric($expiresIn) || (int) $expiresIn <= 0
         ) {
-            $this->tokens->invalidate();
             throw new MtUniCreditCpInvalidPayloadException('The Control Panel token response is invalid.');
         }
 
         if ($requireShop) {
             $shop = isset($data['shop']) ? $data['shop'] : null;
             if (!is_array($shop)) {
-                $this->tokens->invalidate();
                 throw new MtUniCreditCpInvalidPayloadException('The Control Panel login response has no valid shop data.');
             }
 
@@ -626,13 +630,12 @@ final class MtUniCreditControlPanelClient implements MtUniCreditControlPanelOrde
                 || $configuredUnicid === ''
                 || !hash_equals($configuredUnicid, $responseUnicid)
             ) {
-                $this->tokens->invalidate();
                 throw new MtUniCreditCpInvalidPayloadException('The Control Panel login shop UNICID does not match configuration.');
             }
         }
 
-        if (!$this->tokens->save($accessToken, $tokenType, $this->now() + (int) $expiresIn)) {
-            $this->tokens->invalidate();
+        // Fully validated — commit now. A failed replacement restores the exact prior raw state.
+        if (!$this->tokens->replaceValidated($accessToken, $tokenType, $this->now() + (int) $expiresIn)) {
             throw new MtUniCreditCpInvalidPayloadException('The Control Panel token could not be stored.');
         }
     }
