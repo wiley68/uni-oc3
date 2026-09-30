@@ -184,6 +184,37 @@ final class MtUniCreditControlPanelOrderLifecycleService
                 false
             );
         }
+        if (MtUniCreditEurAmount::orderFactor($order, $storeId, $orderId) === null) {
+            return MtUniCreditControlPanelOrderSubmissionResult::fail(
+                MtUniCreditControlPanelErrorClass::VALIDATION_FAILED,
+                false
+            );
+        }
+        $snapshot = MtUniCreditApplicationSnapshot::decode(
+            isset($row['application_snapshot_json']) ? $row['application_snapshot_json'] : null
+        );
+        if (!MtUniCreditEurAmount::matchesSnapshot($snapshot, $order)
+            || !isset($row['application_snapshot_hash'])
+            || !hash_equals((string) $row['application_snapshot_hash'], MtUniCreditApplicationSnapshot::hash($snapshot))) {
+            return MtUniCreditControlPanelOrderSubmissionResult::fail(
+                MtUniCreditControlPanelErrorClass::VALIDATION_FAILED,
+                false
+            );
+        }
+        $calculation = MtUniCreditApplicationSnapshot::toCalculationResult($snapshot);
+        if (!MtUniCreditEurAmount::matchesCalculation($order, $calculation)) {
+            return MtUniCreditControlPanelOrderSubmissionResult::fail(
+                MtUniCreditControlPanelErrorClass::VALIDATION_FAILED,
+                false
+            );
+        }
+        $savedPayload = $this->readProvenEurPayload($row, $orderId, $calculation);
+        if (!empty($row['cp_payload']) && $savedPayload === null) {
+            return MtUniCreditControlPanelOrderSubmissionResult::fail(
+                MtUniCreditControlPanelErrorClass::VALIDATION_FAILED,
+                false
+            );
+        }
         $entryPoint = isset($row['entry_point']) ? (string) $row['entry_point'] : MtUniCreditOperationEntryPoint::CHECKOUT;
         if (!MtUniCreditOperationEntryPoint::isValid($entryPoint)) {
             $entryPoint = MtUniCreditOperationEntryPoint::CHECKOUT;
@@ -191,6 +222,12 @@ final class MtUniCreditControlPanelOrderLifecycleService
 
         $existingCpId = (int) $row['control_panel_order_id'];
         if ($existingCpId > 0 && $row['state'] === MtUniCreditFinancingAttemptState::CP_CREATED) {
+            if ($savedPayload === null) {
+                return MtUniCreditControlPanelOrderSubmissionResult::fail(
+                    MtUniCreditControlPanelErrorClass::VALIDATION_FAILED,
+                    false
+                );
+            }
             return $this->continueAfterCpCreated(
                 $attemptId,
                 $existingCpId,
@@ -237,7 +274,9 @@ final class MtUniCreditControlPanelOrderLifecycleService
             );
         }
 
-        $payload = $this->resolveFrozenPayload($row, $order, $orderProducts, $calculation, $shop);
+        $payload = $savedPayload !== null
+            ? $savedPayload
+            : $this->resolveFrozenPayload($row, $order, $orderProducts, $calculation, $shop);
         if ($payload === null) {
             $this->attempts->persistFailure(
                 $attemptId,
@@ -290,6 +329,12 @@ final class MtUniCreditControlPanelOrderLifecycleService
             $fresh = $this->attempts->findById($attemptId);
             $freshCp = $fresh !== null ? (int) $fresh['control_panel_order_id'] : 0;
             if ($fresh !== null && $freshCp > 0 && $fresh['state'] === MtUniCreditFinancingAttemptState::CP_CREATED) {
+                if ($this->readProvenEurPayload($fresh, $orderId, $calculation) === null) {
+                    return MtUniCreditControlPanelOrderSubmissionResult::fail(
+                        MtUniCreditControlPanelErrorClass::VALIDATION_FAILED,
+                        false
+                    );
+                }
                 return $this->continueAfterCpCreated(
                     $attemptId,
                     $freshCp,
@@ -810,6 +855,7 @@ final class MtUniCreditControlPanelOrderLifecycleService
 
         $orderContext = array(
             'order_id' => $localOrderId,
+            'native_order' => $order,
             'customer_email' => isset($order['email']) ? (string) $order['email'] : '',
             'store_email' => isset($order['store_email'])
                 ? (string) $order['store_email']
@@ -1011,6 +1057,38 @@ final class MtUniCreditControlPanelOrderLifecycleService
      * @param array<string, mixed> $shop
      * @return array<string, mixed>|null
      */
+    private function readProvenEurPayload(array $row, $orderId, MtUniCreditCalculationResult $calculation)
+    {
+        $raw = isset($row['cp_payload']) ? $row['cp_payload'] : null;
+        if (!is_string($raw) || $raw === '') {
+            return null;
+        }
+        $payload = json_decode($raw, true);
+        if (!is_array($payload)
+            || !MtUniCreditEurAmount::isEur(isset($payload['currency']) ? $payload['currency'] : null)
+            || MtUniCreditShopOrderId::tryNormalize(isset($payload['order_id']) ? $payload['order_id'] : null) !== $orderId) {
+            return null;
+        }
+        $money = array(
+            'price' => $calculation->financedAmount,
+            'parva' => $calculation->firstInstallment->amount,
+            'vnoska' => $calculation->monthlyInstallment,
+        );
+        foreach ($money as $field => $expected) {
+            if (!MtUniCreditEurAmount::validMoney(isset($payload[$field]) ? $payload[$field] : null)
+                || abs((float) $payload[$field] - round((float) $expected, 2)) > 0.011) {
+                return null;
+            }
+        }
+        $fingerprint = isset($row['request_fingerprint']) ? (string) $row['request_fingerprint'] : '';
+        if ($fingerprint === ''
+            || !hash_equals($fingerprint, MtUniCreditControlPanelOrderPayloadBuilder::fingerprint($payload))) {
+            return null;
+        }
+
+        return $payload;
+    }
+
     private function resolveFrozenPayload(array $row, array $order, array $orderProducts, MtUniCreditCalculationResult $calculation, array $shop)
     {
         $raw = isset($row['cp_payload']) ? $row['cp_payload'] : null;

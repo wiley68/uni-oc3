@@ -94,6 +94,11 @@ final class MtUniCreditStorefrontFinancingSubmissionService
         }
 
         $currency = strtoupper(trim((string) (isset($input['currency_code']) ? $input['currency_code'] : '')));
+        $currentFactor = isset($input['currency_value']) ? $input['currency_value'] : null;
+        if (!MtUniCreditEurAmount::isEur($currency)) {
+            return $this->fail('unavailable', false);
+        }
+        $currentFactorValid = MtUniCreditEurAmount::validFactor($currentFactor);
         $schemeKey = trim((string) (isset($input['scheme_key']) ? $input['scheme_key'] : ''));
         $parsed = MtUniCreditStorefrontCalculatorPresenter::parseSchemeKey($schemeKey);
         if ($parsed === null) {
@@ -127,13 +132,12 @@ final class MtUniCreditStorefrontFinancingSubmissionService
             $orderTotal = $line->financingPrice;
             $product = $line->toProductContext();
             $scheme = $this->findScheme($shop, $product, $parsed);
-            if ($scheme === null) {
-                return $this->fail('unavailable', false);
-            }
-            try {
-                $calculation = $this->calculator->calculateScheme($shop, $orderTotal, $scheme, 0.0);
-            } catch (Exception $exception) {
-                return $this->fail('unavailable', false);
+            if ($scheme !== null) {
+                try {
+                    $calculation = $this->calculator->calculateScheme($shop, $orderTotal, $scheme, 0.0);
+                } catch (Exception $exception) {
+                    $calculation = null;
+                }
             }
             $operationKeyHash = MtUniCreditStorefrontOperationIdentity::productHash(
                 $storeId,
@@ -143,7 +147,7 @@ final class MtUniCreditStorefrontFinancingSubmissionService
                 $currency
             );
             $draftInput['product_line'] = $line;
-            $draftInput['order_total'] = $orderTotal;
+            $draftInput['order_total'] = round($line->unitWithTaxBase * $line->quantity, 4);
             $orderProducts = array(
                 array(
                     'product_id' => $line->productId,
@@ -152,7 +156,7 @@ final class MtUniCreditStorefrontFinancingSubmissionService
                     'quantity' => $line->quantity,
                     'price' => $line->unitExTax,
                     'total' => round($line->unitExTax * $line->quantity, 4),
-                    'tax' => max(0.0, $line->unitWithTax - $line->unitExTax),
+                    'tax' => max(0.0, $line->unitWithTaxBase - $line->unitExTax),
                     'reward' => $line->reward,
                 ),
             );
@@ -169,20 +173,24 @@ final class MtUniCreditStorefrontFinancingSubmissionService
             if (!hash_equals($liveFingerprint, $fingerprint)) {
                 return $this->fail('cart_changed', false);
             }
-            $resolution = $this->cartSchemes->resolve($shop, $cart);
-            $scheme = $this->findCartScheme($resolution, $shop, $parsed);
-            if ($scheme === null) {
+            try {
+                $eurCart = MtUniCreditEurAmount::cartContext($cart, $currentFactorValid ? $currentFactor : 1.0);
+            } catch (InvalidArgumentException $exception) {
                 return $this->fail('unavailable', false);
             }
-            $orderTotal = $cart->total;
-            try {
-                $calculation = $this->calculator->calculateScheme($shop, $orderTotal, $scheme, 0.0);
-            } catch (Exception $exception) {
-                return $this->fail('unavailable', false);
+            $resolution = $this->cartSchemes->resolve($shop, $eurCart);
+            $scheme = $this->findCartScheme($resolution, $shop, $parsed);
+            $orderTotal = $eurCart->total;
+            if ($scheme !== null) {
+                try {
+                    $calculation = $this->calculator->calculateScheme($shop, $orderTotal, $scheme, 0.0);
+                } catch (Exception $exception) {
+                    $calculation = null;
+                }
             }
             $operationKeyHash = MtUniCreditStorefrontOperationIdentity::cartHash($storeId, $currency, $fingerprint);
             $draftInput['products'] = isset($input['products']) && is_array($input['products']) ? $input['products'] : array();
-            $draftInput['order_total'] = $orderTotal;
+            $draftInput['order_total'] = $cart->total;
             foreach ($draftInput['products'] as $product) {
                 if (!is_array($product)) {
                     continue;
@@ -349,6 +357,11 @@ final class MtUniCreditStorefrontFinancingSubmissionService
             $this->pruneLegacyBareBinds($sessionData, $selectionIdentityHash, $operationKeyHash);
 
             if ($orderId <= 0) {
+                if (!$currentFactorValid
+                    || (int) (isset($input['currency_id']) ? $input['currency_id'] : 0) <= 0
+                    || !$calculation instanceof MtUniCreditCalculationResult) {
+                    return $this->fail('unavailable', true);
+                }
                 // Ambiguous in-progress materialization: only the durable claim owner may call
                 // addOrder while order_id is still null. Lease takeover alone is not enough.
                 $mayCreateOrder = hash_equals(
@@ -465,6 +478,36 @@ final class MtUniCreditStorefrontFinancingSubmissionService
             }
             $order['order_id'] = $orderId;
             $order['store_id'] = $storeId;
+
+            $savedFactor = MtUniCreditEurAmount::orderFactor($order, $storeId, $orderId);
+            if ($savedFactor === null) {
+                return $this->fail('unavailable', true);
+            }
+            // A bound order owns its historical rate. Never reprice it using today's rate.
+            $eurOrderTotal = MtUniCreditEurAmount::fromBase($order['total'], $savedFactor);
+            if ($decision === 'replay' || !$calculation instanceof MtUniCreditCalculationResult
+                || abs($calculation->price - $eurOrderTotal) > 0.011) {
+                if ($entryPoint === MtUniCreditOperationEntryPoint::PRODUCT) {
+                    $historicalProduct = new MtUniCreditProductContext($line->productId, $line->categories, $eurOrderTotal);
+                    $scheme = $this->findScheme($shop, $historicalProduct, $parsed);
+                } else {
+                    try {
+                        $historicalCart = MtUniCreditEurAmount::cartContext($cart, $savedFactor);
+                    } catch (InvalidArgumentException $exception) {
+                        return $this->fail('unavailable', true);
+                    }
+                    $historicalResolution = $this->cartSchemes->resolve($shop, $historicalCart);
+                    $scheme = $this->findCartScheme($historicalResolution, $shop, $parsed);
+                }
+                if ($scheme === null) {
+                    return $this->fail('unavailable', true);
+                }
+                try {
+                    $calculation = $this->calculator->calculateScheme($shop, $eurOrderTotal, $scheme, 0.0);
+                } catch (Exception $exception) {
+                    return $this->fail('unavailable', true);
+                }
+            }
 
             if (!$this->locks->renew($storeId, $entryPoint, $operationKeyHash, $lockOwnerToken)) {
                 $this->logDecision(

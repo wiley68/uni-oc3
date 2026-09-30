@@ -18,6 +18,15 @@
 > statuses (or later raw SmartUCF text) — never internal lifecycle/debug values as “bank status”.
 > Generic `Неуспешно изпратен Банка` is **not** an allowed public standard bank status.
 
+## EUR-OC3-002 verification gate
+
+```text
+php tests/eur_oc3_check.php
+```
+
+Run the offline EUR regression together with Phase 3, Phase 5-9, relevant AUD checks and the canonical aggregate. For a test store whose base currency is not EUR, select EUR and verify Product, Cart and Checkout against independently calculated EUR amounts while native order rows remain in base units. Revisit an order after changing the current rate: saved `order.currency_value` must still govern CP and SmartUCF; neither remote create may repeat on a proven replay. BGN/other/missing currency and malformed saved CP payload must fail before outbound HTTP. Process 2 must have zero SmartUCF calls.
+
+The current local CLI is PHP 8.4.25. PHP 7.3 execution and a real OC3/MySQL deployment remain separate runtime verification tasks. The optional isolated-DB concurrency probe requires explicit opt-in.
 ### Canonical CP↔OC3 offline suite (LOCAL)
 
 Run without network:
@@ -586,7 +595,7 @@ OpenCart 3 Module extension settings use `config_store_id` from the active admin
 
 Baseline: commit `2f9e6ca2c222379e0c3f9696d0995d3fbb2e5a01` + Phase 5 local implementation.
 
-Prerequisites: Phase 4 remote verification passed; fresh shop cache for target store; module **Enabled**; payment **Enabled**; valid UNICID + readable Secret; cart total within bank min/max; at least one eligible scheme; supported currency (BGN per default fixture).
+Prerequisites: Phase 4 remote verification passed; fresh shop cache for target store; module **Enabled**; payment **Enabled**; valid UNICID + readable Secret; cart total within bank min/max; at least one eligible scheme; selected transaction currency EUR with valid currency ID/value.
 
 ### Checkout visibility (positive)
 
@@ -600,7 +609,7 @@ Prerequisites: Phase 4 remote verification passed; fresh shop cache for target s
 2. [ ] Re-enable module; disable payment (`payment_mt_uni_credit_status`) → disappears.
 3. [ ] Let shop cache expire or delete cache row → disappears (no auto CP refresh from checkout).
 4. [ ] Cart total below `uni_minstojnost` or above `uni_maxstojnost` → disappears.
-5. [ ] Unsupported session currency (when shop snapshot does not allow it) → disappears.
+5. [ ] BGN, USD, GBP, blank, or invalid session currency → disappears.
 6. [ ] Geo zone restriction: set `payment_mt_uni_credit_geo_zone_id` to a zone that excludes shipping address → disappears.
 
 ### Native order reuse (critical)
@@ -882,7 +891,7 @@ Test Product and Cart separately after hard-refresh.
 2. [ ] Asymmetric frame `border-radius: 14.5px 14.5px 80px 14.5px`.
 3. [ ] Left watermark `popup-calc-bg.png` visible inside the calc frame.
 4. [ ] Row spacing comfortable (~12px); eight rows present.
-5. [ ] EUR labels use **евро**; BGN use **лв.**; first-installment **input remains numeric-only**.
+5. [ ] Amounts and first-installment label use EUR only; first-installment input remains numeric-only.
 6. [ ] Labels black; values red (`#ed1c24`).
 7. [ ] First-button dropdown lists **all** eligible schemes (standard + promo non-zero + promo 0%), ordered months ASC then standard → nonzero → zero; same-month options stay distinct.
 8. [ ] Opening from first button whose preferred is e.g. `12 месеца - промо компютри` initially selects that **identity**, not plain `12 месеца`.

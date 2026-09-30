@@ -33,7 +33,8 @@ class ModelExtensionPaymentMtUniCredit extends Model
             $this->isModuleEnabled(),
             $this->isPaymentEnabled(),
             (int) $this->config->get(MtUniCreditConstants::PAYMENT_SETTING_GEO_ZONE_ID),
-            MtUniCreditBootstrap::dbFromModel($this)
+            MtUniCreditBootstrap::dbFromModel($this),
+            $this->resolveSessionCurrencyValue($currency)
         )) {
             return array();
         }
@@ -182,7 +183,14 @@ class ModelExtensionPaymentMtUniCredit extends Model
             : (isset($this->session->data['currency'])
                 ? $this->session->data['currency']
                 : $this->config->get('config_currency')));
-        $cart = $this->createCheckoutCartContext();
+        $factor = is_array($order) ? MtUniCreditEurAmount::orderFactor($order, $storeId, $orderId) : null;
+        $sessionCurrency = isset($this->session->data['currency'])
+            ? $this->session->data['currency'] : $this->config->get('config_currency');
+        if ($factor === null || !MtUniCreditEurAmount::isEur($currency)
+            || !MtUniCreditEurAmount::isEur($sessionCurrency)) {
+            return null;
+        }
+        $cart = MtUniCreditEurAmount::cartContext($this->createCheckoutCartContext(), $factor);
         $resolver = new MtUniCreditCartSchemeResolver(new MtUniCreditCalculator());
         $resolution = $resolver->resolve($shop, $cart);
         $fingerprint = MtUniCreditStorefrontOperationIdentity::cartFingerprintFromContext($cart, $currency);
@@ -199,7 +207,7 @@ class ModelExtensionPaymentMtUniCredit extends Model
 
         $calculator['source'] = 'checkout';
         $calculator['order_id'] = $orderId;
-        $calculator['price'] = round((float) (isset($order['total']) ? $order['total'] : $cart->total), 2);
+        $calculator['price'] = MtUniCreditEurAmount::fromBase($order['total'], $factor);
 
         $modal = MtUniCreditStorefrontModalPresenter::present($shop, $currency, array());
 
@@ -208,6 +216,7 @@ class ModelExtensionPaymentMtUniCredit extends Model
             'modal' => $modal,
             'order_id' => $orderId,
             'currency' => $currency,
+            'currency_factor' => $factor,
             'shop' => $shop,
         );
     }
@@ -230,7 +239,7 @@ class ModelExtensionPaymentMtUniCredit extends Model
         }
 
         $shop = $panel['shop'];
-        $cart = $this->createCheckoutCartContext();
+        $cart = MtUniCreditEurAmount::cartContext($this->createCheckoutCartContext(), $panel['currency_factor']);
         $resolver = new MtUniCreditCartSchemeResolver(new MtUniCreditCalculator());
         $resolution = $resolver->resolve($shop, $cart);
         $presenter = new MtUniCreditStorefrontCalculatorPresenter();

@@ -30,7 +30,7 @@ final class MtUniCreditStorefrontOrderDraftBuilder
         if (isset($input['product_line']) && $input['product_line'] instanceof MtUniCreditProductLine) {
             /** @var MtUniCreditProductLine $line */
             $line = $input['product_line'];
-            $unitTax = max(0.0, $line->unitWithTax - $line->unitExTax);
+            $unitTax = max(0.0, $line->unitWithTaxBase - $line->unitExTax);
             $products[] = array(
                 'product_id' => $line->productId,
                 'name' => $line->name,
@@ -44,7 +44,7 @@ final class MtUniCreditStorefrontOrderDraftBuilder
             );
             $orderTotal = isset($input['order_total'])
                 ? (float) $input['order_total']
-                : $line->financingPrice;
+                : round($line->unitWithTaxBase * $line->quantity, 4);
             $subTotal = round($line->unitExTax * $line->quantity, 4);
         } else {
             $cartProducts = isset($input['products']) && is_array($input['products']) ? $input['products'] : array();

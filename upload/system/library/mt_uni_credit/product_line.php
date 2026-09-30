@@ -26,6 +26,9 @@ final class MtUniCreditProductLine
     /** @var float */
     public $unitWithTax;
 
+    /** @var float Native tax-inclusive unit in store base currency. */
+    public $unitWithTaxBase;
+
     /** @var float */
     public $financingPrice;
 
@@ -62,7 +65,8 @@ final class MtUniCreditProductLine
         $financingPrice,
         $taxClassId,
         array $options = array(),
-        $reward = 0
+        $reward = 0,
+        $unitWithTaxBase = null
     ) {
         $this->productId = (int) $productId;
         $this->name = (string) $name;
@@ -71,6 +75,7 @@ final class MtUniCreditProductLine
         $this->quantity = max(1, (int) $quantity);
         $this->unitExTax = (float) $unitExTax;
         $this->unitWithTax = (float) $unitWithTax;
+        $this->unitWithTaxBase = $unitWithTaxBase === null ? (float) $unitWithTax : (float) $unitWithTaxBase;
         $this->financingPrice = (float) $financingPrice;
         $this->taxClassId = (int) $taxClassId;
         $this->options = array_values($options);

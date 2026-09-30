@@ -72,7 +72,7 @@ function mtucAud013_prepareInput(array $overrides = array())
             return array();
         },
         'checkout_grand_total' => 500.0,
-        'currency_code' => 'BGN',
+        'currency_code' => 'EUR',
         'currency_value' => 1.0,
         'actor' => Phase5TestHarness::guestActor(),
         'store_id' => Phase5TestHarness::STORE_A,
@@ -230,7 +230,7 @@ mtucAud013_assert(
         $getTextOptions,
         $cartTextA,
         500.0,
-        'BGN',
+        'EUR',
         1.0
     ),
     'F03: matching free-text option passes parity'
@@ -242,7 +242,7 @@ mtucAud013_assert(
         $getTextOptions,
         $cartTextB,
         500.0,
-        'BGN',
+        'EUR',
         1.0
     ),
     'F03: different free-text option fails parity'
@@ -294,7 +294,7 @@ mtucAud013_assert(
         $getEnumOptions,
         $cartEnum,
         500.0,
-        'BGN',
+        'EUR',
         1.0
     ),
     'F03: matching enumerated option passes'
@@ -306,7 +306,7 @@ mtucAud013_assert(
         $getEnumOptions,
         $cartEnumOther,
         500.0,
-        'BGN',
+        'EUR',
         1.0
     ),
     'F03: different enumerated option fails'
@@ -325,21 +325,21 @@ mtucAud013_assert(
 // F04 — currency parity
 // ---------------------------------------------------------------------------
 $resultCurrencyCode = $preparation->prepare(mtucAud013_prepareInput(array(
-    'currency_code' => 'EUR',
+    'currency_code' => 'BGN',
     'currency_value' => 1.0,
 )));
 mtucAud013_assert(
-    isset($resultCurrencyCode['error']) && $resultCurrencyCode['error'] === 'order_changed',
-    'F04 prepare: currency_code mismatch rejected'
+    isset($resultCurrencyCode['error']) && $resultCurrencyCode['error'] === 'unavailable',
+    'F04 prepare: non-EUR currency rejected'
 );
 
 $resultCurrencyValue = $preparation->prepare(mtucAud013_prepareInput(array(
-    'currency_code' => 'BGN',
+    'currency_code' => 'EUR',
     'currency_value' => 1.9558,
 )));
 mtucAud013_assert(
-    isset($resultCurrencyValue['error']) && $resultCurrencyValue['error'] === 'order_changed',
-    'F04 prepare: currency_value mismatch rejected'
+    !empty($resultCurrencyValue['success']),
+    'F04 prepare: current factor drift leaves saved EUR order eligible'
 );
 
 // ---------------------------------------------------------------------------
@@ -448,7 +448,7 @@ $stackCur = Phase9TestHarness::stack($transportCur);
 $orderCur = 30105;
 Phase9TestHarness::seedBankOrder($stackCur['memoryDb'], $orderCur, $stackCur['storeId']);
 $inputCur = Phase9TestHarness::submitInput($orderCur, $stackCur['storeId']);
-$inputCur['currency_code'] = 'EUR';
+$inputCur['currency_code'] = 'BGN';
 $inputCur['currency_value'] = 1.0;
 $resultCur = $stackCur['submission']->submit($inputCur);
 mtucAud013_assert(empty($resultCur['success']), 'F04 submit: currency_code change blocked');
@@ -463,8 +463,8 @@ Phase9TestHarness::seedBankOrder($stackCurVal['memoryDb'], $orderCurVal, $stackC
 $inputCurVal = Phase9TestHarness::submitInput($orderCurVal, $stackCurVal['storeId']);
 $inputCurVal['currency_value'] = 1.9558;
 $resultCurVal = $stackCurVal['submission']->submit($inputCurVal);
-mtucAud013_assert(empty($resultCurVal['success']), 'F04 submit: currency_value change blocked');
-mtucAud013_assert(Phase7TestHarness::countOrderPosts($transportCurVal) === 0, 'F04 currency_value: CP create = 0');
+mtucAud013_assert(!empty($resultCurVal['success']), 'F04 submit: current factor drift uses saved order factor');
+mtucAud013_assert(Phase7TestHarness::countOrderPosts($transportCurVal) === 1, 'F04 currency_value: CP create = 1 at saved factor');
 
 // F01 ownership on final submit + zero side effects
 $transportOwn = new Phase4FakeCpHttpTransport();

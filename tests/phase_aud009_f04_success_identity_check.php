@@ -82,6 +82,7 @@ function mtucAud009F04_successBody(array $data)
 {
     return array(
         'success' => true,
+        'error' => null,
         'message' => 'created',
         'data' => $data,
     );
@@ -140,6 +141,12 @@ function mtucAud009F04_runCheckout(
         'order' => Phase7TestHarness::orderRow($orderId),
         'order_products' => Phase7TestHarness::orderProducts(),
         'cart_context' => Phase7TestHarness::cartContext(),
+        'currency_code' => 'EUR',
+        'currency_value' => 1.0,
+        'scheme_key' => 'standard|KOPSTD|12',
+        'first_installment' => 0.0,
+        'actor' => Phase5TestHarness::guestActor('example.customer@example.test'),
+        'get_order_options' => function () { return array(); },
     );
     $result = $stack['submission']->submit($input);
     $attempt = $stack['attempts']->findByStoreOrder($stack['storeId'], $orderId);

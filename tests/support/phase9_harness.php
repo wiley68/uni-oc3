@@ -184,7 +184,7 @@ final class Phase9TestHarness
             $line->productId,
             is_array($line->options) ? $line->options : array(),
             $line->quantity,
-            'BGN'
+            'EUR'
         );
         $applicationToken = MtUniCreditStorefrontApplicationToken::issue(
             $session,
@@ -196,7 +196,7 @@ final class Phase9TestHarness
         return array(
             'entry_point' => MtUniCreditOperationEntryPoint::PRODUCT,
             'store_id' => $storeId,
-            'currency_code' => 'BGN',
+            'currency_code' => 'EUR',
             'scheme_key' => 'standard|KOPSTD|12',
             'product_line' => $line,
             'application_token' => $applicationToken,
@@ -248,7 +248,7 @@ final class Phase9TestHarness
         $line = $input['product_line'];
         $session = isset($input['session']) && is_array($input['session']) ? $input['session'] : array();
         $storeId = (int) (isset($input['store_id']) ? $input['store_id'] : 0);
-        $currency = isset($input['currency_code']) ? (string) $input['currency_code'] : 'BGN';
+        $currency = isset($input['currency_code']) ? (string) $input['currency_code'] : 'EUR';
         $selectionHash = MtUniCreditStorefrontOperationIdentity::productHash(
             $storeId,
             $line->productId,
@@ -292,9 +292,9 @@ final class Phase9TestHarness
                 500.0
             );
         }
-        $fingerprint = MtUniCreditStorefrontOperationIdentity::cartFingerprintFromContext($cart, 'BGN');
+        $fingerprint = MtUniCreditStorefrontOperationIdentity::cartFingerprintFromContext($cart, 'EUR');
         $session = array();
-        $selectionHash = MtUniCreditStorefrontOperationIdentity::cartHash($storeId, 'BGN', $fingerprint);
+        $selectionHash = MtUniCreditStorefrontOperationIdentity::cartHash($storeId, 'EUR', $fingerprint);
         $applicationToken = MtUniCreditStorefrontApplicationToken::issue(
             $session,
             $storeId,
@@ -305,7 +305,7 @@ final class Phase9TestHarness
         return array(
             'entry_point' => MtUniCreditOperationEntryPoint::CART,
             'store_id' => $storeId,
-            'currency_code' => 'BGN',
+            'currency_code' => 'EUR',
             'scheme_key' => 'standard|KOPSTD|12',
             'cart_context' => $cart,
             'cart_fingerprint' => $fingerprint,
@@ -387,7 +387,7 @@ final class Phase9TestHarness
     }
 
     /**
-     * 500 BGN / KOPSTD / 12 months calculation using the shop fixture.
+     * 500 EUR / KOPSTD / 12 months calculation using the shop fixture.
      *
      * @param array<string, mixed>|null $shop
      * @return MtUniCreditCalculationResult

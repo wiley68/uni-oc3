@@ -102,6 +102,28 @@ final class MtUniCreditProcessTwoLifecycleCoordinator
             );
         }
 
+        $nativeOrder = isset($orderContext['native_order']) && is_array($orderContext['native_order'])
+            ? $orderContext['native_order'] : array();
+        $snapshot = MtUniCreditApplicationSnapshot::decode(
+            isset($row['application_snapshot_json']) ? $row['application_snapshot_json'] : null
+        );
+        if (MtUniCreditEurAmount::orderFactor($nativeOrder, $storeId, $shopOrderId) === null
+            || (int) (isset($row['store_id']) ? $row['store_id'] : -1) !== $storeId
+            || MtUniCreditShopOrderId::tryNormalize(isset($row['order_id']) ? $row['order_id'] : null) !== $shopOrderId
+            || (int) (isset($row['control_panel_order_id']) ? $row['control_panel_order_id'] : 0) <= 0
+            || (string) (isset($row['state']) ? $row['state'] : '') !== MtUniCreditFinancingAttemptState::CP_CREATED
+            || !MtUniCreditEurAmount::matchesSnapshot($snapshot, $nativeOrder)
+            || !isset($row['application_snapshot_hash'])
+            || !hash_equals((string) $row['application_snapshot_hash'], MtUniCreditApplicationSnapshot::hash($snapshot))) {
+            return array(
+                'success' => false,
+                'error' => 'process2_failed',
+                'message' => self::CUSTOMER_FAILED_MESSAGE,
+                'recoverable' => false,
+            );
+        }
+        unset($orderContext['native_order']);
+
         $state = (string) (isset($row['process2_state'])
             ? $row['process2_state']
             : MtUniCreditProcessTwoLifecycleStates::NOT_STARTED);

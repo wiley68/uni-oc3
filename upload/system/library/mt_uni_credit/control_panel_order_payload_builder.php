@@ -19,6 +19,13 @@ final class MtUniCreditControlPanelOrderPayloadBuilder
     public function build($localOrderId, array $order, array $orderProducts, MtUniCreditCalculationResult $calculation, array $shop)
     {
         $orderIdString = $this->normalizeOrderId($localOrderId);
+        if (MtUniCreditEurAmount::orderFactor(
+            $order,
+            isset($order['store_id']) ? $order['store_id'] : -1,
+            $orderIdString
+        ) === null || !MtUniCreditEurAmount::matchesCalculation($order, $calculation)) {
+            throw new InvalidArgumentException('CP order requires proven EUR amounts.');
+        }
 
         $ids = array();
         $names = array();
@@ -49,10 +56,7 @@ final class MtUniCreditControlPanelOrderPayloadBuilder
             $shipping = '-';
         }
 
-        $currency = strtoupper(trim(isset($order['currency_code']) ? (string) $order['currency_code'] : 'BGN'));
-        if ($currency !== 'BGN' && $currency !== 'EUR') {
-            $currency = 'BGN';
-        }
+        $currency = 'EUR';
 
         return array(
             'order_id' => $orderIdString,

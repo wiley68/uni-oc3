@@ -340,7 +340,7 @@ $draft = (new MtUniCreditStorefrontOrderDraftBuilder())->buildOrderData(array(
     ),
     'order_total' => 500.0,
     'store_id' => Phase5TestHarness::STORE_A,
-    'currency_code' => 'BGN',
+    'currency_code' => 'EUR',
     'currency_id' => 1,
     'language_id' => 1,
 ));

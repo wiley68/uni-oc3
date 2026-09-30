@@ -36,12 +36,13 @@ class ControllerExtensionMtUniCreditCart extends Controller
             $calculator = null;
             $fingerprint = '';
             if ($shop !== null && $cart !== null) {
+                $eurCart = MtUniCreditEurAmount::cartContext($cart, $this->currency->getValue($currency));
                 $resolver = new MtUniCreditCartSchemeResolver(new MtUniCreditCalculator());
-                $resolution = $resolver->resolve($shop, $cart);
+                $resolution = $resolver->resolve($shop, $eurCart);
                 $fingerprint = MtUniCreditStorefrontOperationIdentity::cartFingerprintFromContext($cart, $currency);
                 $calculator = (new MtUniCreditStorefrontCalculatorPresenter())->presentCart(
                     $shop,
-                    $cart,
+                    $eurCart,
                     $resolution,
                     $currency,
                     $fingerprint
@@ -105,7 +106,7 @@ class ControllerExtensionMtUniCreditCart extends Controller
                 : (string) $this->config->get('config_currency');
             $parsed = MtUniCreditStorefrontCalculatorPresenter::parseSchemeKey($schemeKey);
 
-            if ($shop === null || $cart === null || $parsed === null) {
+            if ($shop === null || $cart === null || $parsed === null || !MtUniCreditEurAmount::isEur($currency)) {
                 $json['unavailable'] = true;
                 $json['sequence'] = $sequence;
                 MtUniCreditStorefrontRuntime::respondJson($this, $json);
@@ -122,7 +123,8 @@ class ControllerExtensionMtUniCreditCart extends Controller
             }
 
             $resolver = new MtUniCreditCartSchemeResolver(new MtUniCreditCalculator());
-            $resolution = $resolver->resolve($shop, $cart);
+            $eurCart = MtUniCreditEurAmount::cartContext($cart, $this->currency->getValue($currency));
+            $resolution = $resolver->resolve($shop, $eurCart);
             $presenter = new MtUniCreditStorefrontCalculatorPresenter();
             $scheme = $presenter->findCartScheme($resolution, $shop, $parsed);
             if ($scheme === null) {
@@ -134,7 +136,7 @@ class ControllerExtensionMtUniCreditCart extends Controller
 
             $calculation = $presenter->presentSchemeCalculation(
                 $shop,
-                $cart->total,
+                $eurCart->total,
                 $scheme,
                 $firstInstallment
             );
@@ -459,11 +461,16 @@ class ControllerExtensionMtUniCreditCart extends Controller
             ? (string) $this->session->data['currency']
             : (string) $this->config->get('config_currency');
         $resolver = new MtUniCreditCartSchemeResolver(new MtUniCreditCalculator());
-        $resolution = $resolver->resolve($shop, $cart);
+        try {
+            $eurCart = MtUniCreditEurAmount::cartContext($cart, $this->currency->getValue($currency));
+        } catch (InvalidArgumentException $exception) {
+            return '';
+        }
+        $resolution = $resolver->resolve($shop, $eurCart);
         $fingerprint = MtUniCreditStorefrontOperationIdentity::cartFingerprintFromContext($cart, $currency);
         $calculator = (new MtUniCreditStorefrontCalculatorPresenter())->presentCart(
             $shop,
-            $cart,
+            $eurCart,
             $resolution,
             $currency,
             $fingerprint

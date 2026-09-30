@@ -33,7 +33,6 @@ final class MtUniCreditShopConfigurationSnapshotValidator
         $this->requireEnumInt($shopData, 'uni_typekop', array(0, 1), false);
         $this->requireEnumInt($shopData, 'uni_proces', array(0, 1), true);
         $this->requireEnumInt($shopData, 'uni_env', array(0, 1), true);
-        $this->requireEnumInt($shopData, 'uni_eur', array(0, 1, 2, 3), true);
 
         $min = $this->requireFiniteNumber($shopData, 'uni_minstojnost');
         $max = $this->requireFiniteNumber($shopData, 'uni_maxstojnost');

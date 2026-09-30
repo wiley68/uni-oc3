@@ -115,7 +115,7 @@ function mtucAud007F03_runLegacyMissing(array $stack, $missingOrderId, $attemptS
         42,
         array(7),
         1,
-        'BGN'
+        'EUR'
     );
     $opHash = MtUniCreditStorefrontApplicationToken::bindKey(
         $selectionHash,
@@ -250,7 +250,7 @@ $selX = MtUniCreditStorefrontOperationIdentity::productHash(
     42,
     array(7),
     1,
-    'BGN'
+    'EUR'
 );
 $opHX = MtUniCreditStorefrontApplicationToken::bindKey($selX, (string) $inputX['application_token']);
 $stackX2['memoryDb']->seedOrder($orderX, $stackX2['storeId'], MtUniCreditConstants::EXTENSION_CODE);
@@ -304,7 +304,7 @@ $selA = MtUniCreditStorefrontOperationIdentity::productHash(
     42,
     array(7),
     1,
-    'BGN'
+    'EUR'
 );
 $opHA = MtUniCreditStorefrontApplicationToken::bindKey($selA, (string) $inputA['application_token']);
 $stackA['memoryDb']->seedOrder($orderAdopt, $stackA['storeId'], MtUniCreditConstants::EXTENSION_CODE);

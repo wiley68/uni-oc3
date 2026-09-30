@@ -53,6 +53,9 @@ final class MtUniCreditCheckoutConfirmPreparation
         if ((int) (isset($order['order_id']) ? $order['order_id'] : 0) !== $orderId) {
             return array('error' => 'order_missing');
         }
+        if (MtUniCreditEurAmount::orderFactor($order, $storeId, $orderId) === null) {
+            return array('error' => 'unavailable');
+        }
 
         $actor = isset($input['actor']) && is_array($input['actor']) ? $input['actor'] : array();
         $ownershipError = MtUniCreditCheckoutOrderActorOwnership::rejectReason($order, $actor);
@@ -80,6 +83,9 @@ final class MtUniCreditCheckoutConfirmPreparation
         $checkoutGrandTotal = (float) (isset($input['checkout_grand_total']) ? $input['checkout_grand_total'] : 0.0);
         $currencyCode = (string) (isset($input['currency_code']) ? $input['currency_code'] : '');
         $currencyValue = array_key_exists('currency_value', $input) ? $input['currency_value'] : null;
+        if (!MtUniCreditEurAmount::isEur($currencyCode)) {
+            return array('error' => 'unavailable');
+        }
 
         if (!MtUniCreditCheckoutOrderCartParity::matchesCurrentCart(
             $order,
@@ -88,7 +94,8 @@ final class MtUniCreditCheckoutConfirmPreparation
             $cartProducts,
             $checkoutGrandTotal,
             $currencyCode,
-            $currencyValue
+            $currencyValue,
+            false
         )) {
             return array('error' => 'order_changed');
         }
@@ -108,7 +115,8 @@ final class MtUniCreditCheckoutConfirmPreparation
             $currencyCode,
             $cartProducts,
             !empty($input['module_enabled']),
-            !empty($input['payment_enabled'])
+            !empty($input['payment_enabled']),
+            isset($order['currency_value']) ? $order['currency_value'] : null
         )) {
             return array('error' => 'unavailable');
         }
@@ -126,7 +134,8 @@ final class MtUniCreditCheckoutConfirmPreparation
                 $currencyCode,
                 $cartProducts,
                 !empty($input['module_enabled']),
-                !empty($input['payment_enabled'])
+                !empty($input['payment_enabled']),
+                isset($order['currency_value']) ? $order['currency_value'] : null
             )) {
                 return array('error' => 'unavailable');
             }

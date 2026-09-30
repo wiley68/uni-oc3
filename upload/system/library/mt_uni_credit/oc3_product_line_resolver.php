@@ -174,7 +174,8 @@ final class MtUniCreditOc3ProductLineResolver
             $financingPrice,
             $taxClassId,
             $optionData['order_options'],
-            (int) (isset($productRow['reward']) ? $productRow['reward'] : 0)
+            (int) (isset($productRow['reward']) ? $productRow['reward'] : 0),
+            $unitWithTaxBase
         );
     }
 

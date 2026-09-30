@@ -289,7 +289,7 @@ $shop = mtuc4_valid_shop_snapshot();
 $orderRow = Phase7TestHarness::orderRow($orderProd, $stackProd['storeId']);
 $calcProd = (new MtUniCreditCalculator())->calculateScheme(
     $shop,
-    100.0,
+    500.0,
     new MtUniCreditAvailableScheme(
         'standard',
         'KOPSTD',

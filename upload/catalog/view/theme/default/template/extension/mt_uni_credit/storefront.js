@@ -51,7 +51,7 @@
   }
 
   function currencyDisplayLabel(currencyIso) {
-    return String(currencyIso || "").toUpperCase() === "EUR" ? "евро" : "лв.";
+    return "евро";
   }
 
   function formatMoneyWithCurrency(value, currencyIso) {

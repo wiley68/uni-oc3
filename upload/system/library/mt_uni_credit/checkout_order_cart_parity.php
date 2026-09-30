@@ -92,7 +92,8 @@ final class MtUniCreditCheckoutOrderCartParity
         array $cartProducts,
         $checkoutGrandTotal,
         $sessionCurrency,
-        $sessionCurrencyValue = null
+        $sessionCurrencyValue = null,
+        $requireSameRate = true
     ) {
         $orderId = (int) (isset($order['order_id']) ? $order['order_id'] : 0);
         if ($orderId <= 0 || $cartProducts === array()) {
@@ -105,7 +106,7 @@ final class MtUniCreditCheckoutOrderCartParity
             return false;
         }
 
-        if (array_key_exists('currency_value', $order)) {
+        if ($requireSameRate && array_key_exists('currency_value', $order)) {
             if ($sessionCurrencyValue === null || !is_numeric($sessionCurrencyValue)) {
                 return false;
             }

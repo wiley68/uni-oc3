@@ -15,7 +15,7 @@
 $headingConfigured = $presenter->presentProduct(
     array_merge($shop, array('uni_zaglavie' => 'Купи с УниКредит')),
     new MtUniCreditProductContext(42, array(7), 500.0),
-    'BGN'
+    'EUR'
 );
 mtuc8_assert(is_array($headingConfigured), 'heading configured shop presents');
 mtuc8_assert(
@@ -26,7 +26,7 @@ mtuc8_assert(
 $headingEmpty = $presenter->presentProduct(
     array_merge($shop, array('uni_zaglavie' => '')),
     new MtUniCreditProductContext(42, array(7), 500.0),
-    'BGN'
+    'EUR'
 );
 mtuc8_assert(is_array($headingEmpty), 'heading empty shop still presents when eligible');
 mtuc8_assert($headingEmpty['heading'] === '', 'empty CP heading is empty string (no language fallback)');
@@ -34,7 +34,7 @@ mtuc8_assert($headingEmpty['heading'] === '', 'empty CP heading is empty string 
 $headingWhitespace = $presenter->presentProduct(
     array_merge($shop, array('uni_zaglavie' => "  \t  ")),
     new MtUniCreditProductContext(42, array(7), 500.0),
-    'BGN'
+    'EUR'
 );
 mtuc8_assert(is_array($headingWhitespace), 'whitespace CP heading shop presents');
 mtuc8_assert($headingWhitespace['heading'] === '', 'whitespace-only CP heading trimmed to empty');
@@ -95,17 +95,17 @@ $optionProduct = array(
     'name' => 'Dynamic Product',
     'model' => 'DYN',
 );
-$lineA1 = $optionResolver->resolve($optionProduct, 1, array(10 => '100'), 'BGN', 'BGN');
-$lineB1 = $optionResolver->resolve($optionProduct, 1, array(10 => '200'), 'BGN', 'BGN');
-$lineB2 = $optionResolver->resolve($optionProduct, 2, array(10 => '200'), 'BGN', 'BGN');
+$lineA1 = $optionResolver->resolve($optionProduct, 1, array(10 => '100'), 'EUR', 'EUR');
+$lineB1 = $optionResolver->resolve($optionProduct, 1, array(10 => '200'), 'EUR', 'EUR');
+$lineB2 = $optionResolver->resolve($optionProduct, 2, array(10 => '200'), 'EUR', 'EUR');
 mtuc8_assert(is_object($lineA1) && is_object($lineB1) && is_object($lineB2), 'option resolver lines present');
 mtuc8_assert(abs($lineA1->financingPrice - 500.0) < 0.0001, 'option A × qty1 = 500');
 mtuc8_assert(abs($lineB1->financingPrice - 700.0) < 0.0001, 'option B × qty1 = 700');
 mtuc8_assert(abs($lineB2->financingPrice - 1400.0) < 0.0001, 'option B × qty2 = 1400');
 
-$vmA1 = $presenter->presentProduct($shop, new MtUniCreditProductContext(9, array(7), $lineA1->financingPrice), 'BGN');
-$vmB1 = $presenter->presentProduct($shop, new MtUniCreditProductContext(9, array(7), $lineB1->financingPrice), 'BGN');
-$vmB2 = $presenter->presentProduct($shop, new MtUniCreditProductContext(9, array(7), $lineB2->financingPrice), 'BGN');
+$vmA1 = $presenter->presentProduct($shop, new MtUniCreditProductContext(9, array(7), $lineA1->financingPrice), 'EUR');
+$vmB1 = $presenter->presentProduct($shop, new MtUniCreditProductContext(9, array(7), $lineB1->financingPrice), 'EUR');
+$vmB2 = $presenter->presentProduct($shop, new MtUniCreditProductContext(9, array(7), $lineB2->financingPrice), 'EUR');
 mtuc8_assert(is_array($vmA1) && is_array($vmB1) && is_array($vmB2), 'distinct option/qty states remain eligible');
 mtuc8_assert(
     (float) $vmA1['price'] !== (float) $vmB1['price']
@@ -126,12 +126,12 @@ mtuc8_assert(
 );
 
 // Eligibility threshold flip (hidden → visible / reverse)
-$belowMin = $presenter->presentProduct($shop, new MtUniCreditProductContext(9, array(7), 1.0), 'BGN');
-$aboveMin = $presenter->presentProduct($shop, new MtUniCreditProductContext(9, array(7), 500.0), 'BGN');
+$belowMin = $presenter->presentProduct($shop, new MtUniCreditProductContext(9, array(7), 1.0), 'EUR');
+$aboveMin = $presenter->presentProduct($shop, new MtUniCreditProductContext(9, array(7), 500.0), 'EUR');
 mtuc8_assert($belowMin === null, 'below minimum → no calculator (hidden/no buttons)');
 mtuc8_assert(is_array($aboveMin) && !empty($aboveMin['offers']), 'above minimum → offers visible');
-$aboveAgain = $presenter->presentProduct($shop, new MtUniCreditProductContext(9, array(7), 700.0), 'BGN');
-$belowAgain = $presenter->presentProduct($shop, new MtUniCreditProductContext(9, array(7), 1.0), 'BGN');
+$aboveAgain = $presenter->presentProduct($shop, new MtUniCreditProductContext(9, array(7), 700.0), 'EUR');
+$belowAgain = $presenter->presentProduct($shop, new MtUniCreditProductContext(9, array(7), 1.0), 'EUR');
 mtuc8_assert(is_array($aboveAgain) && $belowAgain === null, 'eligibility can flip both directions');
 
 // Preferred scheme identity can change with amount (when rules allow)

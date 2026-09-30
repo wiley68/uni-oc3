@@ -21,7 +21,6 @@ function mtuc4_valid_shop_snapshot(array $overrides = array())
         'uni_maxstojnost' => 10000,
         'uni_first_vnoska' => 0,
         'uni_shema_current' => 12,
-        'uni_eur' => 0,
         'uni_proces' => 0,
         'uni_env' => 0,
         'uni_sertificat' => 0,

@@ -78,8 +78,10 @@ function mtucAud007F02_calc($months, $price)
  */
 function mtucAud007F02_snapshot($calculation, $entryPoint, $opHash)
 {
-    $order = Phase7TestHarness::orderRow(9001, Phase5TestHarness::STORE_A);
+    $order = Phase7TestHarness::orderRow(9001, Phase5TestHarness::STORE_A, (float) $calculation->price);
     $products = Phase7TestHarness::orderProducts();
+    $products[0]['price'] = (float) $calculation->price;
+    $products[0]['total'] = (float) $calculation->price;
     $shop = mtuc4_valid_shop_snapshot();
     $payload = (new MtUniCreditControlPanelOrderPayloadBuilder())->build(
         9001,
@@ -841,7 +843,7 @@ function mtucAud007F02_sec_multi(array &$shared)
     );
     $multiHandoff = MtUniCreditApplicationSnapshot::resolveHandoffInputs(
         $multiSnap,
-        Phase7TestHarness::orderRow(9200, Phase5TestHarness::STORE_A, 999.0)
+        Phase7TestHarness::orderRow(9200, Phase5TestHarness::STORE_A, 500.0)
     );
     mtucAud007F02_assert(count($multiHandoff['order_products']) === 2, 'multi-item: frozen product count = 2');
     $multiPayload = (new MtUniCreditSmartUcfPayloadBuilder())->build(
@@ -893,6 +895,9 @@ function mtucAud007F02_sec_multi(array &$shared)
         $stackF['memoryDb']->seedOrder($orderF, $stackF['storeId'], MtUniCreditConstants::EXTENSION_CODE);
 
         return $orderF;
+    };
+    $inputF['load_order'] = function ($id) use ($stackF) {
+        return Phase7TestHarness::orderRow($id, $stackF['storeId'], 600.0);
     };
     $fresh = $stackF['storefront']->submit($inputF);
     mtucAud007F02_assert(!empty($fresh['success']), 'fresh application: new terms accepted');

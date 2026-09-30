@@ -24,7 +24,7 @@ mtuc8_assert(
     'EUR installment_label has no € symbol'
 );
 $bgnLabel = $eligible['offers']['standard']['installment_label'];
-mtuc8_assert(strpos($bgnLabel, 'лв.') !== false, 'BGN installment_label uses лв.');
+mtuc8_assert($bgnLabel === $eurPresented['offers']['standard']['installment_label'], 'EUR label is independent of snapshot mode');
 $jsPathForCurrency = $catalog . DIRECTORY_SEPARATOR . 'view' . DIRECTORY_SEPARATOR . 'theme' . DIRECTORY_SEPARATOR
     . 'default' . DIRECTORY_SEPARATOR . 'template' . DIRECTORY_SEPARATOR . 'extension' . DIRECTORY_SEPARATOR
     . 'mt_uni_credit' . DIRECTORY_SEPARATOR . 'storefront.js';

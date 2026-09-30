@@ -60,9 +60,9 @@ mtuc8_assert(
 $shop = mtuc3_golden_shop(array('uni_eur' => 0, 'uni_vnoska' => 1));
 $presenter = new MtUniCreditStorefrontCalculatorPresenter();
 $product = new MtUniCreditProductContext(42, array(7), 500.0);
-$eligible = $presenter->presentProduct($shop, $product, 'BGN');
+$eligible = $presenter->presentProduct($shop, $product, 'EUR');
 mtuc8_assert(is_array($eligible) && isset($eligible['offers']['standard']), 'product presenter eligible');
-$ineligible = $presenter->presentProduct($shop, new MtUniCreditProductContext(42, array(7), 1.0), 'BGN');
+$ineligible = $presenter->presentProduct($shop, new MtUniCreditProductContext(42, array(7), 1.0), 'EUR');
 mtuc8_assert($ineligible === null, 'product presenter ineligible low amount');
 $wrongCurrency = $presenter->presentProduct($shop, $product, 'USD');
 mtuc8_assert($wrongCurrency === null, 'product presenter rejects unsupported currency');
@@ -83,15 +83,15 @@ $lineQty1 = $resolver->resolve(
     array('product_id' => 9, 'price' => 100.0, 'tax_class_id' => 1, 'name' => 'P', 'model' => 'M'),
     1,
     array(),
-    'BGN',
-    'BGN'
+    'EUR',
+    'EUR'
 );
 $lineQty3 = $resolver->resolve(
     array('product_id' => 9, 'price' => 100.0, 'tax_class_id' => 1, 'name' => 'P', 'model' => 'M'),
     3,
     array(),
-    'BGN',
-    'BGN'
+    'EUR',
+    'EUR'
 );
 mtuc8_assert(
     abs($lineQty1->financingPrice - 120.0) < 0.0001,
@@ -117,6 +117,6 @@ $eligibleCart = new MtUniCreditCartContext(
     500.0
 );
 $eligibleResolution = $cartResolver->resolve($shop, $eligibleCart);
-$cartPresented = $presenter->presentCart($shop, $eligibleCart, $eligibleResolution, 'BGN');
+$cartPresented = $presenter->presentCart($shop, $eligibleCart, $eligibleResolution, 'EUR');
 mtuc8_assert(is_array($cartPresented) && !empty($cartPresented['hide_secondary']), 'cart presenter eligible + hide_secondary');
 mtuc8_assert(isset($cartPresented['cart_fingerprint']) && $cartPresented['cart_fingerprint'] !== '', 'cart fingerprint present');

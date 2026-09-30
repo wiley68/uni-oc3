@@ -358,8 +358,7 @@ final class MtUniCreditStorefrontCalculatorPresenter
     {
         $months = (int) $months;
         $amount = number_format((float) $monthly, 2, '.', '');
-        $eurMode = (int) (isset($shop['uni_eur']) ? $shop['uni_eur'] : 0);
-        $suffix = in_array($eurMode, array(2, 3), true) ? 'евро' : 'лв.';
+        $suffix = 'евро';
 
         return $months . ' × ' . $amount . ' ' . $suffix;
     }

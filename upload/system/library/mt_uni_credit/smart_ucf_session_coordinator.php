@@ -188,12 +188,6 @@ final class MtUniCreditSmartUcfSessionCoordinator
             ? trim($authoritativeShopUnicid)
             : '';
 
-        if (MtUniCreditShopConfigurationFlags::isSecondaryProcess($shop)) {
-            $this->logEvent(MtUniCreditPhase9LifecycleLog::EVENT_SKIP, array('reason' => 'process2'));
-
-            return MtUniCreditSmartUcfCoordinationResult::process2();
-        }
-
         $row = $this->lifecycle->readAndNormalize($attemptId);
         if ($row === null) {
             return MtUniCreditSmartUcfCoordinationResult::failed(
@@ -201,6 +195,31 @@ final class MtUniCreditSmartUcfSessionCoordinator
                 true,
                 MtUniCreditSmartUcfFailureClassification::CLASS_PRE_SEND
             );
+        }
+        $snapshot = MtUniCreditApplicationSnapshot::decode(
+            isset($row['application_snapshot_json']) ? $row['application_snapshot_json'] : null
+        );
+        if (MtUniCreditEurAmount::orderFactor($order, $storeId, $localOrderId) === null
+            || MtUniCreditShopOrderId::tryNormalize(isset($row['order_id']) ? $row['order_id'] : null)
+                !== MtUniCreditShopOrderId::tryNormalize($localOrderId)
+            || (int) (isset($row['store_id']) ? $row['store_id'] : -1) !== $storeId
+            || (int) (isset($row['control_panel_order_id']) ? $row['control_panel_order_id'] : 0) !== (int) $cpOrderId
+            || (int) $cpOrderId <= 0
+            || (string) (isset($row['state']) ? $row['state'] : '') !== MtUniCreditFinancingAttemptState::CP_CREATED
+            || !MtUniCreditEurAmount::matchesSnapshot($snapshot, $order)
+            || !MtUniCreditEurAmount::matchesCalculation($order, $calculation)
+            || !isset($row['application_snapshot_hash'])
+            || !hash_equals((string) $row['application_snapshot_hash'], MtUniCreditApplicationSnapshot::hash($snapshot))) {
+            return MtUniCreditSmartUcfCoordinationResult::failed(
+                self::CUSTOMER_FAILED,
+                false,
+                MtUniCreditSmartUcfFailureClassification::CLASS_PRE_SEND
+            );
+        }
+        if (MtUniCreditShopConfigurationFlags::isSecondaryProcess($shop)) {
+            $this->logEvent(MtUniCreditPhase9LifecycleLog::EVENT_SKIP, array('reason' => 'process2'));
+
+            return MtUniCreditSmartUcfCoordinationResult::process2();
         }
         $known = $this->resultFromState($row);
         if ($known !== null) {

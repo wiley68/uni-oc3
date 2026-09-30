@@ -22,7 +22,7 @@ $buttonShopLight = mtuc3_golden_shop(array(
     'uni_button_width' => 315,
     'uni_button_height' => 62,
 ));
-$buttonVmLight = $presenter->presentProduct($buttonShopLight, $product, 'BGN');
+$buttonVmLight = $presenter->presentProduct($buttonShopLight, $product, 'EUR');
 mtuc8_assert(is_array($buttonVmLight), 'button VM light present');
 mtuc8_assert(
     isset($buttonVmLight['dark_button'], $buttonVmLight['buttons_in_row'], $buttonVmLight['button_width'], $buttonVmLight['button_height']),
@@ -45,7 +45,7 @@ $buttonShopDark = mtuc3_golden_shop(array(
     'uni_button_width' => 315,
     'uni_button_height' => 62,
 ));
-$buttonVmDark = $presenter->presentProduct($buttonShopDark, $product, 'BGN');
+$buttonVmDark = $presenter->presentProduct($buttonShopDark, $product, 'EUR');
 mtuc8_assert(is_array($buttonVmDark) && $buttonVmDark['dark_button'] === true, 'uni_type_button=1 => dark');
 mtuc8_assert($buttonVmDark['buttons_in_row'] === false, 'uni_button_row!=1 => stacked');
 
@@ -53,7 +53,7 @@ $buttonVmCart = $presenter->presentCart(
     $buttonShopLight,
     new MtUniCreditCartContext(array(mtuc3_cart_line(42, array(7), 500.0)), 500.0),
     null,
-    'BGN'
+    'EUR'
 );
 mtuc8_assert(is_array($buttonVmCart), 'cart button VM present');
 mtuc8_assert(
@@ -217,7 +217,8 @@ mtuc8_assert(
 );
 mtuc8_assert(
     strpos($packageScript, 'upload/catalog/view/image/mt_uni_credit/uni_logo.svg') !== false
-        && strpos($packageScript, 'OC3 package must not write to catalog/view/image') !== false,
+        && strpos($packageScript, '$forbiddenEntries = @(') !== false
+        && strpos($packageScript, 'foreach ($entry in $forbiddenEntries)') !== false,
     'package forbids catalog/view/image storefront logos'
 );
 $distZip = $root . DIRECTORY_SEPARATOR . 'dist' . DIRECTORY_SEPARATOR . 'CC_OpenCartv.3.x_UNI_v.2.0.3.ocmod.zip';

@@ -129,7 +129,7 @@ $selectionHashBind = MtUniCreditStorefrontOperationIdentity::productHash(
     $line->productId,
     is_array($line->options) ? $line->options : array(),
     $line->quantity,
-    'BGN'
+    'EUR'
 );
 $applicationToken = MtUniCreditStorefrontApplicationToken::issue(
     $sessionBind,
@@ -140,7 +140,7 @@ $applicationToken = MtUniCreditStorefrontApplicationToken::issue(
 $inputBase = array(
     'entry_point' => MtUniCreditOperationEntryPoint::PRODUCT,
     'store_id' => (int) $stack['storeId'],
-    'currency_code' => 'BGN',
+    'currency_code' => 'EUR',
     'scheme_key' => $schemeKey,
     'product_line' => $line,
     'application_token' => $applicationToken,
@@ -281,11 +281,11 @@ mtuc8_assert($modalPresenter['banner_url'] === 'https://cdn.example/banner.jpg',
 mtuc8_assert($modalPresenter['banner_url_mobile'] === 'https://cdn.example/banner-m.jpg', 'modal presenter banner mobile');
 mtuc8_assert($modalPresenter['banner_link'] === 'https://cdn.example/click', 'modal presenter banner_link from reklama_url');
 mtuc8_assert($modalPresenter['text_first_installment'] === 'Първоначална вноска /евро/', 'EUR first installment label');
-$modalPresenterBgn = MtUniCreditStorefrontModalPresenter::present(array(), 'BGN');
-mtuc8_assert($modalPresenterBgn['text_first_installment'] === 'Първоначална вноска /лв./', 'BGN first installment label');
+$modalPresenterBgn = MtUniCreditStorefrontModalPresenter::present(array(), 'EUR');
+mtuc8_assert($modalPresenterBgn['text_first_installment'] === $modalPresenter['text_first_installment'], 'modal label remains EUR');
 $modalPresenterFallback = MtUniCreditStorefrontModalPresenter::present(
     array('uni_backurl' => 'https://fallback.example/ads'),
-    'BGN'
+    'EUR'
 );
 mtuc8_assert($modalPresenterFallback['banner_link'] === 'https://fallback.example/ads', 'banner_link falls back to uni_backurl');
 
@@ -454,7 +454,7 @@ $popupShop = mtuc3_typekop1_shop(
     )
 );
 $popupProduct = new MtUniCreditProductContext(42, array(7), 800.0);
-$popupPresented = $presenter->presentProduct($popupShop, $popupProduct, 'BGN');
+$popupPresented = $presenter->presentProduct($popupShop, $popupProduct, 'EUR');
 mtuc8_assert(is_array($popupPresented) && isset($popupPresented['offers']['standard']['schemes']), 'popup fixture standard offer present');
 $firstSchemes = $popupPresented['offers']['standard']['schemes'];
 $firstCats = array();

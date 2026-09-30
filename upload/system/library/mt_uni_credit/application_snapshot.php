@@ -59,10 +59,17 @@ final class MtUniCreditApplicationSnapshot
             $shipping = $billing;
         }
 
-        $currency = strtoupper(trim(isset($order['currency_code']) ? (string) $order['currency_code'] : 'BGN'));
-        if ($currency !== 'BGN' && $currency !== 'EUR') {
-            $currency = 'BGN';
+        $currency = isset($order['currency_code']) ? $order['currency_code'] : null;
+        if (!MtUniCreditEurAmount::isEur($currency)
+            || MtUniCreditEurAmount::orderFactor(
+                $order,
+                isset($order['store_id']) ? $order['store_id'] : -1,
+                isset($order['order_id']) ? $order['order_id'] : null
+            ) === null
+            || !MtUniCreditEurAmount::matchesCalculation($order, $calculation)) {
+            throw new MtUniCreditPersistenceValidationException('Application snapshot requires proven EUR order.');
         }
+        $currency = 'EUR';
 
         $first = 0.0;
         if (isset($calculation->firstInstallment) && is_object($calculation->firstInstallment)) {

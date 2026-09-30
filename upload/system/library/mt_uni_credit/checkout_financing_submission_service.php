@@ -293,6 +293,10 @@ final class MtUniCreditCheckoutFinancingSubmissionService
         if ((int) (isset($order['store_id']) ? $order['store_id'] : -1) !== (int) $storeId) {
             return array('error' => 'order_store_mismatch');
         }
+        $savedFactor = MtUniCreditEurAmount::orderFactor($order, $storeId, $orderId);
+        if ($savedFactor === null || !MtUniCreditEurAmount::isEur(isset($input['currency_code']) ? $input['currency_code'] : null)) {
+            return array('error' => 'unavailable');
+        }
 
         $actor = isset($input['actor']) && is_array($input['actor']) ? $input['actor'] : array();
         $ownershipError = MtUniCreditCheckoutOrderActorOwnership::rejectReason($order, $actor);
@@ -360,12 +364,19 @@ final class MtUniCreditCheckoutFinancingSubmissionService
             $cartProducts,
             (float) $cartContext->total,
             $currencyCode,
-            $currencyValue
+            $currencyValue,
+            false
         )) {
             return array('error' => 'order_changed');
         }
 
-        $resolution = $this->cartSchemes->resolve($shop, $cartContext);
+        try {
+            $eurCart = MtUniCreditEurAmount::cartContext($cartContext, $savedFactor);
+            $eurOrderTotal = MtUniCreditEurAmount::fromBase($orderTotal, $savedFactor);
+        } catch (InvalidArgumentException $exception) {
+            return array('error' => 'unavailable');
+        }
+        $resolution = $this->cartSchemes->resolve($shop, $eurCart);
         $schemeKey = trim((string) (isset($input['scheme_key']) ? $input['scheme_key'] : ''));
         $firstInstallment = isset($input['first_installment'])
             ? (float) $input['first_installment']
@@ -385,12 +396,12 @@ final class MtUniCreditCheckoutFinancingSubmissionService
         }
 
         try {
-            $calculation = $this->calculator->calculateScheme($shop, $orderTotal, $scheme, $firstInstallment);
+            $calculation = $this->calculator->calculateScheme($shop, $eurOrderTotal, $scheme, $firstInstallment);
         } catch (Exception $exception) {
             return array('error' => 'unavailable');
         }
 
-        if (abs($calculation->price - $orderTotal) > 0.009) {
+        if (abs($calculation->price - $eurOrderTotal) > 0.009) {
             return array('error' => 'amount_changed');
         }
 

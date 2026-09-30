@@ -260,10 +260,7 @@
       "id": "currency_gate",
       "category": "currency",
       "expect": {
-        "uni_eur_0_or_1_expected_iso": "BGN",
-        "uni_eur_2_or_3_expected_iso": "EUR",
-        "supported_iso": ["BGN", "EUR"],
-        "display_rate": 1.95583
+        "rejected_iso": ["BGN", "USD", "GBP", ""]
       }
     }
   ]

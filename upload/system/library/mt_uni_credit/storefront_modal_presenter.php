@@ -19,7 +19,7 @@ final class MtUniCreditStorefrontModalPresenter
         }
 
         $iso = strtoupper(trim((string) $currencyIso));
-        $currencyWord = $iso === 'EUR' ? 'евро' : 'лв.';
+        $currencyWord = 'евро';
         $process2 = ((int) (isset($shop['uni_proces']) ? $shop['uni_proces'] : 0)) === 1;
         $consents = (new MtUniCreditStorefrontConsentResolver())->normalize($shop);
 

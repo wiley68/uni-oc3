@@ -101,7 +101,7 @@ function mtucAud010F04_draftOrder(array $customer)
         ),
         'order_total' => 500.0,
         'store_id' => Phase5TestHarness::STORE_A,
-        'currency_code' => 'BGN',
+        'currency_code' => 'EUR',
         'currency_id' => 1,
         'language_id' => 1,
     ));
@@ -214,7 +214,7 @@ $calc = (new MtUniCreditCalculator())->calculateScheme(
 );
 $orderRow = $productOrder;
 $orderRow['order_id'] = 930001;
-$orderRow['currency_code'] = 'BGN';
+$orderRow['currency_code'] = 'EUR';
 $products = Phase7TestHarness::orderProducts();
 $shop = mtuc4_valid_shop_snapshot();
 $snap = MtUniCreditApplicationSnapshot::fromLive(

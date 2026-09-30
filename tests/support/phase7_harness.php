@@ -163,7 +163,7 @@ final class Phase7TestHarness
             'order' => $order,
             'order_products' => self::orderProducts(),
             'cart_context' => self::cartContext($total),
-            'currency_code' => (string) (isset($order['currency_code']) ? $order['currency_code'] : 'BGN'),
+            'currency_code' => (string) (isset($order['currency_code']) ? $order['currency_code'] : 'EUR'),
             'currency_value' => isset($order['currency_value']) ? (float) $order['currency_value'] : 1.0,
             'scheme_key' => 'standard|KOPSTD|12',
             'first_installment' => 0.0,

@@ -56,7 +56,7 @@ $calc = (new MtUniCreditCalculator())->calculateScheme(
     0.0
 );
 
-$order = Phase7TestHarness::orderRow(98001);
+$order = Phase7TestHarness::orderRow(98001, Phase5TestHarness::STORE_A, 100.0);
 $order['firstname'] = "O'Brien";
 $order['payment_address_1'] = "ул. _Тест_ 1";
 $products = array(
@@ -95,7 +95,7 @@ $ok13 = true;
 try {
     $builder->build(
         str_repeat('1', 13),
-        Phase7TestHarness::orderRow(1),
+        Phase7TestHarness::orderRow(str_repeat('1', 13), Phase5TestHarness::STORE_A, 100.0),
         $products,
         $calc,
         mtuc4_valid_shop_snapshot()
@@ -134,7 +134,7 @@ $multiProducts = array(
     array('product_id' => 2, 'name' => "Test_Product's Name", 'quantity' => 2, 'price' => 20.0, 'total' => 40.0),
     array('product_id' => 3, 'name' => $longUtf8, 'quantity' => 1, 'price' => 5.0, 'total' => 5.0),
 );
-$longPayload = $builder->build(98002, Phase7TestHarness::orderRow(98002), $multiProducts, $calc, mtuc4_valid_shop_snapshot());
+$longPayload = $builder->build(98002, Phase7TestHarness::orderRow(98002, Phase5TestHarness::STORE_A, 100.0), $multiProducts, $calc, mtuc4_valid_shop_snapshot());
 mtucCanonFt_assert(
     isset($longPayload['products_name'])
         && strlen((string) $longPayload['products_name']) > 255

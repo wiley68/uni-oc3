@@ -14,7 +14,7 @@
 // --- Process field matrix via modal presenter ---
 $step2P1 = MtUniCreditStorefrontModalPresenter::present(
     array('uni_proces' => 0, 'consents' => array()),
-    'BGN',
+    'EUR',
     array()
 );
 mtuc8_assert($step2P1['process2'] === false, 'Process 1: uni_proces=0 => process2 false');
@@ -26,7 +26,7 @@ mtuc8_assert(!in_array('phone2', $step2P1['fields'], true) && !in_array('egn', $
 
 $step2P2 = MtUniCreditStorefrontModalPresenter::present(
     array('uni_proces' => 1, 'consents' => array()),
-    'BGN',
+    'EUR',
     array()
 );
 mtuc8_assert($step2P2['process2'] === true, 'Process 2: uni_proces=1 => process2 true');
@@ -245,7 +245,7 @@ mtuc8_assert(
 // Process 1 privacy: presenter customer never invents egn for process1 DOM
 $p1Presented = MtUniCreditStorefrontModalPresenter::present(
     array('uni_proces' => 0),
-    'BGN',
+    'EUR',
     $logged
 );
 mtuc8_assert($p1Presented['process2'] === false, 'privacy process1 flag');

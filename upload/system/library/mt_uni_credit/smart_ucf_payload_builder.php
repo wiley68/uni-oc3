@@ -18,14 +18,20 @@ final class MtUniCreditSmartUcfPayloadBuilder
      */
     public function build(array $shop, array $order, array $orderProducts, MtUniCreditCalculationResult $calculation, $localOrderId)
     {
+        $factor = MtUniCreditEurAmount::orderFactor(
+            $order,
+            isset($order['store_id']) ? $order['store_id'] : -1,
+            $localOrderId
+        );
+        if ($factor === null || !MtUniCreditEurAmount::matchesCalculation($order, $calculation)) {
+            throw new InvalidArgumentException('SmartUCF requires proven EUR order and calculation.');
+        }
         $deliveryAddress = trim(implode(', ', array_filter(array(
             isset($order['payment_address_1']) ? (string) $order['payment_address_1'] : '',
             isset($order['payment_address_2']) ? (string) $order['payment_address_2'] : '',
             isset($order['payment_city']) ? (string) $order['payment_city'] : '',
             isset($order['payment_postcode']) ? (string) $order['payment_postcode'] : '',
         ), array($this, 'isNonEmptyTrimmed'))));
-
-        $currencyIso = isset($order['currency_code']) ? (string) $order['currency_code'] : '';
 
         $payload = array(
             'user' => isset($shop['uni_user']) && is_string($shop['uni_user']) ? trim($shop['uni_user']) : '',
@@ -41,7 +47,7 @@ final class MtUniCreditSmartUcfPayloadBuilder
             'initialPayment' => $this->formatAmount($calculation->firstInstallment->amount),
             'installmentCount' => $calculation->scheme->months,
             'monthlyPayment' => $this->formatAmount($calculation->monthlyInstallment),
-            'items' => $this->buildItems($orderProducts, $shop, $currencyIso),
+            'items' => $this->buildItems($orderProducts, $factor),
         );
 
         if ($payload['user'] === '' || $payload['pass'] === '') {
@@ -68,23 +74,18 @@ final class MtUniCreditSmartUcfPayloadBuilder
 
     /**
      * @param array<int, array<string, mixed>> $lines
-     * @param array<string, mixed> $shop
-     * @param string $currencyIso
+     * @param float $factor Persisted OC3 EUR/base factor
      * @return array<int, array<string, mixed>>
      */
-    private function buildItems(array $lines, array $shop, $currencyIso)
+    private function buildItems(array $lines, $factor)
     {
         $items = array();
         foreach ($lines as $line) {
             $quantity = max(1, (int) (isset($line['quantity']) ? $line['quantity'] : 1));
             $lineTotal = isset($line['total']) ? $line['total'] : (isset($line['price']) ? $line['price'] : 0);
-            $unitPrice = ((float) $lineTotal) / $quantity;
-            $uniEur = (int) (isset($shop['uni_eur']) ? $shop['uni_eur'] : 0);
-            if ($uniEur === 1 && strtoupper($currencyIso) === 'EUR') {
-                $unitPrice *= 1.95583;
-            } elseif (in_array($uniEur, array(2, 3), true) && strtoupper($currencyIso) === 'BGN') {
-                $unitPrice /= 1.95583;
-            }
+            // OC3 order_product.total is the native ex-tax line total. Keep that
+            // established item meaning, converting with the saved order factor.
+            $unitPrice = MtUniCreditEurAmount::fromBase($lineTotal, $factor, 6) / $quantity;
             $items[] = array(
                 'name' => $this->clean(isset($line['name']) ? (string) $line['name'] : ''),
                 'code' => (int) (isset($line['product_id']) ? $line['product_id'] : 0),

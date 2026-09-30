@@ -28,6 +28,15 @@ Later phases cite contract IDs (`CALC-001`, `CP-AUTH-001`, …). Do not rename f
 
 ---
 
+## EUR-OC3-002 current currency contract
+
+- The authoritative selected transaction currency and every new financing application must be EUR. `uni_eur`, including temporary CP value 3 and older values, is ignored. Missing or non-EUR currency fails closed.
+- Native OC3 cart/product/order numeric fields stay in store base units. `currency_code`, positive `currency_id`, and finite positive `currency_value` identify the EUR transaction. Financing amounts are converted before scheme bounds and calculation. Product `order_product` price, total and tax stay in base units.
+- Once an order exists, its saved `currency_value` is the only conversion factor for financing, CP and SmartUCF. Current store rates never reprice durable history. The order ID, store ID, currency metadata and native total must be proved before submission or replay.
+- CP `currency` is explicit EUR. Its `price`, `parva` and `vnoska` are calculated EUR amounts. Saved payload currency, amount, order identity and fingerprint must agree with the frozen EUR application; unverifiable CP-created replay does not repost.
+- Process 1 SmartUCF aggregate amounts and `items[].singlePrice` are EUR. The item source remains OC3 `order_product.total` (native ex-tax line total), divided by quantity after conversion with the order factor. Process 2 performs no SmartUCF request and also proves the durable EUR order/application before status or mail continuation.
+- EUR storefront labels are single-currency. Existing calculator formulas, CP field names, status semantics and lock/cache ownership are unchanged.
+
 ## Compatibility matrix
 
 **Target family:** OpenCart 3.x
@@ -234,9 +243,8 @@ Preferred-offer tie-break at preferred months: lowest monthly installment. If pr
 
 ### CALC-008 — Currency
 
-- Supported ISO: **BGN**, **EUR** only.
-- `uni_eur ∈ {0,1}` expects BGN; `uni_eur ∈ {2,3}` expects EUR.
-- Display rate **1.95583**.
+- OC3 financing accepts only selected transaction ISO `EUR`; missing/BGN/USD/GBP/other values fail closed.
+- Native cart/order numbers remain in base currency; multiply by selected or persisted `currency_value` before EUR financing rounding.
 - Server-authoritative; do not trust browser totals.
 
 ### CALC-009 — Invalid / no-offer behaviour
@@ -327,7 +335,7 @@ Required / constrained:
 - `uni_typekop` ∈ {0,1}
 - `uni_proces` ∈ {0,1}
 - `uni_env` ∈ {0,1} (`0` = test SmartUCF)
-- `uni_eur` ∈ {0,1,2,3}
+- `uni_eur` is optional compatibility data; any value is ignored for financing.
 - `uni_minstojnost`, `uni_maxstojnost` finite; min ≤ max
 - `uni_meseci_3` … `uni_meseci_36` present and yes-flag compatible
 - `uni_shema_current` 0 or 3–36
@@ -497,7 +505,7 @@ Throttle (CP-side): 60 / shop / minute.
 | `products_name` | optional; **preserve** UTF-8 / apostrophes / underscores in names (no underscore→hyphen, no HTML-encode); implode `_`; builder max 255 |
 | `products_q`    | optional; implode qty `_`, qty ≥ 1                                                                                                     |
 | `type_client`   | 0–255, default 0; completed modules: `0` if mobile else `1`                                                                            |
-| `currency`      | max 3, **`in:BGN,EUR`**, API default BGN                                                                                               |
+| `currency`      | max 3, **`in:BGN,EUR`** upstream; OC3 emits explicit `EUR` only                                                                                               |
 | `version`       | max 11, `x.x.x`; frozen **`2.0.2`** (D2)                                                                                               |
 
 **Create-time:** omit `status` / `status_id`. CP defaults to `Създаден в КП Банка` / `cp_sent`.

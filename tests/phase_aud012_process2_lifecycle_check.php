@@ -278,6 +278,7 @@ function mtucAud012_orderContext(array $stack, $orderId)
 
     return array(
         'order_id' => (string) $orderId,
+        'native_order' => $input['order'],
         'customer_email' => (string) $input['order']['email'],
         'store_email' => (string) $input['order']['store_email'],
     );
@@ -385,19 +386,18 @@ Phase9TestHarness::seedBankOrder($stackPatch['memoryDb'], $orderPatch, $stackPat
 $resultPatch = $stackPatch['submission']->submit(
     Phase9TestHarness::submitInputProcess2($orderPatch, $stackPatch['storeId'])
 );
-mtucAud012_assert(empty($resultPatch['success']), 'F01 CP fail: submit not success');
+mtucAud012_assert(!empty($resultPatch['success']), 'F01 CP PATCH pending: local handoff succeeds');
 $attemptPatch = mtucAud012_attemptId($stackPatch, $orderPatch);
 $p2Patch = (new MtUniCreditProcessTwoLifecycleRepository($stackPatch['db'], $stackPatch['clock']))
     ->findByAttempt($attemptPatch);
 mtucAud012_assert(
-    is_array($p2Patch) && (string) $p2Patch['process2_state'] === MtUniCreditProcessTwoLifecycleStates::FAILED,
-    'F01 CP fail: process2_failed'
+    is_array($p2Patch) && (string) $p2Patch['process2_state'] === MtUniCreditProcessTwoLifecycleStates::PREPARED,
+    'F01 CP PATCH pending: process2 prepared'
 );
-mtucAud012_assert(count($mailerPatch->sent) === 0, 'F01 CP fail: no mail');
+mtucAud012_assert(count($mailerPatch->sent) >= 1, 'F01 CP PATCH pending: mail after local handoff');
 mtucAud012_assert(
-    Phase9TestHarness::bankStatusId($stackPatch, $orderPatch) !== MtUniCreditBankStatus::SENT_PROCESS2
-        && Phase9TestHarness::bankStatusId($stackPatch, $orderPatch) === null,
-    'F01 CP fail: local bank_sent_process2 NOT persisted'
+    Phase9TestHarness::bankStatusId($stackPatch, $orderPatch) === MtUniCreditBankStatus::SENT_PROCESS2,
+    'F01 CP PATCH pending: local bank_sent_process2 persisted'
 );
 mtucAud012_assert(Phase7TestHarness::countOrderPosts($transportPatchFail) === 1, 'F01 CP fail: CP create = 1');
 mtucAud012_assert(Phase9TestHarness::smartUcfCallCount($stackPatch['smartUcfProbe']) === 0, 'F01 CP fail: SmartUCF = 0');
@@ -448,7 +448,10 @@ $stackActive['db']->query(
         $stackActive['clock']->formatUtc(Phase9TestHarness::NOW)
     ) . "',
          `process2_claim_owner` = '" . $stackActive['db']->escape($ownerA) . "',
-         `process2_mail_sent` = 0
+         `process2_mail_sent` = 0,
+         `cp_status_sync_state` = '" . MtUniCreditControlPanelStatusSyncStates::NOT_NEEDED . "',
+         `cp_status_sync_status_id` = NULL,
+         `cp_status_sync_status` = NULL
      WHERE `attempt_id` = " . $attemptActive
 );
 $claimBlocked = $lifeActive->claimPreparing($attemptActive, MtUniCreditLockOwnerTokenGenerator::generate());

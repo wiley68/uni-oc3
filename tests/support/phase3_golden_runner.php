@@ -714,32 +714,13 @@ final class Phase3GoldenRunner
         $expect = $case['expect'];
         $gate = new MtUniCreditCurrencyGate();
 
-        foreach (array(0, 1) as $mode) {
-            $shop = mtuc3_golden_shop(array('uni_eur' => $mode));
-            $this->assertGoldenSame(
-                $case['id'],
-                'uni_eur_' . $mode . '_expected_iso',
-                $expect['uni_eur_0_or_1_expected_iso'],
-                $gate->expectedIso($shop)
-            );
-            $this->assertGolden($case['id'], 'uni_eur_' . $mode . '_supports_bgn', true, $gate->supports($shop, 'BGN'));
-            $this->assertGolden($case['id'], 'uni_eur_' . $mode . '_rejects_eur', true, !$gate->supports($shop, 'EUR'));
+        foreach (array(array(), array('uni_eur' => 3), array('uni_eur' => 0), array('uni_eur' => 'old')) as $fields) {
+            $shop = mtuc3_golden_shop($fields);
+            $this->assertGolden($case['id'], 'EUR accepted', true, $gate->supports($shop, ' EUR '));
+            foreach ($expect['rejected_iso'] as $iso) {
+                $this->assertGolden($case['id'], 'currency rejected: ' . $iso, true, !$gate->supports($shop, $iso));
+            }
         }
-
-        foreach (array(2, 3) as $mode) {
-            $shop = mtuc3_golden_shop(array('uni_eur' => $mode));
-            $this->assertGoldenSame(
-                $case['id'],
-                'uni_eur_' . $mode . '_expected_iso',
-                $expect['uni_eur_2_or_3_expected_iso'],
-                $gate->expectedIso($shop)
-            );
-            $this->assertGolden($case['id'], 'uni_eur_' . $mode . '_supports_eur', true, $gate->supports($shop, 'EUR'));
-            $this->assertGolden($case['id'], 'uni_eur_' . $mode . '_rejects_bgn', true, !$gate->supports($shop, 'BGN'));
-        }
-
-        $this->assertGoldenSame($case['id'], 'supported_iso', $expect['supported_iso'], array('BGN', 'EUR'));
-        $this->assertGoldenFloat($case['id'], 'display_rate', $expect['display_rate'], MtUniCreditCurrencyGate::DISPLAY_RATE, 5);
     }
 
     /**

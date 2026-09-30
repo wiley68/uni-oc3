@@ -298,7 +298,7 @@ mtucAud020F01_assert($attemptCartFp !== '', 'B: attempt A cart_fingerprint captu
 $freshCartContext = mtucAud020F01_sameCartContext(500.0);
 $freshCartFp = MtUniCreditStorefrontOperationIdentity::cartFingerprintFromContext(
     $freshCartContext,
-    'BGN'
+    'EUR'
 );
 mtucAud020F01_assert(
     hash_equals($attemptCartFp, $freshCartFp),

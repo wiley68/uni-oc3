@@ -103,23 +103,23 @@ $memoryDb = new Phase2MemoryDb();
 $availability = Phase5TestHarness::availability($memoryDb, Phase5TestHarness::STORE_A);
 $db = new MtUniCreditDbAdapter($memoryDb, 'oc_');
 
-mtuc5_assert($availability->isAvailable($address, $total, 'BGN', $cartProducts, Phase5TestHarness::STORE_A, true, true, 0, $db), 'valid eligible cart available');
-mtuc5_assert(!$availability->isAvailable($address, $total, 'BGN', $cartProducts, Phase5TestHarness::STORE_A, false, true, 0, $db), 'module disabled unavailable');
-mtuc5_assert(!$availability->isAvailable($address, $total, 'BGN', $cartProducts, Phase5TestHarness::STORE_A, true, false, 0, $db), 'payment disabled unavailable');
+mtuc5_assert($availability->isAvailable($address, $total, 'EUR', $cartProducts, Phase5TestHarness::STORE_A, true, true, 0, $db, 1.0), 'valid eligible cart available');
+mtuc5_assert(!$availability->isAvailable($address, $total, 'EUR', $cartProducts, Phase5TestHarness::STORE_A, false, true, 0, $db, 1.0), 'module disabled unavailable');
+mtuc5_assert(!$availability->isAvailable($address, $total, 'EUR', $cartProducts, Phase5TestHarness::STORE_A, true, false, 0, $db, 1.0), 'payment disabled unavailable');
 
 $memoryDb->reset();
 $availability = Phase5TestHarness::availability($memoryDb, Phase5TestHarness::STORE_A);
 $db = new MtUniCreditDbAdapter($memoryDb, 'oc_');
-mtuc5_assert(!$availability->isAvailable($address, $total, 'EUR', $cartProducts, Phase5TestHarness::STORE_A, true, true, 0, $db), 'unsupported currency unavailable');
-mtuc5_assert(!$availability->isAvailable($address, 50.0, 'BGN', $cartProducts, Phase5TestHarness::STORE_A, true, true, 0, $db), 'below min unavailable');
-mtuc5_assert(!$availability->isAvailable($address, 50000.0, 'BGN', $cartProducts, Phase5TestHarness::STORE_A, true, true, 0, $db), 'above max unavailable');
+mtuc5_assert(!$availability->isAvailable($address, $total, 'BGN', $cartProducts, Phase5TestHarness::STORE_A, true, true, 0, $db, 1.0), 'unsupported currency unavailable');
+mtuc5_assert(!$availability->isAvailable($address, 50.0, 'EUR', $cartProducts, Phase5TestHarness::STORE_A, true, true, 0, $db, 1.0), 'below min unavailable');
+mtuc5_assert(!$availability->isAvailable($address, 50000.0, 'EUR', $cartProducts, Phase5TestHarness::STORE_A, true, true, 0, $db, 1.0), 'above max unavailable');
 
 $memoryDb->reset();
 $availability = Phase5TestHarness::availability($memoryDb, Phase5TestHarness::STORE_A);
 $db = new MtUniCreditDbAdapter($memoryDb, 'oc_');
 $memoryDb->seedGeoZone(Phase5TestHarness::GEO_ZONE_ID, Phase5TestHarness::COUNTRY_ID, Phase5TestHarness::ZONE_ID);
-mtuc5_assert($availability->isAvailable($address, $total, 'BGN', $cartProducts, Phase5TestHarness::STORE_A, true, true, Phase5TestHarness::GEO_ZONE_ID, $db), 'geo zone allowed');
-mtuc5_assert(!$availability->isAvailable($address, $total, 'BGN', $cartProducts, Phase5TestHarness::STORE_A, true, true, 999, $db), 'geo zone denied');
+mtuc5_assert($availability->isAvailable($address, $total, 'EUR', $cartProducts, Phase5TestHarness::STORE_A, true, true, Phase5TestHarness::GEO_ZONE_ID, $db, 1.0), 'geo zone allowed');
+mtuc5_assert(!$availability->isAvailable($address, $total, 'EUR', $cartProducts, Phase5TestHarness::STORE_A, true, true, 999, $db, 1.0), 'geo zone denied');
 
 $memoryDb->reset();
 $settings = new MtUniCreditSettingStore(new MtUniCreditDbAdapter($memoryDb, 'oc_'), MtUniCreditConstants::MODULE_SETTINGS_CODE);
@@ -131,7 +131,7 @@ $availabilityNoCache = new MtUniCreditCheckoutPaymentAvailability(
         return array(7);
     })
 );
-mtuc5_assert(!$availabilityNoCache->isAvailable($address, $total, 'BGN', $cartProducts, Phase5TestHarness::STORE_A, true, true, 0, $db), 'missing cache unavailable');
+mtuc5_assert(!$availabilityNoCache->isAvailable($address, $total, 'EUR', $cartProducts, Phase5TestHarness::STORE_A, true, true, 0, $db, 1.0), 'missing cache unavailable');
 
 $memoryDb->reset();
 Phase5TestHarness::seedFreshCache($memoryDb, Phase5TestHarness::STORE_A, 1700000000);
@@ -148,7 +148,7 @@ $staleAvailability = new MtUniCreditCheckoutPaymentAvailability(
         return array(7);
     })
 );
-mtuc5_assert(!$staleAvailability->isAvailable($address, $total, 'BGN', $cartProducts, Phase5TestHarness::STORE_A, true, true, 0, $db), 'stale cache unavailable');
+mtuc5_assert(!$staleAvailability->isAvailable($address, $total, 'EUR', $cartProducts, Phase5TestHarness::STORE_A, true, true, 0, $db, 1.0), 'stale cache unavailable');
 
 $memoryDb->reset();
 Phase5TestHarness::seedFreshCache($memoryDb, Phase5TestHarness::STORE_A);
@@ -156,8 +156,8 @@ Phase5TestHarness::seedFreshCache($memoryDb, Phase5TestHarness::STORE_B);
 $availabilityA = Phase5TestHarness::availability($memoryDb, Phase5TestHarness::STORE_A);
 $availabilityB = Phase5TestHarness::availability($memoryDb, Phase5TestHarness::STORE_B);
 $db = new MtUniCreditDbAdapter($memoryDb, 'oc_');
-mtuc5_assert($availabilityA->isAvailable($address, $total, 'BGN', $cartProducts, Phase5TestHarness::STORE_A, true, true, 0, $db), 'store A available');
-mtuc5_assert($availabilityB->isAvailable($address, $total, 'BGN', $cartProducts, Phase5TestHarness::STORE_B, true, true, 0, $db), 'store B available with own cache');
+mtuc5_assert($availabilityA->isAvailable($address, $total, 'EUR', $cartProducts, Phase5TestHarness::STORE_A, true, true, 0, $db, 1.0), 'store A available');
+mtuc5_assert($availabilityB->isAvailable($address, $total, 'EUR', $cartProducts, Phase5TestHarness::STORE_B, true, true, 0, $db, 1.0), 'store B available with own cache');
 
 $preparation = Phase5TestHarness::confirmPreparation($memoryDb, Phase5TestHarness::STORE_A);
 $order = Phase5TestHarness::orderRow(42, Phase5TestHarness::STORE_A);
@@ -172,7 +172,7 @@ $result = $preparation->prepare(array(
         return array();
     },
     'checkout_grand_total' => 500.0,
-    'currency_code' => 'BGN',
+    'currency_code' => 'EUR',
     'currency_value' => 1.0,
     'actor' => Phase5TestHarness::guestActor(),
     'store_id' => Phase5TestHarness::STORE_A,
@@ -198,7 +198,7 @@ $resultMissing = $preparation->prepare(array(
         return array();
     },
     'checkout_grand_total' => 500.0,
-    'currency_code' => 'BGN',
+    'currency_code' => 'EUR',
     'currency_value' => 1.0,
     'actor' => Phase5TestHarness::guestActor(),
     'store_id' => Phase5TestHarness::STORE_A,
@@ -218,7 +218,7 @@ $resultStore = $preparation->prepare(array(
         return array();
     },
     'checkout_grand_total' => 500.0,
-    'currency_code' => 'BGN',
+    'currency_code' => 'EUR',
     'currency_value' => 1.0,
     'actor' => Phase5TestHarness::guestActor(),
     'store_id' => Phase5TestHarness::STORE_A,
@@ -238,7 +238,7 @@ $resultChanged = $preparation->prepare(array(
         return array();
     },
     'checkout_grand_total' => 500.0,
-    'currency_code' => 'BGN',
+    'currency_code' => 'EUR',
     'currency_value' => 1.0,
     'actor' => Phase5TestHarness::guestActor(),
     'store_id' => Phase5TestHarness::STORE_A,
@@ -258,7 +258,7 @@ $resultIdempotent = $preparation->prepare(array(
         return array();
     },
     'checkout_grand_total' => 500.0,
-    'currency_code' => 'BGN',
+    'currency_code' => 'EUR',
     'currency_value' => 1.0,
     'actor' => Phase5TestHarness::guestActor(),
     'store_id' => Phase5TestHarness::STORE_A,
@@ -282,7 +282,7 @@ $resultPreparedStale = $preparation->prepare(array(
         return array();
     },
     'checkout_grand_total' => 500.0,
-    'currency_code' => 'BGN',
+    'currency_code' => 'EUR',
     'currency_value' => 1.0,
     'actor' => Phase5TestHarness::guestActor(),
     'store_id' => Phase5TestHarness::STORE_A,

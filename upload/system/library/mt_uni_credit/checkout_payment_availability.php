@@ -63,7 +63,8 @@ final class MtUniCreditCheckoutPaymentAvailability
         $moduleEnabled,
         $paymentEnabled,
         $geoZoneId,
-        MtUniCreditDbAdapter $db
+        MtUniCreditDbAdapter $db,
+        $currencyValue = null
     ) {
         if (!$moduleEnabled || !$paymentEnabled) {
             return false;
@@ -80,7 +81,17 @@ final class MtUniCreditCheckoutPaymentAvailability
             return false;
         }
 
-        $cart = $this->cartContextFactory->create($cartProducts, (float) $checkoutGrandTotal);
+        if (!MtUniCreditEurAmount::isEur($currencyCode) || !MtUniCreditEurAmount::validFactor($currencyValue)) {
+            return false;
+        }
+        try {
+            $cart = MtUniCreditEurAmount::cartContext(
+                $this->cartContextFactory->create($cartProducts, (float) $checkoutGrandTotal),
+                $currencyValue
+            );
+        } catch (InvalidArgumentException $exception) {
+            return false;
+        }
 
         return $this->eligibility->isEligible(
             $shop,
@@ -106,7 +117,8 @@ final class MtUniCreditCheckoutPaymentAvailability
         $currencyCode,
         array $cartProducts,
         $moduleEnabled,
-        $paymentEnabled
+        $paymentEnabled,
+        $currencyValue = null
     ) {
         if (!$moduleEnabled || !$paymentEnabled) {
             return false;
@@ -117,7 +129,17 @@ final class MtUniCreditCheckoutPaymentAvailability
             return false;
         }
 
-        $cart = $this->cartContextFactory->create($cartProducts, (float) $checkoutGrandTotal);
+        if (!MtUniCreditEurAmount::isEur($currencyCode) || !MtUniCreditEurAmount::validFactor($currencyValue)) {
+            return false;
+        }
+        try {
+            $cart = MtUniCreditEurAmount::cartContext(
+                $this->cartContextFactory->create($cartProducts, (float) $checkoutGrandTotal),
+                $currencyValue
+            );
+        } catch (InvalidArgumentException $exception) {
+            return false;
+        }
 
         return $this->eligibility->isEligible(
             $shop,

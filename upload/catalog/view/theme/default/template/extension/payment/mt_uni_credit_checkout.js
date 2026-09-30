@@ -13,7 +13,7 @@
   }
 
   function currencyLabel(iso) {
-    return String(iso || "").toUpperCase() === "EUR" ? "евро" : "лв.";
+    return "евро";
   }
 
   function formatMoneyWithCurrency(value, iso) {
