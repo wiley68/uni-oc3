@@ -30,7 +30,7 @@ Later phases cite contract IDs (`CALC-001`, `CP-AUTH-001`, …). Do not rename f
 
 ## EUR-OC3-002 current currency contract
 
-- The authoritative selected transaction currency and every new financing application must be EUR. `uni_eur`, including temporary CP value 3 and older values, is ignored. Missing or non-EUR currency fails closed.
+- The authoritative selected transaction currency and every new financing application must use the exact canonical code `EUR`. Case variants, whitespace, missing and non-EUR codes fail closed without repair. `uni_eur`, including temporary CP value 3 and older values, is ignored.
 - Native OC3 cart/product/order numeric fields stay in store base units. `currency_code`, positive `currency_id`, and finite positive `currency_value` identify the EUR transaction. Financing amounts are converted before scheme bounds and calculation. Product `order_product` price, total and tax stay in base units.
 - Once an order exists, its saved `currency_value` is the only conversion factor for financing, CP and SmartUCF. Current store rates never reprice durable history. The order ID, store ID, currency metadata and native total must be proved before submission or replay.
 - CP `currency` is explicit EUR. Its `price`, `parva` and `vnoska` are calculated EUR amounts. Saved payload currency, amount, order identity and fingerprint must agree with the frozen EUR application; unverifiable CP-created replay does not repost.

@@ -716,8 +716,8 @@ final class Phase3GoldenRunner
 
         foreach (array(array(), array('uni_eur' => 3), array('uni_eur' => 0), array('uni_eur' => 'old')) as $fields) {
             $shop = mtuc3_golden_shop($fields);
-            $this->assertGolden($case['id'], 'EUR accepted', true, $gate->supports($shop, ' EUR '));
-            foreach ($expect['rejected_iso'] as $iso) {
+            $this->assertGolden($case['id'], 'canonical EUR accepted', true, $gate->supports($shop, 'EUR'));
+            foreach (array_merge($expect['rejected_iso'], array(' eur ', 'EUR ', ' eur', 'eur')) as $iso) {
                 $this->assertGolden($case['id'], 'currency rejected: ' . $iso, true, !$gate->supports($shop, $iso));
             }
         }

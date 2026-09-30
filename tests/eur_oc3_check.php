@@ -28,6 +28,63 @@ function eur_oc3_assert($condition, $message)
     }
 }
 
+/** Complete another worker's Process 2 claim immediately before this worker's claim SQL. */
+final class EurOc3ProcessTwoClaimRaceDb
+{
+    private $inner;
+    private $attemptId;
+    public $claimInterceptions = 0;
+
+    public function __construct(Phase2MemoryDb $inner, $attemptId)
+    {
+        $this->inner = $inner;
+        $this->attemptId = (int) $attemptId;
+    }
+
+    public function query($sql)
+    {
+        if ($this->claimInterceptions === 0
+            && strpos($sql, "SET `process2_state` = '" . MtUniCreditProcessTwoLifecycleStates::PREPARING . "'") !== false
+            && strpos($sql, 'WHERE `attempt_id` = ' . $this->attemptId) !== false) {
+            $this->claimInterceptions++;
+            $this->inner->query(
+                "UPDATE `oc_mt_uni_credit_financing_attempt` SET `process2_state` = '"
+                . MtUniCreditProcessTwoLifecycleStates::PREPARED
+                . "' WHERE `attempt_id` = " . $this->attemptId
+            );
+        }
+
+        return $this->inner->query($sql);
+    }
+
+    public function escape($value)
+    {
+        return $this->inner->escape($value);
+    }
+
+    public function countAffected()
+    {
+        return $this->inner->countAffected();
+    }
+
+    public function getLastId()
+    {
+        return $this->inner->getLastId();
+    }
+}
+
+function eur_oc3_cp_patch_count(Phase4FakeCpHttpTransport $transport)
+{
+    $count = 0;
+    foreach ($transport->requests as $request) {
+        if (strtoupper((string) $request['method']) === 'PATCH') {
+            $count++;
+        }
+    }
+
+    return $count;
+}
+
 $validator = new MtUniCreditShopConfigurationSnapshotValidator();
 foreach (array(null, 3, 0, 1, 2, 99) as $mode) {
     $shop = mtuc4_valid_shop_snapshot();
@@ -47,6 +104,10 @@ foreach (array(null, 3, 0, 1, 2, 99) as $mode) {
 $gate = new MtUniCreditCurrencyGate();
 foreach (array('EUR' => true, 'BGN' => false, 'USD' => false, 'GBP' => false, '' => false) as $iso => $expected) {
     eur_oc3_assert($gate->supports(array('uni_eur' => 3), $iso) === $expected, 'EUR gate ' . $iso);
+}
+foreach (array(' eur ', 'EUR ', ' eur', 'eur') as $malformedCode) {
+    eur_oc3_assert(!$gate->supports(array('uni_eur' => 3), $malformedCode),
+        'EUR gate rejects non-canonical ' . json_encode($malformedCode));
 }
 
 // Independent expectations: base unit 200 + 20% tax = 240; quantity 2;
@@ -107,6 +168,29 @@ eur_oc3_assert(MtUniCreditEurAmount::orderFactor($invalidId, Phase5TestHarness::
     && MtUniCreditEurAmount::orderFactor($invalidFactor, Phase5TestHarness::STORE_A, 99001) === null,
     'Malformed native currency ID or factor fails closed');
 eur_oc3_assert(MtUniCreditEurAmount::matchesCalculation($order, $eurCalc), 'Checkout base 500 corresponds to EUR 250');
+foreach (array(' eur ', 'EUR ', ' eur', 'eur', '', 'BGN', 'USD') as $invalidCode) {
+    $invalidOrder = $order;
+    $invalidOrder['currency_code'] = $invalidCode;
+    $cpBoundaryRejected = false;
+    $bankBoundaryRejected = false;
+    try {
+        (new MtUniCreditControlPanelOrderPayloadBuilder())->build(
+            99001, $invalidOrder, Phase7TestHarness::orderProducts(), $eurCalc, mtuc4_valid_shop_snapshot()
+        );
+    } catch (InvalidArgumentException $exception) {
+        $cpBoundaryRejected = true;
+    }
+    try {
+        (new MtUniCreditSmartUcfPayloadBuilder())->build(
+            mtuc4_valid_shop_snapshot(), $invalidOrder, Phase7TestHarness::orderProducts(), $eurCalc, 99001
+        );
+    } catch (InvalidArgumentException $exception) {
+        $bankBoundaryRejected = true;
+    }
+    eur_oc3_assert(MtUniCreditEurAmount::orderFactor($invalidOrder, Phase5TestHarness::STORE_A, 99001) === null
+        && $cpBoundaryRejected && $bankBoundaryRejected,
+        'Native order and direct builders reject ' . json_encode($invalidCode));
+}
 $cp = (new MtUniCreditControlPanelOrderPayloadBuilder())->build(
     99001, $order, Phase7TestHarness::orderProducts(), $eurCalc, mtuc4_valid_shop_snapshot()
 );
@@ -126,6 +210,20 @@ $quantityItems = (new MtUniCreditSmartUcfPayloadBuilder())->build(
 );
 eur_oc3_assert($quantityItems['items'][0]['singlePrice'] === '50.00',
     'SmartUCF ex-tax base line 200 x 0.5 / 2 = EUR 50 per item');
+// Existing OC3 item meaning: order_product.total is ex-tax even when order.total includes tax.
+$taxOrder = $order;
+$taxOrder['total'] = 480.0;
+$taxCalc = (new MtUniCreditCalculator())->calculateScheme(
+    mtuc4_valid_shop_snapshot(), 240.0, $calc->scheme, 0.0
+);
+$taxSmart = (new MtUniCreditSmartUcfPayloadBuilder())->build(
+    mtuc4_valid_shop_snapshot(), $taxOrder,
+    array(array('product_id' => 42, 'name' => 'Taxed units', 'quantity' => 2,
+        'price' => 200.0, 'total' => 400.0, 'tax' => 40.0)),
+    $taxCalc, 99001
+);
+eur_oc3_assert($taxSmart['totalPrice'] === '240.00' && $taxSmart['items'][0]['singlePrice'] === '100.00',
+    'SmartUCF preserves OC3 ex-tax item: base 400 x 0.5 / 2 = EUR 100, gross EUR 240');
 eur_oc3_assert($smart['initialPayment'] === '0.00' && $smart['monthlyPayment'] === '262.50',
     'SmartUCF initial EUR 0 and monthly EUR 262.50');
 
@@ -159,6 +257,17 @@ $attempt = $stack['attempts']->findByStoreOrder($stack['storeId'], 99002);
 $payload = is_array($attempt) ? json_decode((string) $attempt['cp_payload'], true) : null;
 eur_oc3_assert(is_array($payload) && $payload['currency'] === 'EUR' && abs($payload['price'] - 250.0) < 0.001,
     'Checkout CP payload uses saved factor, EUR 250');
+$frozenSnapshot = MtUniCreditApplicationSnapshot::decode($attempt['application_snapshot_json']);
+foreach (array(' eur ', 'EUR ', ' eur', 'eur', '', 'BGN', 'USD') as $invalidCode) {
+    $invalidSnapshot = $frozenSnapshot;
+    $invalidSnapshot['financial']['currency'] = $invalidCode;
+    eur_oc3_assert(!MtUniCreditEurAmount::matchesSnapshot($invalidSnapshot, $input['order']),
+        'Application snapshot rejects ' . json_encode($invalidCode));
+}
+$missingSnapshotCode = $frozenSnapshot;
+unset($missingSnapshotCode['financial']['currency']);
+eur_oc3_assert(!MtUniCreditEurAmount::matchesSnapshot($missingSnapshotCode, $input['order']),
+    'Application snapshot rejects missing currency');
 $again = $stack['submission']->submit($input);
 eur_oc3_assert(!empty($again['success']) && Phase7TestHarness::countOrderPosts($transport) === 1,
     'Historical checkout replay does not repost CP');
@@ -176,6 +285,17 @@ $bgn['currency_code'] = 'EUR';
 $deniedHistorical = $stack['submission']->submit($bgn);
 eur_oc3_assert(empty($deniedHistorical['success']) && Phase7TestHarness::countOrderPosts($transport) === $beforePosts,
     'Current EUR session cannot replay a native BGN checkout order');
+foreach (array(' eur ', 'EUR ', ' eur', 'eur', '', 'BGN', 'USD') as $invalidCode) {
+    $invalidSession = $input;
+    $invalidSession['currency_code'] = $invalidCode;
+    $deniedSession = $stack['submission']->submit($invalidSession);
+    $invalidNative = $input;
+    $invalidNative['order']['currency_code'] = $invalidCode;
+    $deniedNative = $stack['submission']->submit($invalidNative);
+    eur_oc3_assert(empty($deniedSession['success']) && empty($deniedNative['success'])
+        && Phase7TestHarness::countOrderPosts($transport) === $beforePosts,
+        'Direct checkout rejects session/native ' . json_encode($invalidCode) . ' before HTTP');
+}
 
 // Product/Cart materialization: the source cart and draft stay base 500; the
 // historical order factor 0.5 makes the financing/CP amount EUR 250.
@@ -231,6 +351,45 @@ foreach (array('product', 'cart') as $entry) {
 
 // A successful CP attempt with corrupted saved payload must not be repaired by reposting.
 $table = $stack['db']->getPrefix() . MtUniCreditPersistenceTableNames::FINANCING_ATTEMPT;
+foreach (array(' eur ', 'EUR ', ' eur', 'eur', '', 'BGN', 'USD') as $invalidCode) {
+    $invalidPayload = $payload;
+    $invalidPayload['currency'] = $invalidCode;
+    $invalidJson = json_encode($invalidPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $invalidFingerprint = MtUniCreditControlPanelOrderPayloadBuilder::fingerprint($invalidPayload);
+    $stack['db']->query(
+        "UPDATE `{$table}` SET `cp_payload` = '" . $stack['db']->escape($invalidJson)
+        . "', `request_fingerprint` = '" . $stack['db']->escape($invalidFingerprint)
+        . "' WHERE `attempt_id` = " . (int) $attempt['attempt_id']
+    );
+    $invalidReplay = $stack['submission']->submit($input);
+    $afterInvalid = $stack['attempts']->findByStoreOrder($stack['storeId'], 99002);
+    eur_oc3_assert(empty($invalidReplay['success'])
+        && Phase7TestHarness::countOrderPosts($transport) === $beforePosts
+        && (string) $afterInvalid['cp_payload'] === $invalidJson
+        && $afterInvalid['state'] === MtUniCreditFinancingAttemptState::CP_CREATED,
+        'Saved CP payload rejects ' . json_encode($invalidCode) . ' without repair or HTTP');
+}
+$missingCurrencyPayload = $payload;
+unset($missingCurrencyPayload['currency']);
+$missingCurrencyJson = json_encode($missingCurrencyPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+$missingCurrencyFingerprint = MtUniCreditControlPanelOrderPayloadBuilder::fingerprint($missingCurrencyPayload);
+$stack['db']->query(
+    "UPDATE `{$table}` SET `cp_payload` = '" . $stack['db']->escape($missingCurrencyJson)
+    . "', `request_fingerprint` = '" . $stack['db']->escape($missingCurrencyFingerprint)
+    . "' WHERE `attempt_id` = " . (int) $attempt['attempt_id']
+);
+$missingCurrencyReplay = $stack['submission']->submit($input);
+$afterMissingCurrency = $stack['attempts']->findByStoreOrder($stack['storeId'], 99002);
+eur_oc3_assert(empty($missingCurrencyReplay['success'])
+    && Phase7TestHarness::countOrderPosts($transport) === $beforePosts
+    && (string) $afterMissingCurrency['cp_payload'] === $missingCurrencyJson,
+    'Saved CP payload rejects missing currency without repair or HTTP');
+$originalJson = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+$stack['db']->query(
+    "UPDATE `{$table}` SET `cp_payload` = '" . $stack['db']->escape($originalJson)
+    . "', `request_fingerprint` = '" . $stack['db']->escape((string) $attempt['request_fingerprint'])
+    . "' WHERE `attempt_id` = " . (int) $attempt['attempt_id']
+);
 $stack['db']->query(
     "UPDATE `{$table}` SET `cp_payload` = '{\"currency\":\"BGN\"}' WHERE `attempt_id` = " . (int) $attempt['attempt_id']
 );
@@ -276,6 +435,33 @@ $p2Result = $p2['submission']->submit($p2Input);
 $p2Attempt = $p2['attempts']->findByStoreOrder($p2['storeId'], 99007);
 eur_oc3_assert(!empty($p2Result['success']) && Phase9TestHarness::smartUcfCallCount($p2['smartUcfProbe']) === 0,
     'Process 2 EUR success sends no SmartUCF request');
+$p2Table = $p2['db']->getPrefix() . MtUniCreditPersistenceTableNames::FINANCING_ATTEMPT;
+$p2['db']->query(
+    "UPDATE `{$p2Table}` SET `process2_state` = '" . MtUniCreditProcessTwoLifecycleStates::NOT_STARTED
+    . "' WHERE `attempt_id` = " . (int) $p2Attempt['attempt_id']
+);
+$raceDb = new EurOc3ProcessTwoClaimRaceDb($p2['memoryDb'], $p2Attempt['attempt_id']);
+$raceAdapter = new MtUniCreditDbAdapter($raceDb, $p2['db']->getPrefix());
+$raceCoordinator = MtUniCreditProcessTwoServiceFactory::coordinator(
+    $raceAdapter, $p2['client'], $p2['process2Mailer'], $p2['clock'], Phase4TestHarness::testSecretInput()
+);
+$raceContext = array('order_id' => 99007, 'native_order' => $p2Input['order']);
+$raceShop = mtuc4_valid_shop_snapshot(array('uni_proces' => 1));
+$patchesBeforeRace = eur_oc3_cp_patch_count($p2Transport);
+$postsBeforeRace = Phase7TestHarness::countOrderPosts($p2Transport);
+$mailsBeforeRace = count($p2['process2Mailer']->sent);
+$raceReplay = $raceCoordinator->run(
+    (int) $p2Attempt['attempt_id'], $p2['storeId'], 99007, $raceShop, $raceContext
+);
+eur_oc3_assert($raceDb->claimInterceptions === 1 && !empty($raceReplay['success'])
+    && !empty($raceReplay['replay'])
+    && $raceReplay['process2_state'] === MtUniCreditProcessTwoLifecycleStates::PREPARED,
+    'Process 2 lost claim actually enters PREPARED replay with native EUR proof');
+eur_oc3_assert(Phase7TestHarness::countOrderPosts($p2Transport) === $postsBeforeRace
+    && eur_oc3_cp_patch_count($p2Transport) === $patchesBeforeRace
+    && Phase9TestHarness::smartUcfCallCount($p2['smartUcfProbe']) === 0
+    && count($p2['process2Mailer']->sent) === $mailsBeforeRace,
+    'Process 2 lost-claim replay adds no CP create/PATCH, SmartUCF or mail');
 $oldP2Order = $p2Input['order'];
 $oldP2Order['currency_code'] = 'BGN';
 $mailBefore = count($p2['process2Mailer']->sent);
@@ -286,6 +472,21 @@ $p2Denied = $p2['process2']->run(
 eur_oc3_assert(empty($p2Denied['success']) && Phase9TestHarness::smartUcfCallCount($p2['smartUcfProbe']) === 0
     && count($p2['process2Mailer']->sent) === $mailBefore,
     'Process 2 direct replay rejects BGN before status/mail and never calls SmartUCF');
+$p2Missing = $p2['process2']->run(
+    (int) $p2Attempt['attempt_id'], $p2['storeId'], 99007, $raceShop,
+    array('order_id' => 99007)
+);
+eur_oc3_assert(empty($p2Missing['success']) && $p2Missing['error'] === 'process2_failed'
+    && eur_oc3_cp_patch_count($p2Transport) === $patchesBeforeRace
+    && count($p2['process2Mailer']->sent) === $mailBefore,
+    'Process 2 rejects missing native order without CP/mail side effects');
+$p2CurrentEurOldBgn = $p2['process2']->run(
+    (int) $p2Attempt['attempt_id'], $p2['storeId'], 99007, $raceShop,
+    array('order_id' => 99007, 'currency_code' => 'EUR', 'native_order' => $oldP2Order)
+);
+eur_oc3_assert(empty($p2CurrentEurOldBgn['success'])
+    && eur_oc3_cp_patch_count($p2Transport) === $patchesBeforeRace,
+    'Process 2 ignores current EUR context when durable native order is BGN');
 
 $transportBypass = new Phase4FakeCpHttpTransport();
 $bypass = Phase9TestHarness::stack($transportBypass);
@@ -295,6 +496,14 @@ $bypassInput = Phase9TestHarness::rebindProductApplicationToken($bypassInput);
 $bypassResult = $bypass['storefront']->submit($bypassInput);
 eur_oc3_assert(empty($bypassResult['success']) && Phase7TestHarness::countOrderPosts($transportBypass) === 0,
     'Direct storefront service rejects BGN before order or HTTP');
+foreach (array(' eur ', 'EUR ', ' eur', 'eur') as $invalidCode) {
+    $invalidBypass = Phase9TestHarness::productStorefrontInput($bypass, 99005);
+    $invalidBypass['currency_code'] = $invalidCode;
+    $invalidBypassResult = $bypass['storefront']->submit($invalidBypass);
+    eur_oc3_assert(empty($invalidBypassResult['success'])
+        && Phase7TestHarness::countOrderPosts($transportBypass) === 0,
+        'Direct storefront service rejects ' . json_encode($invalidCode) . ' before HTTP');
+}
 
 echo PHP_EOL . 'EUR OC3: ' . $passes . ' passed, ' . count($failures) . ' failed' . PHP_EOL;
 exit($failures === array() ? 0 : 1);

@@ -93,11 +93,12 @@ final class MtUniCreditStorefrontFinancingSubmissionService
             return $this->fail('validation', false);
         }
 
-        $currency = strtoupper(trim((string) (isset($input['currency_code']) ? $input['currency_code'] : '')));
+        $currency = isset($input['currency_code']) ? $input['currency_code'] : null;
         $currentFactor = isset($input['currency_value']) ? $input['currency_value'] : null;
         if (!MtUniCreditEurAmount::isEur($currency)) {
             return $this->fail('unavailable', false);
         }
+        $currency = 'EUR';
         $currentFactorValid = MtUniCreditEurAmount::validFactor($currentFactor);
         $schemeKey = trim((string) (isset($input['scheme_key']) ? $input['scheme_key'] : ''));
         $parsed = MtUniCreditStorefrontCalculatorPresenter::parseSchemeKey($schemeKey);

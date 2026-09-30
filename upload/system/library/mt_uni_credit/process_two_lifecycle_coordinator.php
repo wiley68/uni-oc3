@@ -122,6 +122,9 @@ final class MtUniCreditProcessTwoLifecycleCoordinator
                 'recoverable' => false,
             );
         }
+        // Mail context excludes the order, but a lost claim must replay with the
+        // same native evidence so run() can verify the latest durable state again.
+        $provenOrderContext = $orderContext;
         unset($orderContext['native_order']);
 
         $state = (string) (isset($row['process2_state'])
@@ -177,7 +180,7 @@ final class MtUniCreditProcessTwoLifecycleCoordinator
                 && (string) (isset($fresh['process2_state']) ? $fresh['process2_state'] : '')
                 === MtUniCreditProcessTwoLifecycleStates::PREPARED
             ) {
-                return $this->run($attemptId, $storeId, $localOrderId, $shop, $orderContext);
+                return $this->run($attemptId, $storeId, $localOrderId, $shop, $provenOrderContext);
             }
 
             return array(

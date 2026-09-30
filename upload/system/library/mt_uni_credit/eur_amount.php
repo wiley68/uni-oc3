@@ -5,7 +5,7 @@ final class MtUniCreditEurAmount
 {
     public static function isEur($code)
     {
-        return is_string($code) && strtoupper(trim($code)) === 'EUR';
+        return $code === 'EUR';
     }
 
     public static function validFactor($value)
