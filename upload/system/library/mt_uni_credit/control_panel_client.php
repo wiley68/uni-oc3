@@ -29,13 +29,19 @@ final class MtUniCreditControlPanelClient implements MtUniCreditControlPanelOrde
     /** @var MtUniCreditCpConfigurationException|null Pre-send destination/config defect (request never sent). */
     private $configurationError;
 
+    /** @var string|null Only populated after the complete destination policy succeeds. */
+    private $destinationHostname;
+
+    /** @var array<string, mixed> Metadata only; never headers, payloads or exception messages. */
+    private $outboundDiagnostic = array();
+
     /**
      * @param MtUniCreditCredentialsRepository $credentials
      * @param MtUniCreditCpTokenRepository $tokens
      * @param MtUniCreditCpHttpTransport $transport
      * @param string $shopName
      * @param int $storeId
-     * @param string|null $baseUrl
+     * @param MtUniCreditDeploymentEnvironment|null $environment Test fixtures use the same file-based authority.
      * @param callable|null $clock
      * @param MtUniCreditCpDestinationPolicy|null $destinationPolicy
      */
@@ -45,7 +51,7 @@ final class MtUniCreditControlPanelClient implements MtUniCreditControlPanelOrde
         MtUniCreditCpHttpTransport $transport,
         $shopName,
         $storeId,
-        $baseUrl = null,
+        $environment = null,
         $clock = null,
         $destinationPolicy = null
     ) {
@@ -57,6 +63,7 @@ final class MtUniCreditControlPanelClient implements MtUniCreditControlPanelOrde
         $this->storeId = (int) $storeId;
         $this->configurationError = null;
         $this->baseUrl = '';
+        $this->destinationHostname = null;
 
         $policy = $destinationPolicy instanceof MtUniCreditCpDestinationPolicy
             ? $destinationPolicy
@@ -65,20 +72,21 @@ final class MtUniCreditControlPanelClient implements MtUniCreditControlPanelOrde
         // Soft-resolve destination here so Product/Cart/Checkout order materialization is not
         // aborted by broken CP packaging URLs. First HTTP call raises ConfigurationException.
         try {
-            if ($baseUrl !== null && trim($baseUrl) !== '') {
-                $resolved = trim($baseUrl);
-            } else {
-                $resolved = (new MtUniCreditDeploymentEnvironment(null, $policy))->controlPanelApiBaseUrl();
+            if ($environment !== null && !$environment instanceof MtUniCreditDeploymentEnvironment) {
+                throw new InvalidArgumentException('The CP destination must come from a deployment environment file.');
             }
-
-            // Defense-in-depth: never accept an unsafe override that bypasses DeploymentEnvironment.
+            $deployment = $environment !== null ? $environment : new MtUniCreditDeploymentEnvironment(null, $policy);
+            $resolved = $deployment->controlPanelApiBaseUrl();
             $this->baseUrl = $policy->assertTrustedApiBase($resolved);
+            $this->destinationHostname = parse_url($this->baseUrl, PHP_URL_HOST);
         } catch (Exception $exception) {
             $this->baseUrl = '';
             $this->configurationError = new MtUniCreditCpConfigurationException(
                 'The Control Panel destination is not configured for outbound create.',
                 0,
-                $exception
+                $exception,
+                $exception instanceof MtUniCreditCpConfigurationException || $exception instanceof MtUniCreditCpDestinationException
+                    ? $exception->getDiagnosticReason() : 'configuration_invalid'
             );
         }
 
@@ -92,6 +100,7 @@ final class MtUniCreditControlPanelClient implements MtUniCreditControlPanelOrde
      */
     public function login()
     {
+        $this->beginDiagnostic('POST', '/auth/login');
         $unicid = $this->credentials->getUnicid($this->storeId);
         $secret = $this->credentials->getSecret($this->storeId);
         if ($unicid === '' || $secret === null || $this->shopName === '') {
@@ -115,6 +124,7 @@ final class MtUniCreditControlPanelClient implements MtUniCreditControlPanelOrde
      */
     public function refreshToken()
     {
+        $this->beginDiagnostic('POST', '/auth/refresh');
         $token = $this->tokens->getAccessToken();
         if ($token === null) {
             throw new MtUniCreditCpAuthenticationException('There is no Control Panel token to refresh.');
@@ -136,6 +146,7 @@ final class MtUniCreditControlPanelClient implements MtUniCreditControlPanelOrde
      */
     public function logout()
     {
+        $this->beginDiagnostic('POST', '/auth/logout');
         $token = $this->tokens->getAccessToken();
         if ($token === null) {
             return MtUniCreditInboundApiEnvelope::success('Logged out locally.');
@@ -277,6 +288,7 @@ final class MtUniCreditControlPanelClient implements MtUniCreditControlPanelOrde
      */
     private function authenticatedRequest($method, $path, $payload = null)
     {
+        $this->beginDiagnostic($method, $path);
         $token = $this->ensureToken();
 
         try {
@@ -366,6 +378,7 @@ final class MtUniCreditControlPanelClient implements MtUniCreditControlPanelOrde
      */
     private function send($method, $path, $payload = null, $token = null)
     {
+        $this->beginDiagnostic($method, $path);
         if ($this->configurationError instanceof MtUniCreditCpConfigurationException) {
             throw $this->configurationError;
         }
@@ -383,6 +396,8 @@ final class MtUniCreditControlPanelClient implements MtUniCreditControlPanelOrde
             $headers['Authorization'] = $this->tokens->getTokenType() . ' ' . $token;
         }
 
+        $this->outboundDiagnostic['phase'] = 'transport';
+        $this->outboundDiagnostic['transport_attempted'] = true;
         $response = $this->transport->request(
             $method,
             $this->baseUrl . '/' . ltrim($path, '/'),
@@ -390,12 +405,30 @@ final class MtUniCreditControlPanelClient implements MtUniCreditControlPanelOrde
             $payload
         );
 
+        $this->outboundDiagnostic['phase'] = 'response_validation';
+        $this->outboundDiagnostic['http_status'] = $response->getStatusCode() > 0 ? $response->getStatusCode() : null;
+
         if ($response->getStatusCode() < 200 || $response->getStatusCode() >= 300) {
             // Including 401: bare/malformed bodies are not treated as safe auth evidence.
             throw $this->buildHttpFailure($response->getStatusCode(), $response->getBody());
         }
 
         return $this->decodeSuccessEnvelope($response->getBody());
+    }
+
+    /** Safe snapshot of the most recent CP operation, including authentication sub-operations. */
+    public function getOutboundDiagnostic($exception = null)
+    {
+        $state = $this->outboundDiagnostic !== array()
+            ? $this->outboundDiagnostic
+            : MtUniCreditCpOutboundDiagnostics::begin('', '', $this->destinationHostname);
+
+        return $exception instanceof Throwable ? MtUniCreditCpOutboundDiagnostics::failure($state, $exception) : $state;
+    }
+
+    private function beginDiagnostic($method, $path)
+    {
+        $this->outboundDiagnostic = MtUniCreditCpOutboundDiagnostics::begin($method, $path, $this->destinationHostname);
     }
 
     /**

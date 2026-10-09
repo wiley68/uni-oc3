@@ -22,6 +22,9 @@ $scripts = array(
     'phase_canonical_freetext_check.php',
     'phase_canonical_order_id_string_check.php',
     'phase_rem_oc3_cache_lifecycle_check.php',
+    'phase_aud008_f02_cp_destination_policy_check.php',
+    'phase_cp_outbound_remediation_check.php',
+    'phase_oc3_outbound_compatibility_check.php',
 );
 
 // Optional safe historical scripts that remain offline and usually green.

@@ -6,7 +6,7 @@
   "smartucf_service_path": "/suos/api/otp",
   "smartucf_application_path": "/sucf-online/Request/Start",
   "smartucf_session_start_suffix": "sucfOnlineSessionStart",
-  "allowlist_rule": "Production/test Control Panel hosts and SmartUCF destinations are constants/configuration, not arbitrary admin URLs. HTTPS required.",
+  "allowlist_rule": "Control Panel destination comes solely from config/environment.php control_panel_url; there is no CP hostname allowlist or raw URL override. Structural HTTPS/public DNS validation and public-address pinning apply. SmartUCF retains its separate endpoint policy. No arbitrary admin URL selection.",
   "deferred_coordination": {
     "deployment_cp_hostname": {
       "phase": 4,

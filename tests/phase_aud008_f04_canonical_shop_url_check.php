@@ -272,7 +272,7 @@ $client = new MtUniCreditControlPanelClient(
     $transport,
     MtUniCreditCanonicalShopUrlProvider::normalize($exactIdentity . '/'),
     Phase4TestHarness::TEST_STORE_ID,
-    'https://cp-test.example.com/api/v1',
+    new MtUniCreditDeploymentEnvironment(Phase4TestHarness::environmentConfigPath()),
     null,
     Phase4TestHarness::offlineDestinationPolicy()
 );

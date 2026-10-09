@@ -347,6 +347,13 @@ final class MtUniCreditDiagnosticDebugLogRepository
             'response' => array_key_exists('response', $summary) ? $summary['response'] : null,
             'transport_error' => isset($summary['transport_error']) ? $summary['transport_error'] : null,
             'message' => isset($summary['message']) ? (string) $summary['message'] : '',
+            'phase' => isset($summary['phase']) ? (string) $summary['phase'] : null,
+            'transport_attempted' => isset($summary['transport_attempted']) ? (bool) $summary['transport_attempted'] : null,
+            'http_status' => isset($summary['http_status']) ? (int) $summary['http_status'] : null,
+            'exception_class' => isset($summary['exception_class']) ? (string) $summary['exception_class'] : null,
+            'reason_code' => isset($summary['reason_code']) ? (string) $summary['reason_code'] : null,
+            'destination_hostname' => isset($summary['destination_hostname']) ? (string) $summary['destination_hostname'] : null,
+            'attempt_id' => isset($summary['attempt_id']) ? (int) $summary['attempt_id'] : null,
             'created_at_gmt' => isset($row['created_at']) ? (string) $row['created_at'] : '',
         );
     }

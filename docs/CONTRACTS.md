@@ -46,6 +46,7 @@ Later phases cite contract IDs (`CALC-001`, `CP-AUTH-001`, …). Do not rename f
 - OpenCart 3.0.3.6
 - OpenCart 3.0.3.8
 - OpenCart 3.0.3.9
+- OpenCart 3.0.5.1 (same module/package; core PHP floor 8.1+)
 
 **Primary local platform reference:** OpenCart 3.0.3.9 (`reference-oc3-core`)
 
@@ -58,6 +59,9 @@ Later phases cite contract IDs (`CALC-001`, `CP-AUTH-001`, …). Do not rename f
 | 3.0.3.6 | target                   | no (tree absent)              | no                 | no              | no                |
 | 3.0.3.8 | target                   | no (tree absent)              | no                 | no              | no                |
 | 3.0.3.9 | local platform reference | yes (source characterization) | no live module run | no              | no                |
+| 3.0.5.1 | target | yes (official source fixtures) | no live module run | no | no |
+
+Focused official-core fixture probes now pass on both 3.0.3.9 and 3.0.5.1: Registry/Loader/Proxy, admin refresh logging, language/events, native install/reinstall permissions, session data continuity and all 7 default-theme OCMOD anchors. See `docs/CP_OUTBOUND_COMPATIBILITY.md`; these probes do not replace installed-store/PHP-version/MySQL/browser verification.
 
 A version is **not** “tested” merely because it is a target. Characterization of 3.0.3.9 does not prove 3.0.3.6/3.0.3.8 anchors.
 
@@ -303,7 +307,8 @@ Login is **not** idempotent. Token length 64, type Bearer, TTL **86400** seconds
 - CP API prefix: **`/api/v1`**
 - SmartUCF destination allowlist: **`online.ucfin.bg`**, **`onlinetest.ucfin.bg`**
 - Trusted paths: `/suos/api/otp/` + `sucfOnlineSessionStart`; `/sucf-online/Request/Start`
-- Control Panel and SmartUCF hosts are configuration constants, **not** arbitrary admin URLs. HTTPS required.
+- Control Panel destination authority is exclusively `upload/system/library/mt_uni_credit/config/environment.php` (`control_panel_url`). There is no CP hostname allowlist and no raw URL constructor override. Any legitimate public HTTPS CP deployment is selected by changing only this value before packaging. SmartUCF retains its separate endpoint policy; neither destination is selectable through arbitrary admin URLs.
+- CP validation requires an absolute HTTPS origin, a valid public DNS hostname, port 443/default, no userinfo/query/fragment and no origin path beyond `/`. API paths use `/api/v1`. HTTP transport rejects private/reserved DNS addresses, pins a validated public address, disables redirects and implicit proxies, and preserves TLS hostname/peer verification. Invalid configuration never falls back to another host.
 
 **Deferred (not Phase 1 blockers):**
 

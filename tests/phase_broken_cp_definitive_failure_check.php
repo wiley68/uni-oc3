@@ -303,7 +303,7 @@ try {
         $transportBrokenDest,
         Phase4TestHarness::TEST_SHOP_URL,
         Phase5TestHarness::STORE_A,
-        'https://cp-test.example.com/__broken_cp__',
+        new MtUniCreditDeploymentEnvironment(__DIR__ . '/fixtures/cp_broken_environment.php'),
         function () {
             return Phase9TestHarness::NOW;
         },

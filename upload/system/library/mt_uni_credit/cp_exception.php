@@ -21,6 +21,28 @@ class MtUniCreditCpException extends RuntimeException
 
 class MtUniCreditCpConnectionException extends MtUniCreditCpException
 {
+    private $transportAttempted;
+
+    private $diagnosticReason;
+
+    public function __construct($message = '', $code = 0, $previous = null, $transportAttempted = null, $reason = 'transport_failure')
+    {
+        parent::__construct($message, (int) $code, $previous);
+        $this->transportAttempted = $transportAttempted === null ? null : (bool) $transportAttempted;
+        $this->diagnosticReason = in_array($reason, array('transport_failure', 'dns_failure', 'tls_failure', 'timeout', 'payload_invalid', 'curl_unavailable'), true)
+            ? $reason : 'transport_failure';
+    }
+
+    public function wasTransportAttempted()
+    {
+        return $this->transportAttempted;
+    }
+
+    public function getDiagnosticReason()
+    {
+        return $this->diagnosticReason;
+    }
+
     /**
      * @return bool
      */
@@ -201,11 +223,42 @@ final class MtUniCreditCpUncertainResponseException extends MtUniCreditCpExcepti
  */
 final class MtUniCreditCpConfigurationException extends MtUniCreditCpException
 {
+    private $diagnosticReason;
+
+    public function __construct($message = '', $code = 0, $previous = null, $reason = 'configuration_invalid')
+    {
+        parent::__construct($message, (int) $code, $previous);
+        $this->diagnosticReason = in_array($reason, array('configuration_invalid', 'environment_unreadable', 'destination_unsafe'), true)
+            ? $reason : 'configuration_invalid';
+    }
+
+    public function getDiagnosticReason()
+    {
+        return $this->diagnosticReason;
+    }
+
     /**
      * @return bool
      */
     public function isPermanentAuthOrConfiguration()
     {
         return true;
+    }
+}
+
+/** Structured policy reason without inspecting/logging exception messages or rejected URLs. */
+final class MtUniCreditCpDestinationException extends InvalidArgumentException
+{
+    private $diagnosticReason;
+
+    public function __construct($message, $reason)
+    {
+        parent::__construct($message);
+        $this->diagnosticReason = $reason === 'destination_unsafe' ? $reason : 'configuration_invalid';
+    }
+
+    public function getDiagnosticReason()
+    {
+        return $this->diagnosticReason;
     }
 }

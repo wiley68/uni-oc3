@@ -35,7 +35,7 @@ final class MtUniCreditDeploymentEnvironment
     }
 
     /**
-     * Authoritative Control Panel host origin (no API suffix), e.g. https://uni.avalonbg.com
+     * Authoritative Control Panel host origin (no API suffix).
      *
      * @return string
      */
@@ -44,16 +44,17 @@ final class MtUniCreditDeploymentEnvironment
         $loaded = $this->load();
         $url = isset($loaded[self::CONTROL_PANEL_URL_KEY]) ? $loaded[self::CONTROL_PANEL_URL_KEY] : null;
         if (!is_string($url)) {
-            throw new RuntimeException('Control Panel URL is not configured in system/library/mt_uni_credit/config/environment.php.');
+            throw new MtUniCreditCpConfigurationException('Control Panel URL is not configured in system/library/mt_uni_credit/config/environment.php.');
         }
 
         try {
             return $this->destinationPolicy->assertTrustedOrigin($url);
         } catch (InvalidArgumentException $exception) {
-            throw new RuntimeException(
+            throw new MtUniCreditCpConfigurationException(
                 'Control Panel URL is invalid in system/library/mt_uni_credit/config/environment.php.',
                 0,
-                $exception
+                $exception,
+                $exception instanceof MtUniCreditCpDestinationException ? $exception->getDiagnosticReason() : 'configuration_invalid'
             );
         }
     }
@@ -70,7 +71,7 @@ final class MtUniCreditDeploymentEnvironment
                 $this->controlPanelUrl() . self::API_PATH_PREFIX
             );
         } catch (InvalidArgumentException $exception) {
-            throw new RuntimeException(
+            throw new MtUniCreditCpConfigurationException(
                 'Control Panel API base URL is invalid.',
                 0,
                 $exception
@@ -120,14 +121,17 @@ final class MtUniCreditDeploymentEnvironment
     private function load()
     {
         if (!is_file($this->configFilePath) || !is_readable($this->configFilePath)) {
-            throw new RuntimeException(
-                'Deployment environment file system/library/mt_uni_credit/config/environment.php is missing or unreadable.'
+            throw new MtUniCreditCpConfigurationException(
+                'Deployment environment file system/library/mt_uni_credit/config/environment.php is missing or unreadable.',
+                0,
+                null,
+                'environment_unreadable'
             );
         }
 
         $loaded = include $this->configFilePath;
         if (!is_array($loaded)) {
-            throw new RuntimeException(
+            throw new MtUniCreditCpConfigurationException(
                 'Deployment environment file system/library/mt_uni_credit/config/environment.php must return an array.'
             );
         }

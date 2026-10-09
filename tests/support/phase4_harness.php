@@ -75,15 +75,13 @@ final class Phase4TestHarness
     }
 
     /**
-     * Explicit offline-only CP destination trust (never the production default).
+     * Shared structural policy. Offline isolation comes from the fake transport/network guard.
      *
      * @return MtUniCreditCpDestinationPolicy
      */
     public static function offlineDestinationPolicy()
     {
-        return new MtUniCreditCpDestinationPolicy(array(
-            MtUniCreditCpDestinationPolicy::HOST_OFFLINE_TEST,
-        ));
+        return new MtUniCreditCpDestinationPolicy();
     }
 
     /**

@@ -15,7 +15,7 @@ final class MtUniCreditCpServiceFactory
      * @param callable|null $wallClock
      * @param string|null $encryptionSecretInputOverride
      * @param string|null $environmentConfigPath
-     * @param MtUniCreditCpDestinationPolicy|null $destinationPolicy Explicit trust authority (tests inject offline hosts).
+     * @param MtUniCreditCpDestinationPolicy|null $destinationPolicy Shared structural/network validation.
      * @return array<string, mixed>
      */
     public static function create(
@@ -40,10 +40,7 @@ final class MtUniCreditCpServiceFactory
             ? $destinationPolicy
             : null;
 
-        $baseUrl = null;
-        if ($environmentConfigPath !== null && $environmentConfigPath !== '') {
-            $baseUrl = (new MtUniCreditDeploymentEnvironment($environmentConfigPath, $policy))->controlPanelApiBaseUrl();
-        }
+        $environment = new MtUniCreditDeploymentEnvironment($environmentConfigPath, $policy);
 
         $client = new MtUniCreditControlPanelClient(
             $credentials,
@@ -51,7 +48,7 @@ final class MtUniCreditCpServiceFactory
             $transport !== null ? $transport : new MtUniCreditCurlCpHttpTransport(),
             $shopName,
             $storeId,
-            $baseUrl,
+            $environment,
             $wallClock,
             $policy
         );

@@ -8,11 +8,15 @@ final class MtUniCreditCurlCpHttpTransport implements MtUniCreditCpHttpTransport
     /** @var int */
     private $timeout;
 
+    /** @var callable|null Offline DNS probe injection; never a destination authority. */
+    private $dnsResolver;
+
     /**
      * @param int|null $connectTimeout
      * @param int|null $timeout
+     * @param callable|null $dnsResolver Offline resolver injection (records, never a URL).
      */
-    public function __construct($connectTimeout = null, $timeout = null)
+    public function __construct($connectTimeout = null, $timeout = null, $dnsResolver = null)
     {
         $this->connectTimeout = $connectTimeout !== null
             ? (int) $connectTimeout
@@ -20,6 +24,7 @@ final class MtUniCreditCurlCpHttpTransport implements MtUniCreditCpHttpTransport
         $this->timeout = $timeout !== null
             ? (int) $timeout
             : MtUniCreditCpHttpConstants::TOTAL_TIMEOUT_SECONDS;
+        $this->dnsResolver = is_callable($dnsResolver) ? $dnsResolver : null;
     }
 
     /**
@@ -32,12 +37,12 @@ final class MtUniCreditCurlCpHttpTransport implements MtUniCreditCpHttpTransport
     public function request($method, $url, array $headers, $payload)
     {
         if (!function_exists('curl_init')) {
-            throw new MtUniCreditCpConnectionException('The cURL PHP extension is not available.');
+            throw new MtUniCreditCpConnectionException('The cURL PHP extension is not available.', 0, null, false, 'curl_unavailable');
         }
 
         $handle = curl_init($url);
         if ($handle === false) {
-            throw new MtUniCreditCpConnectionException('The Control Panel request could not be initialized.');
+            throw new MtUniCreditCpConnectionException('The Control Panel request could not be initialized.', 0, null, false);
         }
 
         $headerLines = array();
@@ -68,10 +73,36 @@ final class MtUniCreditCurlCpHttpTransport implements MtUniCreditCpHttpTransport
                 throw new MtUniCreditCpConnectionException(
                     'The Control Panel request payload could not be encoded.',
                     0,
-                    $exception
+                    $exception,
+                    false,
+                    'payload_invalid'
                 );
             }
         }
+
+        // The environment chooses the host. Resolve and pin a public address; do not let
+        // redirects, proxies or a second DNS lookup turn it into an internal destination.
+        try {
+            $host = parse_url($url, PHP_URL_HOST);
+            $addresses = (new MtUniCreditCpDestinationPolicy())->resolvePublicAddresses($host, $this->dnsResolver);
+        } catch (MtUniCreditCpDestinationException $exception) {
+            curl_close($handle);
+            throw new MtUniCreditCpConfigurationException('The CP destination resolves to an unsafe network.', 0, $exception, 'destination_unsafe');
+        } catch (Throwable $exception) {
+            curl_close($handle);
+            throw $exception;
+        }
+        $pinned = array();
+        foreach ($addresses as $address) {
+            $pinned[] = strpos($address, ':') !== false ? '[' . $address . ']' : $address;
+        }
+        // Multiple pinned answers retain cURL's connection failover on libcurl 7.59+.
+        // Older PHP 7.3 deployments still pin one address without requiring a newer libcurl.
+        $curlVersion = function_exists('curl_version') ? curl_version() : array();
+        $addressList = isset($curlVersion['version_number']) && $curlVersion['version_number'] >= 0x073B00
+            ? implode(',', $pinned) : $pinned[0];
+        $options[CURLOPT_RESOLVE] = array($host . ':443:' . $addressList);
+        $options[CURLOPT_PROXY] = '';
 
         curl_setopt_array($handle, $options);
         $executed = curl_exec($handle);
@@ -88,10 +119,22 @@ final class MtUniCreditCurlCpHttpTransport implements MtUniCreditCpHttpTransport
             curl_close($handle);
 
             if ($errorNumber === CURLE_OPERATION_TIMEDOUT) {
-                throw new MtUniCreditCpTimeoutException('The Control Panel request timed out.');
+                throw new MtUniCreditCpTimeoutException('The Control Panel request timed out.', 0, null, true, 'timeout');
             }
 
-            throw new MtUniCreditCpConnectionException('The Control Panel connection failed: ' . $error);
+            $reason = 'transport_failure';
+            if (in_array($errorNumber, array(CURLE_COULDNT_RESOLVE_HOST, CURLE_COULDNT_RESOLVE_PROXY), true)) {
+                $reason = 'dns_failure';
+            } else {
+                foreach (array('CURLE_SSL_CONNECT_ERROR', 'CURLE_PEER_FAILED_VERIFICATION', 'CURLE_SSL_CERTPROBLEM', 'CURLE_SSL_CIPHER', 'CURLE_SSL_CACERT_BADFILE') as $constant) {
+                    if (defined($constant) && $errorNumber === constant($constant)) {
+                        $reason = 'tls_failure';
+                        break;
+                    }
+                }
+            }
+
+            throw new MtUniCreditCpConnectionException('The Control Panel connection failed: ' . $error, 0, null, true, $reason);
         }
 
         $statusCode = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);

@@ -1,69 +1,17 @@
 <?php
 
 /**
- * Strict trusted HTTPS destination policy for Control Panel API traffic (AUD-008-F02).
- *
- * Validates parsed URL components. Not a full SSRF framework — destination is
- * trusted deployment configuration, never request/admin controlled.
- *
- * Default production trust is only HOST_PRODUCTION. Offline fixture hosts must be
- * injected explicitly (never trusted by the production default).
+ * Structural CP URL and public-network validation only.
+ * The deployment environment file owns the destination; this class has no host allowlist.
  */
 final class MtUniCreditCpDestinationPolicy
 {
-    const HOST_PRODUCTION = 'uni.avalonbg.com';
-
-    /** Offline fixture host constant — not trusted unless explicitly injected. */
-    const HOST_OFFLINE_TEST = 'cp-test.example.com';
-
     const API_PATH = '/api/v1';
-
-    /** @var array<int, string> */
-    private $allowedHosts;
-
-    /**
-     * @param array<int, string>|null $allowedHosts Explicit allowlist; null = production default only.
-     *                                              Custom lists replace (do not append) production defaults.
-     */
-    public function __construct($allowedHosts = null)
-    {
-        if ($allowedHosts === null) {
-            $this->allowedHosts = array(self::HOST_PRODUCTION);
-
-            return;
-        }
-        if (!is_array($allowedHosts)) {
-            throw new InvalidArgumentException('Control Panel allowed hosts must be an array.');
-        }
-
-        $normalized = array();
-        foreach ($allowedHosts as $host) {
-            if (!is_string($host)) {
-                throw new InvalidArgumentException('Control Panel allowed hosts must be strings.');
-            }
-            $host = strtolower(trim($host));
-            if ($host === '' || $this->isIpLiteral($host) || !preg_match('/^[a-z0-9.-]+$/', $host)) {
-                throw new InvalidArgumentException('Control Panel allowed host is invalid.');
-            }
-            if (!in_array($host, $normalized, true)) {
-                $normalized[] = $host;
-            }
-        }
-        if ($normalized === array()) {
-            throw new InvalidArgumentException('Control Panel allowed hosts must not be empty.');
-        }
-
-        $this->allowedHosts = $normalized;
-    }
 
     /**
      * Validate and canonicalize a CP origin from deployment config (no /api/v1).
      *
      * Leading/trailing whitespace is intentionally trimmed before validation.
-     *
-     * Accepted forms:
-     *   https://uni.avalonbg.com
-     *   https://uni.avalonbg.com/
      *
      * @param string $url
      * @return string https://host
@@ -163,7 +111,7 @@ final class MtUniCreditCpDestinationPolicy
 
         $host = (string) $parts['host'];
         if ($host === '' || $this->isIpLiteral($host)) {
-            throw new InvalidArgumentException('The ' . $label . ' hostname is not trusted.');
+            throw new MtUniCreditCpDestinationException('The ' . $label . ' hostname must be a public DNS name.', 'destination_unsafe');
         }
 
         return $parts;
@@ -177,8 +125,8 @@ final class MtUniCreditCpDestinationPolicy
     private function assertTrustedHostAndPort(array $parts, $label)
     {
         $host = strtolower((string) $parts['host']);
-        if (!in_array($host, $this->allowedHosts, true)) {
-            throw new InvalidArgumentException('The ' . $label . ' hostname is not trusted.');
+        if (!$this->isPublicHostname($host)) {
+            throw new MtUniCreditCpDestinationException('The ' . $label . ' hostname must be a public DNS name.', 'destination_unsafe');
         }
         if (isset($parts['port']) && (int) $parts['port'] !== 443) {
             throw new InvalidArgumentException('The ' . $label . ' URL must use the default HTTPS port.');
@@ -196,6 +144,96 @@ final class MtUniCreditCpDestinationPolicy
         }
 
         return rtrim('/' . ltrim($path, '/'), '/');
+    }
+
+    private function isPublicHostname($host)
+    {
+        if (strlen($host) > 253 || !preg_match('/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:[a-z]{2,63}|xn--[a-z0-9](?:[a-z0-9-]{0,56}[a-z0-9])?)$/D', $host)) {
+            return false;
+        }
+        // Special-use/local namespaces, not a list of CP deployments.
+        foreach (array('localhost', 'local', 'internal', 'lan', 'home', 'home.arpa', 'onion', 'invalid', 'test', 'example') as $suffix) {
+            if ($host === $suffix || substr($host, -strlen($suffix) - 1) === '.' . $suffix) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /** Reject private, loopback, link-local, multicast and reserved address ranges. */
+    public function assertPublicAddress($address)
+    {
+        if (!is_string($address) || filter_var($address, FILTER_VALIDATE_IP) === false) {
+            throw new MtUniCreditCpDestinationException('The CP address is invalid.', 'destination_unsafe');
+        }
+        $binary = inet_pton($address);
+        $ranges = strlen($binary) === 4
+            ? array('0.0.0.0/8', '10.0.0.0/8', '100.64.0.0/10', '127.0.0.0/8', '169.254.0.0/16', '172.16.0.0/12', '192.0.0.0/24', '192.0.2.0/24', '192.88.99.0/24', '192.168.0.0/16', '198.18.0.0/15', '198.51.100.0/24', '203.0.113.0/24', '224.0.0.0/3')
+            : array('2001::/23', '2001:db8::/32', '2002::/16', '3fff::/20');
+        if (strlen($binary) === 16 && !$this->inRange($binary, '2000::/3')) {
+            throw new MtUniCreditCpDestinationException('The CP address is not public.', 'destination_unsafe');
+        }
+        foreach ($ranges as $range) {
+            if ($this->inRange($binary, $range)) {
+                throw new MtUniCreditCpDestinationException('The CP address is not public.', 'destination_unsafe');
+            }
+        }
+
+        return $address;
+    }
+
+    /** Resolve a bounded CNAME chain; transport pins the public answer against rebinding. */
+    public function resolvePublicAddresses($host, $resolver = null)
+    {
+        if (!is_callable($resolver) && !function_exists('dns_get_record')) {
+            throw new MtUniCreditCpConnectionException('CP DNS resolution is unavailable.', 0, null, false, 'dns_failure');
+        }
+        $visited = array();
+        for ($depth = 0; $depth < 8; $depth++) {
+            if (!$this->isPublicHostname($host)) {
+                throw new MtUniCreditCpDestinationException('The CP hostname is unsafe.', 'destination_unsafe');
+            }
+            if (isset($visited[$host])) {
+                break;
+            }
+            $visited[$host] = true;
+            $records = is_callable($resolver) ? call_user_func($resolver, $host) : @dns_get_record($host, DNS_A | DNS_AAAA | DNS_CNAME);
+            $addresses = array();
+            $alias = null;
+            foreach (is_array($records) ? $records : array() as $record) {
+                $address = isset($record['ip']) ? $record['ip'] : (isset($record['ipv6']) ? $record['ipv6'] : null);
+                if ($address !== null) {
+                    $addresses[] = $this->assertPublicAddress($address);
+                } elseif (isset($record['type'], $record['target']) && $record['type'] === 'CNAME') {
+                    $alias = strtolower(rtrim($record['target'], '.'));
+                }
+            }
+            if ($addresses !== array()) {
+                return array_values(array_unique($addresses));
+            }
+            if ($alias === null) {
+                break;
+            }
+            $host = $alias;
+        }
+        throw new MtUniCreditCpConnectionException('CP DNS resolution failed.', 0, null, false, 'dns_failure');
+    }
+
+    private function inRange($binary, $range)
+    {
+        list($network, $bits) = explode('/', $range);
+        $network = inet_pton($network);
+        if (strlen($network) !== strlen($binary)) {
+            return false;
+        }
+        $bytes = intdiv((int) $bits, 8);
+        $remaining = (int) $bits % 8;
+        if (substr($binary, 0, $bytes) !== substr($network, 0, $bytes)) {
+            return false;
+        }
+
+        return $remaining === 0 || (ord($binary[$bytes]) & (255 << (8 - $remaining))) === (ord($network[$bytes]) & (255 << (8 - $remaining)));
     }
 
     /**

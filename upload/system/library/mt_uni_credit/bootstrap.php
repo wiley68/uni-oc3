@@ -100,6 +100,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'extension_root.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'cp_http_constants.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'cp_bounded_response_buffer.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'cp_exception.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'cp_outbound_diagnostics.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'cp_http_response.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'cp_http_transport.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'curl_cp_http_transport.php';

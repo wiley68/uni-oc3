@@ -1,6 +1,6 @@
 {
   "target_family": "OpenCart 3.x",
-  "primary_release_targets": ["3.0.3.6", "3.0.3.8", "3.0.3.9"],
+  "primary_release_targets": ["3.0.3.6", "3.0.3.8", "3.0.3.9", "3.0.5.1"],
   "primary_local_platform_reference": "3.0.3.9",
   "current_first_remote_test_runtime": "PHP 7.3.33",
   "rows": [
@@ -29,7 +29,22 @@
       "locally_tested": false,
       "remotely_tested": false,
       "release_supported": false,
-      "note": "Characterized from reference-oc3-core VERSION constant and checkout/payment/OCMOD sources. Not a live test run."
+      "core_fixture_tested": true,
+      "core_php_floor": "7.3.0",
+      "probe": "phase_oc3_outbound_compatibility_check.php",
+      "note": "Official pinned core fixtures tested for admin/catalog Registry, Loader/Proxy, language/events, native install/reinstall permissions, session data continuity and all 7 default-theme OCMOD anchors. Full installed-store and PHP 7.3 runtime verification remains outstanding."
+    },
+    {
+      "version": "3.0.5.1",
+      "role": "target",
+      "characterized": true,
+      "locally_tested": false,
+      "remotely_tested": false,
+      "release_supported": false,
+      "core_fixture_tested": true,
+      "core_php_floor": "8.1.0",
+      "probe": "phase_oc3_outbound_compatibility_check.php",
+      "note": "Same package as 3.0.3.x. Official pinned core fixtures tested for admin/catalog Registry, Loader/Proxy, language/events, native install/reinstall permissions, session data continuity and all 7 default-theme OCMOD anchors. Full installed-store and PHP 8.1 runtime verification remains outstanding."
     }
   ]
 }

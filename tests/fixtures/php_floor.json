@@ -3,7 +3,7 @@
   "decision": "D1",
   "status": "closed",
   "floor": "7.3.0",
-  "statement": "The UniCredit OpenCart 3 module deliberately supports PHP 7.3.0+ across its practical OC3 compatibility matrix (3.0.3.6, 3.0.3.8, 3.0.3.9). This is the module floor, not a claim that OpenCart 3.0.3.6 itself universally requires PHP 7.3.",
+  "statement": "The UniCredit OpenCart 3 module deliberately supports PHP 7.3.0+ across its OC3 family matrix (3.0.3.6, 3.0.3.8, 3.0.3.9, 3.0.5.1). This is the module floor; the installed OpenCart core may require a newer PHP runtime. Official OpenCart 3.0.5.1 system/startup.php requires PHP 8.1.0+.",
   "rationale": [
     "reference-oc3-core 3.0.3.9 system/startup.php and installer require PHP 7.3.0+",
     "First remote test runtime reference is PHP 7.3.33",

@@ -294,13 +294,15 @@ class ModelExtensionModuleMtUniCredit extends Model
 
             $this->writeRefreshLog(
                 $code,
-                array(
+                array_merge(array(
                     'store_id' => $storeId,
                     'shop_name' => isset($shopName) ? (string) $shopName : '',
                     'failure_class' => (string) $description['class'],
                     'failure_reason' => (string) $description['reason'],
                     'exception_class' => (string) $description['exception_class'],
-                )
+                ), isset($services['client']) && $services['client'] instanceof MtUniCreditControlPanelClient
+                    ? $services['client']->getOutboundDiagnostic($exception)
+                    : MtUniCreditCpOutboundDiagnostics::failure(MtUniCreditCpOutboundDiagnostics::begin('GET', '/shop'), $exception))
             );
 
             return array('error' => $code);
@@ -359,7 +361,9 @@ class ModelExtensionModuleMtUniCredit extends Model
      */
     private function writeRefreshLog($classification, array $context = array())
     {
-        if (!isset($this->log) || !is_object($this->log) || !method_exists($this->log, 'write')) {
+        // Model::__get resolves Registry services; Model has no __isset on either OC3 family.
+        $logger = $this->log;
+        if (!is_object($logger) || !method_exists($logger, 'write')) {
             return;
         }
 
@@ -378,7 +382,7 @@ class ModelExtensionModuleMtUniCredit extends Model
             }
         }
 
-        $this->log->write(implode(' ', $parts));
+        $logger->write(implode(' ', $parts));
     }
 
     /**

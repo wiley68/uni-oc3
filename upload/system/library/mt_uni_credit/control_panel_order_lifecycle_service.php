@@ -450,7 +450,8 @@ final class MtUniCreditControlPanelOrderLifecycleService
                 $entryPoint,
                 MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_OUTCOME_UNKNOWN,
                 401,
-                array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::AUTH_FAILED)
+                array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::AUTH_FAILED),
+                $exception
             );
 
             return MtUniCreditControlPanelOrderSubmissionResult::fail(
@@ -466,7 +467,8 @@ final class MtUniCreditControlPanelOrderLifecycleService
                 $storeId,
                 $orderId,
                 $entryPoint,
-                0
+                0,
+                $exception
             );
         } catch (MtUniCreditCpTimeoutException $exception) {
             $this->attempts->persistFailure(
@@ -480,7 +482,8 @@ final class MtUniCreditControlPanelOrderLifecycleService
                 $entryPoint,
                 MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_TIMEOUT,
                 null,
-                array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::TIMEOUT)
+                array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::TIMEOUT),
+                $exception
             );
 
             return MtUniCreditControlPanelOrderSubmissionResult::fail(
@@ -501,7 +504,8 @@ final class MtUniCreditControlPanelOrderLifecycleService
                 $entryPoint,
                 MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_OUTCOME_UNKNOWN,
                 null,
-                array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::TRANSPORT_FAILED)
+                array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::TRANSPORT_FAILED),
+                $exception
             );
 
             return MtUniCreditControlPanelOrderSubmissionResult::fail(
@@ -526,7 +530,8 @@ final class MtUniCreditControlPanelOrderLifecycleService
                 $entryPoint,
                 MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_OUTCOME_UNKNOWN,
                 null,
-                array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::INVALID_RESPONSE)
+                array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::INVALID_RESPONSE),
+                $exception
             );
 
             return MtUniCreditControlPanelOrderSubmissionResult::fail(
@@ -543,7 +548,8 @@ final class MtUniCreditControlPanelOrderLifecycleService
                     $storeId,
                     $orderId,
                     $entryPoint,
-                    (int) $status
+                    (int) $status,
+                    $exception
                 );
             }
             // Malformed success / noncanonical 4xx without definitive HTTP proof → outcome_unknown.
@@ -558,7 +564,8 @@ final class MtUniCreditControlPanelOrderLifecycleService
                 $entryPoint,
                 MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_OUTCOME_UNKNOWN,
                 $status,
-                array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::INVALID_RESPONSE)
+                array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::INVALID_RESPONSE),
+                $exception
             );
 
             return MtUniCreditControlPanelOrderSubmissionResult::fail(
@@ -575,7 +582,8 @@ final class MtUniCreditControlPanelOrderLifecycleService
                     $storeId,
                     $orderId,
                     $entryPoint,
-                    (int) $status
+                    (int) $status,
+                    $exception
                 );
             }
             // Response received but unusable — remote side-effect cannot be excluded.
@@ -590,7 +598,8 @@ final class MtUniCreditControlPanelOrderLifecycleService
                 $entryPoint,
                 MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_OUTCOME_UNKNOWN,
                 $status,
-                array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::INVALID_RESPONSE)
+                array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::INVALID_RESPONSE),
+                $exception
             );
 
             return MtUniCreditControlPanelOrderSubmissionResult::fail(
@@ -1020,7 +1029,7 @@ final class MtUniCreditControlPanelOrderLifecycleService
      * @param array<string, mixed> $extra
      * @return void
      */
-    private function recordCpCreateDiagnostic($storeId, $orderId, $entryPoint, $eventCode, $httpStatus, array $extra)
+    private function recordCpCreateDiagnostic($storeId, $orderId, $entryPoint, $eventCode, $httpStatus, array $extra, $exception = null)
     {
         $journal = $this->resolveDiagnosticJournal();
         $canonicalOrderId = MtUniCreditShopOrderId::tryNormalize($orderId);
@@ -1033,7 +1042,7 @@ final class MtUniCreditControlPanelOrderLifecycleService
             $entryPoint !== '' ? $entryPoint : MtUniCreditOperationEntryPoint::CHECKOUT,
             $eventCode,
             $httpStatus,
-            $extra
+            array_merge($extra, $this->client->getOutboundDiagnostic($exception))
         );
     }
 
@@ -1146,7 +1155,8 @@ final class MtUniCreditControlPanelOrderLifecycleService
                 $storeId,
                 $orderId,
                 $entryPoint,
-                $status
+                $status,
+                $exception
             );
         }
 
@@ -1156,7 +1166,8 @@ final class MtUniCreditControlPanelOrderLifecycleService
                 $storeId,
                 $orderId,
                 $entryPoint,
-                $status
+                $status,
+                $exception
             );
         }
 
@@ -1173,7 +1184,8 @@ final class MtUniCreditControlPanelOrderLifecycleService
                 $entryPoint,
                 MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_OUTCOME_UNKNOWN,
                 409,
-                array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::CONFLICT)
+                array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::CONFLICT),
+                $exception
             );
 
             return MtUniCreditControlPanelOrderSubmissionResult::fail(
@@ -1196,7 +1208,8 @@ final class MtUniCreditControlPanelOrderLifecycleService
                 $entryPoint,
                 MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_OUTCOME_UNKNOWN,
                 429,
-                array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::REJECTED)
+                array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::REJECTED),
+                $exception
             );
 
             return MtUniCreditControlPanelOrderSubmissionResult::fail(
@@ -1220,7 +1233,8 @@ final class MtUniCreditControlPanelOrderLifecycleService
                 $entryPoint,
                 MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_OUTCOME_UNKNOWN,
                 $status,
-                array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::TRANSPORT_FAILED)
+                array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::TRANSPORT_FAILED),
+                $exception
             );
 
             return MtUniCreditControlPanelOrderSubmissionResult::fail(
@@ -1242,7 +1256,8 @@ final class MtUniCreditControlPanelOrderLifecycleService
             $entryPoint,
             MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_OUTCOME_UNKNOWN,
             $status,
-            array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::REJECTED)
+            array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::REJECTED),
+                $exception
         );
 
         return MtUniCreditControlPanelOrderSubmissionResult::fail(
@@ -1276,7 +1291,7 @@ final class MtUniCreditControlPanelOrderLifecycleService
      * @param int $status
      * @return MtUniCreditControlPanelOrderSubmissionResult
      */
-    private function failDefinitiveCreateRejection($attemptId, $storeId, $orderId, $entryPoint, $status)
+    private function failDefinitiveCreateRejection($attemptId, $storeId, $orderId, $entryPoint, $status, $exception = null)
     {
         $this->attempts->persistFailure(
             $attemptId,
@@ -1289,7 +1304,8 @@ final class MtUniCreditControlPanelOrderLifecycleService
             $entryPoint,
             MtUniCreditDiagnosticJournal::EVENT_CP_CREATE_REJECTED,
             $status,
-            array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::REJECTED)
+            array('attempt_id' => $attemptId, 'error_class' => MtUniCreditControlPanelErrorClass::REJECTED),
+            $exception
         );
 
         return MtUniCreditControlPanelOrderSubmissionResult::fail(
