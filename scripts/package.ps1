@@ -1,5 +1,5 @@
-﻿# Build deterministic UniCredit OpenCart 3 distributable package.
-# Output (default): dist/CC_OpenCartv.3.x_UNI_v.2.0.3.ocmod.zip
+# Build deterministic UniCredit OpenCart 3 distributable package.
+# Output (default): dist/oc3_uni_<major.minor.patch>.ocmod.zip
 #
 # AUD-031-F02: exclusion policy + full manifest / byte-integrity validation.
 # Optional -OutputPath for disposable test ZIPs (must not be required to overwrite frozen artifact).
@@ -27,8 +27,12 @@ if (-not [string]::IsNullOrWhiteSpace($PackageRoot)) {
     $DistDir = Join-Path $Root 'dist'
 }
 $StagingDir = Join-Path $DistDir $StagingDirName
-$Version = '2.0.3'
-$PackageName = "CC_OpenCartv.3.x_UNI_v.$Version.ocmod.zip"
+[xml]$InstallManifest = Get-Content -LiteralPath (Join-Path $Root 'install.xml') -Raw -Encoding UTF8
+$Version = ([string]$InstallManifest.modification.version).Trim()
+if ($Version -notmatch '^\d+\.\d+\.\d+$') {
+    throw "Module version must contain major.minor.patch in install.xml: $Version"
+}
+$PackageName = "oc3_uni_$Version.ocmod.zip"
 if ([string]::IsNullOrWhiteSpace($OutputPath)) {
     $OutputPath = Join-Path $DistDir $PackageName
 }

@@ -569,7 +569,7 @@ foreach (array('reference-uni-oc4', 'reference-jet-oc3', 'reference-oc3-core', '
 mtuc1_assert(is_file($root . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'package.ps1'), 'package script exists');
 
 $packageScript = file_get_contents($root . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'package.ps1');
-mtuc1_assert(strpos($packageScript, 'CC_OpenCartv.3.x_UNI_v.$Version.ocmod.zip') !== false, 'package script uses approved filename convention');
+mtuc1_assert(strpos($packageScript, 'oc3_uni_$Version.ocmod.zip') !== false, 'package script uses approved filename convention');
 mtuc1_assert(strpos($packageScript, 'upload/admin/view/image/payment/uni_logo.svg') !== false, 'package script verifies payment logo entry');
 
 echo PHP_EOL;

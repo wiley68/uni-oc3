@@ -55,7 +55,7 @@ $keys = Join-Path $lib 'keys'
 $secrets = Join-Path $lib 'secrets'
 New-Item -ItemType Directory -Path $keys -Force | Out-Null
 New-Item -ItemType Directory -Path $secrets -Force | Out-Null
-Set-Content -LiteralPath (Join-Path $fixture 'install.xml') -Value '<modification><name>aud031</name></modification>' -Encoding UTF8
+Set-Content -LiteralPath (Join-Path $fixture 'install.xml') -Value '<modification><name>aud031</name><version>2.0.3</version></modification>' -Encoding UTF8
 Set-Content -LiteralPath (Join-Path $lib 'constants.php') -Value '<?php // aud031' -Encoding UTF8
 Set-Content -LiteralPath (Join-Path $keys '.htaccess') -Value 'Deny from all' -Encoding UTF8
 Set-Content -LiteralPath (Join-Path $secrets '.htaccess') -Value 'Deny from all' -Encoding UTF8
@@ -184,7 +184,7 @@ Assert-True ($pkgFailed) 'package.ps1 fails non-zero/throws on forbidden source'
 Assert-True (-not (Test-Path -LiteralPath $failZip)) 'failed packaging does not leave a success ZIP'
 
 # Frozen release ZIP must not have been this temp path
-$frozen = Join-Path $RepoRoot 'dist\CC_OpenCartv.3.x_UNI_v.2.0.3.ocmod.zip'
+$frozen = Join-Path $RepoRoot 'dist\oc3_uni_2.0.3.ocmod.zip'
 Assert-True ($zipPath -ne $frozen) 'temp ZIP path is not frozen release artifact'
 
 # Cleanup fixture
