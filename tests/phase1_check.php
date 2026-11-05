@@ -47,7 +47,7 @@ $requiredFiles = array(
     'upload/system/library/mt_uni_credit/local_settings.php',
     'upload/system/library/mt_uni_credit/installer.php',
     'upload/catalog/controller/extension/mt_uni_credit/api.php',
-    'scripts/package.ps1',
+    'scripts/package.php',
 );
 
 foreach ($requiredFiles as $relative) {
@@ -566,10 +566,10 @@ foreach (array('reference-uni-oc4', 'reference-jet-oc3', 'reference-oc3-core', '
     mtuc1_assert(is_dir($refPath), 'reference directory untouched/readable: ' . $ref);
 }
 
-mtuc1_assert(is_file($root . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'package.ps1'), 'package script exists');
+mtuc1_assert(is_file($root . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'package.php'), 'package script exists');
 
-$packageScript = file_get_contents($root . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'package.ps1');
-mtuc1_assert(strpos($packageScript, 'oc3_uni_$Version.ocmod.zip') !== false, 'package script uses approved filename convention');
+$packageScript = file_get_contents($root . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'package.php') . file_get_contents($root . '/scripts/package_policy.php');
+mtuc1_assert(strpos($packageScript, "'/oc3_uni_' . \$version . '.ocmod.zip'") !== false, 'package script uses approved filename convention');
 mtuc1_assert(strpos($packageScript, 'upload/admin/view/image/payment/uni_logo.svg') !== false, 'package script verifies payment logo entry');
 
 echo PHP_EOL;

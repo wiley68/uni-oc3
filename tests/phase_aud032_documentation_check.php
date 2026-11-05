@@ -208,8 +208,8 @@ function mtucAud032_check11($contracts, $runtime)
  */
 function mtucAud032_check12($contracts, $runtime)
 {
-    $hasScript = mtucAud032_has($contracts, 'scripts/package.ps1')
-        || mtucAud032_has($runtime, 'scripts/package.ps1');
+    $hasScript = mtucAud032_has($contracts, 'scripts/package.php')
+        || mtucAud032_has($runtime, 'scripts/package.php');
     $manualZipOk = mtucAud032_has($contracts, 'manually zip the repository')
         && !(mtucAud032_has($contracts, 'Do **not** manually zip')
             || mtucAud032_has($contracts, 'Do not manually zip')
@@ -404,7 +404,7 @@ mtucAud032_assert(mtucAud032_check08($contracts, $runtime), '8 Partial install r
 mtucAud032_assert(mtucAud032_check09($contracts, $runtime), '9 Duplicate financial rows must not be automatically deleted');
 mtucAud032_assert(mtucAud032_check10($contracts, $runtime), '10 Non-default DB prefix support documented');
 mtucAud032_assert(mtucAud032_check11($contracts, $runtime), '11 Required schema/event install failures documented as visible');
-mtucAud032_assert(mtucAud032_check12($contracts, $runtime), '12 Package must use package.ps1');
+mtucAud032_assert(mtucAud032_check12($contracts, $runtime), '12 Package must use package.php');
 mtucAud032_assert(mtucAud032_check13($contracts, $runtime), '13 Manifest/hash policy documented');
 mtucAud032_assert(mtucAud032_check14($contracts, $runtime), '14 Frozen source HEAD recorded correctly');
 mtucAud032_assert(mtucAud032_check15($contracts, $runtime), '15 Frozen ZIP SHA256 recorded correctly');
@@ -625,10 +625,10 @@ mtucAud032_expectMutationDetected(
     $contracts,
     $runtime,
     function ($c, $r) {
-        $c = str_ireplace('scripts/package.ps1', 'manual repository ZIP', $c);
+        $c = str_ireplace('scripts/package.php', 'manual repository ZIP', $c);
         $c = str_ireplace('Do **not** manually zip', 'Operators may manually zip', $c);
         $c = str_ireplace('Do not manually zip', 'Operators may manually zip', $c);
-        $r = str_ireplace('scripts/package.ps1', 'manual repository ZIP', $r);
+        $r = str_ireplace('scripts/package.php', 'manual repository ZIP', $r);
         $r = str_ireplace('never hand-zip', 'may hand-zip', $r);
 
         return array($c, $r);

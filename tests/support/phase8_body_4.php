@@ -393,7 +393,7 @@ mtuc8_assert(
     'CSS Step transition opacity present'
 );
 
-$packageScriptPopup = (string) file_get_contents($root . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'package.ps1');
+$packageScriptPopup = (string) file_get_contents($root . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'package.php') . file_get_contents($root . '/scripts/package_policy.php');
 mtuc8_assert(
     strpos($packageScriptPopup, 'uni_mini_logo.png') !== false
         && strpos($packageScriptPopup, 'popup-calc-bg.png') !== false,

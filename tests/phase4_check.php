@@ -396,9 +396,9 @@ mtuc4_assert(strpos($loginRequest['url'], 'cp-test.example.com/api/v1') !== fals
 $storedSecret = $settings->get($storeId, MtUniCreditConstants::MODULE_SETTING_SECRET);
 mtuc4_assert(strpos((string) $storedSecret, Phase4TestHarness::TEST_SECRET) === false, 'secret not persisted plaintext after login');
 
-$packageScript = (string) file_get_contents($root . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'package.ps1');
+$packageScript = (string) file_get_contents($root . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'package.php') . file_get_contents($root . '/scripts/package_policy.php');
 mtuc4_assert(strpos($packageScript, 'upload/system/library/mt_uni_credit/config/environment.php') !== false, 'package script expects extension-owned environment.php');
-mtuc4_assert(strpos($packageScript, 'forbiddenEntries') !== false, 'package script forbids old config path');
+mtuc4_assert(strpos($packageScript, 'package_forbidden_entries') !== false, 'package script forbids old config path');
 mtuc4_assert(strpos($packageScript, "'upload/config/environment.php'") !== false, 'package script lists forbidden upload/config/environment.php');
 mtuc4_assert(strpos($packageScript, 'upload/system/library/mt_uni_credit/keys/.htaccess') !== false, 'package script expects keys directory protection');
 mtuc4_assert(strpos($packageScript, 'upload/system/library/mt_uni_credit/secrets/.htaccess') !== false, 'package script expects secrets directory protection');

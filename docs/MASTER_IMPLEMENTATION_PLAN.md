@@ -190,8 +190,8 @@ uni-oc3/
 │   ├── support/
 │   └── bootstrap.php
 ├── scripts/
-│   ├── lint.ps1
-│   └── package.ps1
+│   ├── package_policy.php
+│   └── package.php
 └── docs/
     ├── MASTER_IMPLEMENTATION_PLAN.md
     ├── RUNTIME_VERIFICATION.md

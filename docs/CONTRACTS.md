@@ -1127,7 +1127,7 @@ install.xml
 upload/
 ```
 
-Build with `powershell -File scripts/package.ps1`. Do **not** manually zip the repository (`tests/`, `scripts/`, `docs/`, `.git/` must stay out of the artifact).
+Build with `php scripts/package.php`. Do **not** manually zip the repository (`tests/`, `scripts/`, `docs/`, `.git/` must stay out of the artifact).
 
 Hardened packaging requirements:
 
@@ -1138,7 +1138,7 @@ Hardened packaging requirements:
 
 ### Release identity (v2.0.2)
 
-**Current canonical adaptation:** source commit identity will be frozen only after this adaptation is committed. Release artifact SHA256 will be recorded only when a package for that committed source is built via `scripts/package.ps1`. Do not treat rebuilds from uncommitted/working-tree state as a frozen release.
+**Current canonical adaptation:** source commit identity will be frozen only after this adaptation is committed. Release artifact SHA256 will be recorded only when a package for that committed source is built via `scripts/package.php`. Do not treat rebuilds from uncommitted/working-tree state as a frozen release.
 
 **Historical (pre-canonical-adaptation) 2.0.2 package identity** — audit reference only; **not** authoritative for the current canonical adaptation:
 

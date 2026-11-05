@@ -210,15 +210,15 @@ mtuc8_assert(
     'Product/Cart controllers pass logo URLs'
 );
 
-$packageScript = (string) file_get_contents($root . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'package.ps1');
+$packageScript = (string) file_get_contents($root . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'package.php') . file_get_contents($root . '/scripts/package_policy.php');
 mtuc8_assert(
     strpos($packageScript, 'upload/catalog/view/theme/default/template/extension/mt_uni_credit/image/uni_logo.svg') !== false,
     'package expects module-local uni_logo.svg'
 );
 mtuc8_assert(
     strpos($packageScript, 'upload/catalog/view/image/mt_uni_credit/uni_logo.svg') !== false
-        && strpos($packageScript, '$forbiddenEntries = @(') !== false
-        && strpos($packageScript, 'foreach ($entry in $forbiddenEntries)') !== false,
+        && strpos($packageScript, 'function package_forbidden_entries()') !== false
+        && strpos($packageScript, 'package_forbidden_entries()') !== false,
     'package forbids catalog/view/image storefront logos'
 );
 $distZip = $root . DIRECTORY_SEPARATOR . 'dist' . DIRECTORY_SEPARATOR . 'oc3_uni_2.0.3.ocmod.zip';

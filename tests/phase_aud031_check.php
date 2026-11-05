@@ -179,10 +179,10 @@ if (is_file($packagePath)) {
     mtucAud031_assert(false, 'distributable package present for AUD-031 scan');
 }
 
-$packageScript = (string) file_get_contents($root . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'package.ps1');
+$packageScript = (string) file_get_contents($root . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'package.php') . file_get_contents($root . '/scripts/package_policy.php');
 mtucAud031_assert(
     strpos($packageScript, 'recording_process_two_mailer.php') !== false,
-    'package.ps1 forbids recording_process_two_mailer.php'
+    'package.php forbids recording_process_two_mailer.php'
 );
 
 echo PHP_EOL;

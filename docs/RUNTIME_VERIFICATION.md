@@ -325,7 +325,7 @@ Phase 0 does not install the module. D1–D4 Phase 0 blockers are closed; remain
 
 ## Phase 1 remote checklist (admin skeleton)
 
-Build locally with `powershell -File scripts/package.ps1` (never hand-zip the repo). Install `dist/CC_OpenCartv.3.x_UNI_v.2.0.2.ocmod.zip` on the test shop when verifying a built package for that release. Record sanitized results only; do **not** mark PASS until each item is verified on the server.
+Build locally with `php scripts/package.php` (never hand-zip the repo). Install `dist/CC_OpenCartv.3.x_UNI_v.2.0.2.ocmod.zip` on the test shop when verifying a built package for that release. Record sanitized results only; do **not** mark PASS until each item is verified on the server.
 
 **Current canonical adaptation identity:** source commit will be frozen after the adaptation commit; artifact SHA256 will be recorded when that package is built. Packaging still enforces source preflight, exact approved-file manifest, per-file SHA256 byte integrity, and debug/private-key sentinels (see `docs/CONTRACTS.md` K3).
 
@@ -1277,7 +1277,7 @@ Classifications: **VERIFIED** (local and/or accepted remote), **ACCEPTED EXCEPTI
 
 ### Release identity (v2.0.2)
 
-**Current canonical adaptation:** source commit identity will be frozen only after this adaptation is committed. Release artifact SHA256 will be recorded only when a package for that committed source is built via `scripts/package.ps1`.
+**Current canonical adaptation:** source commit identity will be frozen only after this adaptation is committed. Release artifact SHA256 will be recorded only when a package for that committed source is built via `scripts/package.php`.
 
 **Historical (pre-canonical-adaptation) 2.0.2 package identity** — audit reference only; **not** authoritative for the current canonical adaptation:
 
@@ -1287,7 +1287,7 @@ Artifact:    CC_OpenCartv.3.x_UNI_v.2.0.2.ocmod.zip
 SHA256:      F80655ED4E81BABDC56ED1FC5481C3DBDB487CDBBE280CDC2ACD68CE6CD53BA8
 ```
 
-Build only via `scripts/package.ps1`. Package root is `install.xml` + `upload/`. Manifest must equal the approved source set; ZIP bytes are SHA256-checked against source; debug-failure and private-key sentinels must pass.
+Build only via `scripts/package.php`. Package root is `install.xml` + `upload/`. Manifest must equal the approved source set; ZIP bytes are SHA256-checked against source; debug-failure and private-key sentinels must pass.
 
 ### Operator recovery reminders (see CONTRACTS K2–K4)
 

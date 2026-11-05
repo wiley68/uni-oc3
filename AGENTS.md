@@ -44,3 +44,15 @@ Target е OpenCart 3.x family, не само 3.0.3.9.
 Да не се правят store-specific assumptions.
 Journal compatibility да се извлече от доказания asset-loading pattern в reference-jet-oc3.
 Да не се модифицират reference директориите.
+
+## Development and packaging
+
+Development and packaging run in WSL/Linux. Use PHP CLI with ZipArchive and SimpleXML:
+
+```bash
+php scripts/package.php
+```
+
+PowerShell is not required. See `docs/PACKAGING.md` for prerequisites and the safe workflow.
+Only `uni-oc3` is writable; all reference repositories remain read-only.
+Do not commit, push, tag, overwrite frozen release artifacts, or change the module version without explicit task authorization.
