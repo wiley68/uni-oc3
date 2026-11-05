@@ -183,7 +183,7 @@ mtuc8_assert(
     strpos($jsPopup, 'response.sequence') !== false && strpos($jsPopup, 'localSeq') !== false,
     'JS stale-response sequence guard'
 );
-mtuc8_assert(strpos($jsPopup, 'abortController.abort') !== false, 'JS aborts prior calculate request');
+mtuc8_assert(strpos($jsPopup, 'requestXhr.abort') !== false, 'JS aborts prior calculate request');
 mtuc8_assert(strpos($jsPopup, 'data-mtuc-bound') !== false, 'JS idempotent root binding');
 mtuc8_assert(strpos($jsPopup, 'mtucDocBound') !== false, 'JS document handlers bound once');
 mtuc8_assert(strpos($jsPopup, 'mtucStale') !== false, 'JS degraded stale state blocks old clicks');

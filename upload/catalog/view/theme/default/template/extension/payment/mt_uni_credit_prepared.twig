@@ -30,6 +30,17 @@
         <input type="hidden" name="mt_uni_credit_submit_token" value="{{ submit_token }}" />
         <input type="hidden" name="scheme_key" value="{{ scheme_key }}" />
         <input type="hidden" name="first_installment" value="{{ first_installment }}" />
+        <input type="hidden" name="consent_config_hash" value="{{ consent_config_hash }}" />
+        {% for consent in consents %}
+          <div class="mt-uni-credit-storefront__consent">
+            {% if consent.has_checkbox and not consent_frozen %}
+              <input type="checkbox" id="mtuc-prepared-consent-{{ consent.id }}" name="consent[]" value="{{ consent.id }}" required />
+              <label for="mtuc-prepared-consent-{{ consent.id }}">{% if consent.url %}<a href="{{ consent.url }}" target="_blank" rel="noopener noreferrer">{{ consent.name }}</a>{% else %}{{ consent.name }}{% endif %}</label>
+            {% else %}
+              <p>{% if consent.url %}<a href="{{ consent.url }}" target="_blank" rel="noopener noreferrer">{{ consent.name }}</a>{% else %}{{ consent.name }}{% endif %}</p>
+            {% endif %}
+          </div>
+        {% endfor %}
         {% if process2 %}
         <fieldset class="mt-uni-credit-checkout-process2" data-mtuc-customer-form>
           <div class="form-group required">

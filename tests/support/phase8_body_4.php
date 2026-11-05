@@ -53,7 +53,7 @@ mtuc8_assert(
 );
 mtuc8_assert(!preg_match('/<search[^>]*>[^<]*\\.\\*/', $installXml), 'OCMOD no broad .* regex search');
 
-$referenceProductTwig = 'c:\\Projects\\reference-oc3-core\\catalog\\view\\theme\\default\\template\\product\\product.twig';
+$referenceProductTwig = $root . '/tests/fixtures/oc3_core/3.0.3.9/catalog/view/theme/default/template/product/product.twig';
 mtuc8_assert(is_file($referenceProductTwig), 'reference OC3 default product.twig present');
 $refTwig = (string) file_get_contents($referenceProductTwig);
 $anchor = '{% if minimum > 1 %}';
@@ -142,6 +142,8 @@ $inputBase = array(
     'store_id' => (int) $stack['storeId'],
     'currency_code' => 'EUR',
     'scheme_key' => $schemeKey,
+    'consent' => array(1),
+    'consent_config_hash' => (new MtUniCreditStorefrontConsentResolver())->context(mtuc4_valid_shop_snapshot(), '', 0, array())['config_hash'],
     'product_line' => $line,
     'application_token' => $applicationToken,
     'customer' => array(

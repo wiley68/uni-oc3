@@ -1593,8 +1593,12 @@ final class Phase2MemoryDb
      * @param string $sql
      * @return object
      */
+    /** Test-only fault injection; all storage is in memory. */
+    public $beforeFinancingAttemptInsert = null;
+
     private function insertFinancingAttempt($sql)
     {
+        if (is_callable($this->beforeFinancingAttemptInsert)) { call_user_func($this->beforeFinancingAttemptInsert, $sql); }
         $fields = $this->parseInsertValues($sql);
         $storeId = (int) $fields['store_id'];
         $orderId = $this->normalizeStoredOrderId(isset($fields['order_id']) ? $fields['order_id'] : null);
@@ -1698,8 +1702,8 @@ final class Phase2MemoryDb
             'process2_claim_owner' => null,
             'leasing_presentation_json' => null,
             'leasing_presentation_created_at' => null,
-            'application_snapshot_json' => null,
-            'application_snapshot_hash' => null,
+            'application_snapshot_json' => isset($fields['application_snapshot_json']) ? $fields['application_snapshot_json'] : null,
+            'application_snapshot_hash' => isset($fields['application_snapshot_hash']) ? $fields['application_snapshot_hash'] : null,
             'native_finalize_state' => MtUniCreditNativeOrderFinalizationStates::NOT_STARTED,
             'native_finalize_claim_owner' => null,
             'native_finalize_claimed_at' => null,

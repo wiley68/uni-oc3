@@ -102,6 +102,7 @@ final class MtUniCreditProcessTwoLifecycleCoordinator
             );
         }
 
+        if (!MtUniCreditConsentGate::permits($row, $shop)) { return MtUniCreditConsentGate::failure('consent_evidence', $localOrderId); }
         $nativeOrder = isset($orderContext['native_order']) && is_array($orderContext['native_order'])
             ? $orderContext['native_order'] : array();
         $snapshot = MtUniCreditApplicationSnapshot::decode(

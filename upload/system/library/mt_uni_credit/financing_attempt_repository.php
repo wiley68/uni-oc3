@@ -48,7 +48,8 @@ final class MtUniCreditFinancingAttemptRepository
         $unicid,
         $operationKeyHash,
         $selectionHash,
-        $requestFingerprint
+        $requestFingerprint,
+        $snapshot = null
     ) {
         return $this->findOrCreateAttempt(
             $storeId,
@@ -57,7 +58,8 @@ final class MtUniCreditFinancingAttemptRepository
             $operationKeyHash,
             $selectionHash,
             $requestFingerprint,
-            MtUniCreditOperationEntryPoint::CHECKOUT
+            MtUniCreditOperationEntryPoint::CHECKOUT,
+            $snapshot
         );
     }
 
@@ -80,7 +82,8 @@ final class MtUniCreditFinancingAttemptRepository
         $operationKeyHash,
         $selectionHash,
         $requestFingerprint,
-        $entryPoint
+        $entryPoint,
+        $snapshot = null
     ) {
         MtUniCreditStoreScope::requireStoreId($storeId);
         $canonicalOrderId = MtUniCreditShopOrderId::tryNormalize($orderId);
@@ -98,16 +101,24 @@ final class MtUniCreditFinancingAttemptRepository
                 );
             }
 
+            MtUniCreditConsentGate::snapshot($existing);
             return $existing;
         }
 
+        $candidateRow = array('store_id' => (int) $storeId, 'order_id' => $canonicalOrderId,
+            'entry_point' => $entryPoint, 'operation_key_hash' => $operationKeyHash, 'selection_hash' => $selectionHash, 'request_fingerprint' => $requestFingerprint);
+        if (!is_array($snapshot) || !MtUniCreditConsentGate::v2($snapshot, $candidateRow)) {
+            throw new MtUniCreditPersistenceValidationException('New attempt requires complete v2 consent evidence.');
+        }
+        $snapshotJson = MtUniCreditApplicationSnapshot::encode($snapshot);
+        $snapshotHash = MtUniCreditApplicationSnapshot::hash($snapshot);
         $now = $this->clock->formatUtc($this->clock->now());
         $table = $this->tableName();
         try {
             $this->db->query(
                 "INSERT INTO `{$table}`"
                     . " (`store_id`, `entry_point`, `operation_key_hash`, `selection_hash`, `request_fingerprint`,"
-                    . " `state`, `order_id`, `unicid`, `created_at`, `updated_at`)"
+                    . " `state`, `order_id`, `unicid`, `application_snapshot_json`, `application_snapshot_hash`, `created_at`, `updated_at`)"
                     . " VALUES ("
                     . (int) $storeId . ","
                     . " '" . $this->db->escape($entryPoint) . "',"
@@ -117,6 +128,8 @@ final class MtUniCreditFinancingAttemptRepository
                     . " '" . $this->db->escape(MtUniCreditFinancingAttemptState::ORDER_CREATED) . "',"
                     . " " . MtUniCreditShopOrderId::sqlQuoted($this->db, $canonicalOrderId) . ","
                     . " '" . $this->db->escape($unicid) . "',"
+                    . " '" . $this->db->escape($snapshotJson) . "',"
+                    . " '" . $this->db->escape($snapshotHash) . "',"
                     . " '" . $this->db->escape($now) . "',"
                     . " '" . $this->db->escape($now) . "'"
                     . ")"
@@ -124,6 +137,8 @@ final class MtUniCreditFinancingAttemptRepository
         } catch (Exception $exception) {
             $existing = $this->findByStoreOrder($storeId, $canonicalOrderId);
             if ($existing !== null) {
+                if ($existing['operation_key_hash'] !== $operationKeyHash) { throw new MtUniCreditPersistenceValidationException('Concurrent attempt identity conflict.'); }
+                MtUniCreditConsentGate::snapshot($existing);
                 return $existing;
             }
             throw new MtUniCreditPersistenceException('Unable to create financing attempt.', 0, $exception);
@@ -134,6 +149,7 @@ final class MtUniCreditFinancingAttemptRepository
             throw new MtUniCreditPersistenceException('Financing attempt insert did not persist.');
         }
 
+        MtUniCreditConsentGate::snapshot($created);
         return $created;
     }
 

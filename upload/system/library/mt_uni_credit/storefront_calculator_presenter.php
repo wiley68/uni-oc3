@@ -416,6 +416,7 @@ final class MtUniCreditStorefrontCalculatorPresenter
             'first_installment' => $result->firstInstallment->amount,
             'first_installment_locked' => !empty($result->firstInstallment->locked),
             'show_first_installment' => !empty($result->firstInstallment->visible),
+            'consent_context' => MtUniCreditConsentGate::context($shop, $scheme),
             'key' => self::keyForScheme($scheme),
         );
     }

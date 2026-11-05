@@ -53,6 +53,7 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
         $data['order_id'] = $orderId;
         $data['process2'] = $process2;
         $data['consents'] = $consents;
+        $data['consent_config_hash'] = isset($modal['consent_config_hash']) ? $modal['consent_config_hash'] : '';
         $data['show_first_installment'] = !empty($calculator['show_first_installment']);
         $data['checkout_helper'] = $this->language->get(
             $process2 ? 'text_checkout_helper_process2' : 'text_checkout_helper_process1'
@@ -200,6 +201,8 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
                 'order_missing' => (string) $this->language->get('error_order'),
                 'confirm' => (string) $this->language->get('button_confirm'),
                 'processing' => (string) $this->language->get('text_processing_message'),
+                'consent_unknown' => (string) $this->language->get('error_consent_unknown'),
+                'consent_refresh' => (string) $this->language->get('error_consent_refresh'),
                 'consent' => (string) $this->language->get('error_consent'),
                 'unavailable' => (string) $this->language->get('error_unavailable'),
             ),
@@ -325,19 +328,6 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
         ));
 
         $shop = isset($panel['shop']) && is_array($panel['shop']) ? $panel['shop'] : array();
-        $consents = (new MtUniCreditStorefrontConsentResolver())->normalize($shop);
-        $postedConsent = isset($this->request->post['consent']) ? $this->request->post['consent'] : array();
-        if ($consents !== array() && !(new MtUniCreditStorefrontConsentResolver())->isSatisfied($shop, $postedConsent)) {
-            $this->recordCheckoutPreSubmitTrace('panel_present', array(
-                'gate' => 'consent',
-                'panel_available' => true,
-            ));
-            $json['error'] = $this->language->get('error_consent');
-            $json['error_code'] = 'consent';
-            $this->respondJson($json);
-            return;
-        }
-
         $schemeKey = trim((string) $this->posted('scheme_key', ''));
         if ($schemeKey === '' || MtUniCreditStorefrontCalculatorPresenter::parseSchemeKey($schemeKey) === null) {
             $this->recordCheckoutPreSubmitTrace('panel_present', array(
@@ -348,6 +338,17 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
             $json['error'] = $this->language->get('error_unavailable');
             $this->respondJson($json);
             return;
+        }
+
+        try { $this->model_extension_payment_mt_uni_credit->validateCheckoutConsents($this->request->post); }
+        catch (MtUniCreditShopConfigurationUnavailableException $exception) {
+            $this->respondJson(array('success' => false, 'error' => $this->language->get('error_unavailable'), 'error_code' => 'shop_cache_stale')); return;
+        }
+        catch (Throwable $exception) {
+            $failure = MtUniCreditConsentGate::failure($exception->getMessage(), isset($this->session->data['order_id']) ? $this->session->data['order_id'] : null);
+            $failure['message'] = $this->language->get(!empty($failure['order_id']) ? 'error_consent_existing' : 'error_' . $failure['error']);
+            $failure['error_code'] = $failure['error']; $failure['error'] = $failure['message'];
+            $this->respondJson($failure); return;
         }
 
         $result = $this->model_extension_payment_mt_uni_credit->prepareCheckoutConfirm();
@@ -380,6 +381,8 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
             'scheme_key' => $schemeKey,
             'first_installment' => (float) str_replace(',', '.', (string) $this->posted('first_installment', '0')),
         );
+        $selection['consent'] = isset($this->request->post['consent']) ? $this->request->post['consent'] : array();
+        $selection['consent_config_hash'] = $this->posted('consent_config_hash', '');
         MtUniCreditCheckoutPreparedSelection::store(
             $this->session->data,
             (int) $this->config->get('config_store_id'),
@@ -400,6 +403,8 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
             $process2,
             $selection
         );
+
+        if (isset($submit['error']) && strpos($submit['error'], 'consent_') === 0) { $submit['message'] = $this->language->get('error_consent_existing'); }
 
         // Temporary Phase 11.5C.3 branch isolation — controller-time $submit shape only.
         $this->recordCheckoutCpFailureBranchTrace(
@@ -550,7 +555,7 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
         $flash = $this->consumeCheckoutFlash();
 
         $this->document->setTitle($this->language->get('heading_prepared_title'));
-        $data = $this->buildPreparedViewData($view, $token, $flash, $selection);
+        $data = $this->buildPreparedViewData($view, $token, $flash, $selection, (int) $context['order_id']);
         $this->response->setOutput($this->load->view('extension/payment/mt_uni_credit_prepared', $data));
     }
 
@@ -607,7 +612,7 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
      * @param array{scheme_key?:string,first_installment?:float}|null $selection
      * @return array<string, mixed>
      */
-    private function buildPreparedViewData(array $view, $token, $flash, $selection = null)
+    private function buildPreparedViewData(array $view, $token, $flash, $selection = null, $orderId = 0)
     {
         $data = array(
             'breadcrumbs' => array(
@@ -657,6 +662,22 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
             'header' => $this->load->controller('common/header'),
         );
 
+        $data['consents'] = array();
+        if (!empty($data['can_submit'])) {
+            try {
+                $this->load->model('extension/payment/mt_uni_credit');
+                $consentContext = $this->model_extension_payment_mt_uni_credit->preparedConsentContext($orderId, $selection);
+                if (!$consentContext['valid']) { throw new InvalidArgumentException('consent_unknown'); }
+                $data['consent_config_hash'] = $consentContext['config_hash'];
+                foreach ($consentContext['consents'] as $consent) {
+                    if (in_array($consent['id'], $consentContext['applicable_ids'], true)) { $data['consents'][] = $consent; }
+                }
+                $data['consent_frozen'] = !empty($consentContext['frozen']);
+            } catch (Throwable $exception) {
+                $data['can_submit'] = false;
+                $data['message'] = $this->language->get('error_consent_existing');
+            }
+        }
         return $data;
     }
 
@@ -726,6 +747,9 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
             return;
         }
 
+        $selection['consent'] = isset($this->request->post['consent']) ? $this->request->post['consent'] : array();
+        $selection['consent_config_hash'] = isset($this->request->post['consent_config_hash']) ? $this->request->post['consent_config_hash'] : '';
+
         $this->load->model('extension/payment/mt_uni_credit');
         $this->load->model('checkout/order');
         $process2 = array(
@@ -738,6 +762,7 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
             $selection
         );
 
+        if (isset($result['error']) && strpos($result['error'], 'consent_') === 0) { $result['message'] = $this->language->get('error_consent_existing'); }
         $this->maybeApplyCheckoutNativeOrderStatusAfterHandoff((int) $context['order_id'], $result);
 
         if (!empty($result['success'])) {

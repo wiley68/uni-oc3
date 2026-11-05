@@ -1306,3 +1306,8 @@ real SMTP delivery proof as a release gate
 real MySQL/MariaDB multi-connection concurrency (F-033-02 → AUD-005/AUD-006)
 remote definitive Checkout broken-CP reject (ACCEPTED EXCEPTION — testability/runtime-verification exception, not product failure)
 ```
+
+
+### UNI-CONSENT-001 runtime acceptance (pending)
+
+The isolated tests in `UNI_CONSENT_001.md` do not establish live theme compatibility. Verify Product/Cart/Checkout and prepared continuation under default and Journal: scope visibility, empty/informational lists, first-installment debounce/Apply, stale responses, cart/delivery/payment refresh, replaced forms, duplicate clicks, and order-aware refusal. Confirm PHP 7.3 deployment compatibility and existing database concurrency behavior in an authorized isolated environment. Do not run live requests or install test dependencies automatically.

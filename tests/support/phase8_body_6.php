@@ -294,7 +294,7 @@ mtuc8_assert(count($consents) === 1 && $consents[0]['has_checkbox'] === true, 'c
 $cr = new MtUniCreditStorefrontConsentResolver();
 mtuc8_assert($cr->isSatisfied(array('consents' => $consents), array(1)) === true, 'consent satisfied when id checked');
 mtuc8_assert($cr->isSatisfied(array('consents' => $consents), array()) === false, 'consent unsatisfied when empty');
-mtuc8_assert($cr->isSatisfied(array('consents' => array()), '1') === true, 'legacy consent accepts 1');
+mtuc8_assert($cr->isSatisfied(array('consents' => array()), array()) === true, 'empty canonical list has no synthetic legacy checkbox');
 
 // Language labels
 mtuc8_assert(strpos($productLangBg, 'Мобилен телефон') !== false, 'BG product telephone label');

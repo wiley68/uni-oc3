@@ -432,8 +432,7 @@ mtucAud021F01_assert(
 );
 
 // Prepared view transport data (server-loaded selection → hidden fields).
-require_once dirname(MTUC_PHASE0_ROOT) . DIRECTORY_SEPARATOR . 'reference-oc3-core'
-    . DIRECTORY_SEPARATOR . 'system' . DIRECTORY_SEPARATOR . 'engine' . DIRECTORY_SEPARATOR . 'controller.php';
+require_once __DIR__ . '/support/oc3_registry_controller.php';
 require_once $ctrlPath;
 
 final class MtucAud021Registry
@@ -678,6 +677,8 @@ final class MtucAud021PaymentModelProbe
         $input = $this->process2
             ? Phase9TestHarness::submitInputProcess2($orderId, (int) $this->stack['storeId'])
             : Phase9TestHarness::submitInput($orderId, (int) $this->stack['storeId']);
+        $input['consent'] = isset($selection['consent']) ? $selection['consent'] : array();
+        $input['consent_config_hash'] = isset($selection['consent_config_hash']) ? $selection['consent_config_hash'] : '';
         $input['scheme_key'] = isset($selection['scheme_key']) ? (string) $selection['scheme_key'] : '';
         $input['first_installment'] = isset($selection['first_installment'])
             ? (float) $selection['first_installment']
@@ -689,6 +690,12 @@ final class MtucAud021PaymentModelProbe
         $this->lastResult = $this->stack['submission']->submit($input);
 
         return $this->lastResult;
+    }
+
+    public function preparedConsentContext($orderId, $selection)
+    {
+        $p = MtUniCreditStorefrontCalculatorPresenter::parseSchemeKey($selection['scheme_key']);
+        return (new MtUniCreditStorefrontConsentResolver())->context(mtuc4_valid_shop_snapshot(), $p['kop_code'], $p['months'], array('coeff' => 0.1, 'interestPercent' => 5));
     }
 
     public function addOrder($data)
@@ -736,6 +743,8 @@ function mtucAud021F01_preparedSubmitController(array $stack, $orderId, array $b
     $request->post = array_merge(
         array(
             'mt_uni_credit_submit_token' => $token,
+            'consent' => isset($posted['consent']) ? $posted['consent'] : array(1),
+            'consent_config_hash' => isset($posted['consent_config_hash']) ? $posted['consent_config_hash'] : (new MtUniCreditStorefrontConsentResolver())->context(mtuc4_valid_shop_snapshot(), '', 0, array())['config_hash'],
             'scheme_key' => isset($posted['scheme_key']) ? (string) $posted['scheme_key'] : '',
             'first_installment' => isset($posted['first_installment'])
                 ? (string) $posted['first_installment']
@@ -1025,6 +1034,21 @@ $mutation = array(
 
 foreach ($mutation as $label => $ok) {
     mtucAud021F01_assert($ok === true, 'mutation YES: ' . $label);
+}
+
+// UNI-CONSENT-001: prepared POST cannot bypass acceptance and preserves its native order.
+foreach (array('missing' => array('consent' => array()), 'stale' => array('consent' => array(1), 'consent_config_hash' => 'obsolete')) as $case => $postedConsent) {
+    $port = new Phase4FakeCpHttpTransport(); $consentStack = Phase9TestHarness::stack($port);
+    $oid = $case === 'missing' ? 22981 : 22982;
+    Phase9TestHarness::seedBankOrder($consentStack['memoryDb'], $oid, $consentStack['storeId']);
+    $h = mtucAud021F01_preparedSubmitController($consentStack, $oid,
+        array('scheme_key' => 'standard|KOPSTD|12', 'first_installment' => 0), $postedConsent);
+    $h['controller']->submit();
+    mtucAud021F01_assert(empty($h['paymentModel']->lastResult['success'])
+        && strpos($h['paymentModel']->lastResult['error'], 'consent_') === 0
+        && (int) $h['paymentModel']->lastResult['order_id'] === $oid, 'CONSENT prepared ' . $case . ': order-aware refusal');
+    mtucAud021F01_assert(Phase7TestHarness::countOrderPosts($port) === 0
+        && $h['orderModel']->addOrderCalls === 0 && $h['paymentModel']->addOrderCalls === 0, 'CONSENT prepared ' . $case . ': no order/CP side effects');
 }
 
 echo PHP_EOL;

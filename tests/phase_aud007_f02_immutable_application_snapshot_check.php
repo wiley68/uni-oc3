@@ -7,6 +7,7 @@
  * PHP 7.3 compatible. Offline.
  */
 require_once __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/support/legacy_attempt_fixture.php';
 require_once __DIR__ . '/support/phase2_memory_db.php';
 
 $root = MTUC_PHASE0_ROOT;
@@ -166,7 +167,7 @@ function mtucAud007F02_sec_snapshot(array &$shared)
     $opHash = hash('sha256', 'f02-snapshot-unit');
     $calc12 = mtucAud007F02_calc(12, 500.0);
     $snap12 = mtucAud007F02_snapshot($calc12, MtUniCreditOperationEntryPoint::PRODUCT, $opHash);
-    $attempt = $attempts->findOrCreateAttempt(
+    $attempt = mtuc_test_legacy_attempt($attempts,
         Phase5TestHarness::STORE_A,
         9001,
         Phase4TestHarness::TEST_UNICID,
@@ -451,7 +452,7 @@ function mtucAud007F02_sec_checkout()
     $fpCk12 = MtUniCreditControlPanelOrderPayloadBuilder::fingerprint($payloadCk12);
     $selCk12 = hash('sha256', $calcCk12->scheme->kopCode . '|' . $calcCk12->scheme->months . '|' . $fpCk12);
     $opCk = hash('sha256', 'checkout|' . $stackCk['storeId'] . '|' . $orderCk);
-    $attemptCk = $stackCk['attempts']->findOrCreateCheckoutAttempt(
+    $attemptCk = mtuc_test_legacy_attempt($stackCk['attempts'],
         $stackCk['storeId'],
         $orderCk,
         Phase4TestHarness::TEST_UNICID,
@@ -480,13 +481,11 @@ function mtucAud007F02_sec_checkout()
     );
     $inputCk2 = $inputCk;
     $inputCk2['scheme_key'] = 'standard|KOPSTD|24';
+    Phase9TestHarness::enqueueCpCreateSuccess($transportCk);
     $secondCk = $stackCk['submission']->submit($inputCk2);
-    mtucAud007F02_assert(empty($secondCk['success']), 'checkout pre-CP changed terms: rejected');
-    $errCk = isset($secondCk['error']) ? (string) $secondCk['error'] : '';
-    mtucAud007F02_assert(
-        $errCk === 'application_drift' || $errCk === 'fingerprint_drift',
-        'checkout pre-CP drift error class closed (' . $errCk . ')'
-    );
+    mtucAud007F02_assert(!empty($secondCk['success']), 'checkout pre-CP: persisted A overrides posted B');
+    $resolvedCk = MtUniCreditApplicationSnapshot::decode($secondCk['attempt']['application_snapshot_json']);
+    mtucAud007F02_assert((int) $resolvedCk['scheme']['months'] === 12, 'checkout pre-CP: effective selection remains persisted 12 months');
     $attemptCkAfter = $stackCk['attempts']->findByStoreOrder($stackCk['storeId'], $orderCk);
     mtucAud007F02_assert(
         is_array($attemptCkAfter)
@@ -550,7 +549,7 @@ function mtucAud007F02_sec_recovery(array &$shared)
     $fpR = MtUniCreditControlPanelOrderPayloadBuilder::fingerprint($payloadR);
     $selR = hash('sha256', $calcR->scheme->kopCode . '|' . $calcR->scheme->months . '|' . $fpR);
     $opR = hash('sha256', 'product|' . $stackR['storeId'] . '|' . $orderR . '|f02-recovery');
-    $attemptR = $stackR['attempts']->findOrCreateAttempt(
+    $attemptR = mtuc_test_legacy_attempt($stackR['attempts'],
         $stackR['storeId'],
         $orderR,
         Phase4TestHarness::TEST_UNICID,
@@ -603,6 +602,9 @@ function mtucAud007F02_sec_recovery(array &$shared)
     );
     $liveDriftCalc = mtucAud007F02_calc(24, 600.0);
     $smartCallsBeforeDrift = Phase9TestHarness::smartUcfCallCount($stackR['smartUcfProbe']);
+    // Legacy continuation requires real current-request acceptance; never backfilled.
+    MtUniCreditConsentGate::authorizeLegacy($attemptR, $shopR, array('consent' => array(1),
+        'consent_config_hash' => (new MtUniCreditStorefrontConsentResolver())->context($shopR, '', 0, array())['config_hash']));
     $driftRecover = $stackR['lifecycle']->submitOrRecover(
         $attemptR,
         $liveDriftOrder,

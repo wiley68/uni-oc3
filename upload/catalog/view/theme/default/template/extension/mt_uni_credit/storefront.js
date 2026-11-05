@@ -70,6 +70,59 @@
     return n.toFixed(2) + "%";
   }
 
+
+  /** Module-owned form state; server context is display transport, backend always revalidates. */
+  function consentForm($, $host) {
+    var context = null;
+    var ready = false;
+    var key = null;
+    function invalidate(nextKey) {
+      ready = false;
+      if (key !== null && nextKey !== key) {
+        $host.find('[data-mtuc-consent-scope]').each(function () {
+          if ($(this).attr('data-mtuc-consent-scope') !== 'all') {
+            $(this).find('[data-mtuc-consent-checkbox]').prop('checked', false);
+          }
+        });
+      }
+      key = nextKey;
+    }
+    function apply(next, nextKey) {
+      invalidate(nextKey);
+      context = next || null;
+      if (!context || !context.valid || context.kop_code == null) { return false; }
+      var required = context.mandatory_ids || [];
+      var available = context.applicable_ids || [];
+      var markupHash = $host.find('[data-mtuc-consents]').attr('data-mtuc-consent-config');
+      if (markupHash && markupHash !== context.config_hash) { return false; }
+      var missing = false;
+      $.each(required, function (_, id) {
+        if (!$host.find('[data-mtuc-consent-checkbox][value="' + id + '"]').length) { missing = true; }
+      });
+      $host.find('[data-mtuc-consent-id]').each(function () {
+        var $row = $(this);
+        var visible = $.inArray(Number($row.attr('data-mtuc-consent-id')), available) !== -1;
+        $row.prop('hidden', !visible);
+        var $box = $row.find('[data-mtuc-consent-checkbox]');
+        $box.prop('disabled', !visible);
+        if (!visible) { $box.prop('checked', false); }
+      });
+      ready = !missing;
+      return ready;
+    }
+    function accepted() {
+      if (!ready || !context) { return false; }
+      var ok = true;
+      $.each(context.mandatory_ids || [], function (_, id) {
+        var $cb = $host.find('[data-mtuc-consent-checkbox][value="' + id + '"]');
+        if (!$cb.length || $cb.prop('disabled') || !$cb.is(':checked')) { ok = false; }
+      });
+      return ok;
+    }
+    return {invalidate: invalidate, apply: apply, accepted: accepted,
+      ready: function () { return ready; }, hash: function () { return context ? context.config_hash : ''; }};
+  }
+
   function initRoot($, $root) {
     if ($root.attr("data-mtuc-bound") === "1") {
       return;
@@ -124,6 +177,10 @@
         state.offers[selectedOfferType] &&
         state.offers[selectedOfferType].preferred_scheme_key) ||
       "";
+    var consent = consentForm($, $modal);
+    var pendingCalculation = true;
+    function mounted() { return $.contains(document.documentElement, $root[0]) && $modal.data('mtucApi') === $root.data('mtucApi'); }
+    function invalidateConsent() { pendingCalculation = true; sequence += 1; consent.invalidate(selectedSchemeKey); updateSubmitState(); }
     var calcTimer = null;
     var firstInstallmentTimer = null;
     var sequence = 0;
@@ -538,20 +595,7 @@
       return $modal.find("[data-mtuc-consent-checkbox]");
     }
 
-    function areMandatoryConsentsChecked() {
-      var $boxes = consentCheckboxes();
-      if (!$boxes.length) {
-        return false;
-      }
-      var ok = true;
-      $boxes.each(function () {
-        if (!this.checked) {
-          ok = false;
-          return false;
-        }
-      });
-      return ok;
-    }
+    function areMandatoryConsentsChecked() { return consent.accepted(); }
 
     function getStep2FieldErrors() {
       var errors = {};
@@ -617,7 +661,8 @@
     }
 
     function updateSubmitState() {
-      var valid = isStep2FormValid();
+      $modal.find("[data-mtuc-apply]").prop("disabled", pendingCalculation || !consent.ready() || isTerminalSubmitLocked());
+      var valid = !pendingCalculation && consent.ready() && isStep2FormValid();
       var $submit = $modal.find("[data-mtuc-submit]");
       var locked = isTerminalSubmitLocked();
       $submit.prop("disabled", locked || !valid);
@@ -724,6 +769,7 @@
     }
 
     function openModal(offerType, preferredKey) {
+      if (isTerminalSubmitLocked()) { return; }
       closeErrorModal();
       selectedOfferType = offerType || selectedOfferType;
       var offer = currentOffer();
@@ -747,6 +793,9 @@
       if (isTerminalSubmitLocked()) {
         return;
       }
+      invalidateConsent();
+      if (requestXhr) { requestXhr.abort(); }
+      if (calcTimer) { window.clearTimeout(calcTimer); calcTimer = null; }
       if (firstInstallmentTimer) {
         window.clearTimeout(firstInstallmentTimer);
         firstInstallmentTimer = null;
@@ -986,38 +1035,20 @@
       setOffersBusy(false);
     }
 
+    var requestXhr = null;
     function postJson(url, data, done) {
-      if (window.AbortController) {
-        if (abortController) {
-          try {
-            abortController.abort();
-          } catch (e) {}
-        }
-        abortController = new AbortController();
-      }
-      $.ajax({
-        url: url,
-        type: "POST",
-        dataType: "json",
-        data: data,
-        signal: abortController ? abortController.signal : undefined,
-      })
-        .done(function (response) {
-          done(null, response);
-        })
-        .fail(function (_xhr, textStatus) {
-          if (textStatus === "abort") {
-            done("abort", null);
-            return;
-          }
-          done(true, null);
-        });
+      if (requestXhr) { requestXhr.abort(); }
+      requestXhr = $.ajax({url: url, type: 'POST', dataType: 'json', data: data})
+        .done(function (response) { done(null, response); })
+        .fail(function (_xhr, status) { done(status === 'abort' ? 'abort' : true, null); });
     }
 
     function scheduleCalculate() {
+      if (isTerminalSubmitLocked()) { return; }
       if (entryPoint !== "product") {
         return;
       }
+      invalidateConsent();
       window.clearTimeout(calcTimer);
       // OC4 UniCredit Product refresh debounce (250ms); covers quantity typing.
       calcTimer = window.setTimeout(runCalculate, 250);
@@ -1028,7 +1059,7 @@
       if (!routes) {
         return;
       }
-      sequence += 1;
+      invalidateConsent();
       var localSeq = sequence;
       var form = productFormData();
       setOffersBusy(true);
@@ -1044,6 +1075,7 @@
           sequence: localSeq,
         },
         function (err, response) {
+          if (localSeq !== sequence || !mounted()) { return; }
           if (err === "abort") {
             return;
           }
@@ -1091,6 +1123,9 @@
     }
 
     function scheduleRecalculate(immediate) {
+      if (isTerminalSubmitLocked()) { return; }
+      invalidateConsent();
+      if (immediate && calcTimer) { window.clearTimeout(calcTimer); calcTimer = null; }
       if (firstInstallmentTimer) {
         window.clearTimeout(firstInstallmentTimer);
         firstInstallmentTimer = null;
@@ -1113,7 +1148,7 @@
         setPopupError(t("error_recalculate", ""));
         return;
       }
-      sequence += 1;
+      invalidateConsent();
       var localSeq = sequence;
       setProcessing(true);
       setPopupError("");
@@ -1135,6 +1170,7 @@
           "";
       }
       postJson(route, data, function (err, response) {
+        if (localSeq !== sequence || !mounted()) { return; }
         if (err === "abort") {
           return;
         }
@@ -1152,7 +1188,13 @@
           );
           return;
         }
+        if (response.calculation.key !== selectedSchemeKey || !consent.apply(response.calculation.consent_context, selectedSchemeKey)) {
+          setPopupError(t(response.calculation.consent_context && !response.calculation.consent_context.valid ? 'error_consent_unknown' : 'error_consent_refresh', 'Обновете страницата за актуални съгласия.'));
+          updateSubmitState(); return;
+        }
         fillDisplays(response.calculation);
+        pendingCalculation = false;
+        updateSubmitState();
         setPopupError("");
       });
     }
@@ -1197,6 +1239,14 @@
           fillDisplays(scheme);
         }
         scheduleRecalculate(true);
+      },
+      apply: function () {
+        var queued = !!firstInstallmentTimer || !!calcTimer;
+        if (firstInstallmentTimer) { window.clearTimeout(firstInstallmentTimer); firstInstallmentTimer = null; }
+        if (calcTimer) { window.clearTimeout(calcTimer); calcTimer = null; }
+        if (isTerminalSubmitLocked()) { return; }
+        if (pendingCalculation || !consent.ready()) { if (queued) { scheduleRecalculate(true); } return; }
+        setStep(2);
       },
       recalculate: function () {
         if (isTerminalSubmitLocked()) {
@@ -1316,6 +1366,7 @@
           csrf: $root.attr("data-csrf"),
           application_token: $root.attr("data-application-token") || "",
           scheme_key: selectedSchemeKey,
+          consent_config_hash: consent.hash(),
           first_installment: $modal.find("[data-mtuc-first]").val() || "0",
         };
         var payload = $form.serializeArray();
@@ -1336,9 +1387,6 @@
           }
           data[name] = item.value;
         });
-        if (!data.consent && $form.find("[data-mtuc-consent]").is(":checked")) {
-          data.consent = "1";
-        }
         if (entryPoint === "product") {
           var form = productFormData();
           data.product_id = $root.attr("data-product-id");
@@ -1426,6 +1474,19 @@
       updateSubmitState: updateSubmitState,
     });
 
+    $root.data("mtucApi", $modal.data("mtucApi"));
+    if (window.MutationObserver) {
+      var observer = new MutationObserver(function () {
+        if ($.contains(document.documentElement, $root[0])) { return; }
+        sequence += 1; pendingCalculation = true; consent.invalidate(selectedSchemeKey);
+        if (calcTimer) { window.clearTimeout(calcTimer); }
+        if (firstInstallmentTimer) { window.clearTimeout(firstInstallmentTimer); }
+        if (requestXhr && !isTerminalSubmitLocked()) { requestXhr.abort(); }
+        if ($modal.parent()[0] === document.body) { $modal.remove(); }
+        observer.disconnect();
+      });
+      observer.observe(document.documentElement, {childList: true, subtree: true});
+    }
     bindStep2ReadinessListeners();
     updateSubmitState();
     if (entryPoint === "product") {
@@ -1496,7 +1557,7 @@
           return;
         }
         if (api) {
-          api.setStep(2);
+          api.apply();
         }
       },
     );

@@ -107,7 +107,7 @@ final class MtUniCreditProcessTwoLifecycleRepository
                     `leasing_presentation_json`,
                     `leasing_presentation_created_at`,
                     `store_id`, `order_id`, `control_panel_order_id`, `state`,
-                    `application_snapshot_json`, `application_snapshot_hash`, `updated_at`
+                    `application_snapshot_json`, `application_snapshot_hash`, `entry_point`, `operation_key_hash`, `selection_hash`, `request_fingerprint`, `updated_at`
              FROM `" . $this->tableName() . "`
              WHERE `attempt_id` = " . $attemptId . ' LIMIT 1'
         );

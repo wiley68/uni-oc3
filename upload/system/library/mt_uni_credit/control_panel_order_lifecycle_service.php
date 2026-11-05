@@ -201,6 +201,10 @@ final class MtUniCreditControlPanelOrderLifecycleService
                 false
             );
         }
+        if (!MtUniCreditConsentGate::permits($row, $shop)) {
+            return MtUniCreditControlPanelOrderSubmissionResult::fail('consent_evidence', false, null, false,
+                MtUniCreditConsentGate::failure('consent_evidence', $orderId)['message']);
+        }
         $calculation = MtUniCreditApplicationSnapshot::toCalculationResult($snapshot);
         if (!MtUniCreditEurAmount::matchesCalculation($order, $calculation)) {
             return MtUniCreditControlPanelOrderSubmissionResult::fail(
@@ -646,6 +650,10 @@ final class MtUniCreditControlPanelOrderLifecycleService
         array $shop
     ) {
         $row = $this->attempts->findById($attemptId);
+        if ($row === null || !MtUniCreditConsentGate::permits($row, $shop)) {
+            return MtUniCreditControlPanelOrderSubmissionResult::fail('consent_evidence', false, null, false,
+                MtUniCreditConsentGate::failure('consent_evidence', isset($row['order_id']) ? $row['order_id'] : null)['message']);
+        }
         $storeId = $row !== null ? (int) $row['store_id'] : (int) (isset($order['store_id']) ? $order['store_id'] : 0);
         $entryPoint = $row !== null && isset($row['entry_point'])
             ? (string) $row['entry_point']

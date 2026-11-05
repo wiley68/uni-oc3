@@ -47,3 +47,12 @@ $_['error_invalid_characters'] = 'This field contains invalid characters.';
 $_['error_egn_invalid'] = 'EGN must contain 10 digits. The first 8 must be a valid date in YYYYMMDD format.';
 $_['error_phone2_invalid'] = 'The second phone may contain digits, spaces, +, -, ( and ).';
 $_['error_privacy_process1'] = 'Invalid fields for Process 1.';
+
+// UNI-CONSENT-001: local refusal never represents a banking rejection.
+$_['error_consent_required'] = 'Accept the required consents.';
+$_['error_consent_refresh'] = 'The consents have changed. Refresh the page before submitting.';
+$_['error_consent_unknown'] = 'Consent applicability could not be verified. Refreshing may not resolve this issue; contact support.';
+$_['error_consent_evidence'] = 'The consent evidence could not be verified. Contact support.';
+$_['error_consent_configuration'] = 'The consent configuration is invalid. Contact support.';
+$_['error_consent_ids'] = 'Invalid accepted consent IDs.';
+$_['error_consent_existing'] = 'Continuation of the existing application is blocked. Refreshing may not resolve this issue; contact support. Do not create another order.';

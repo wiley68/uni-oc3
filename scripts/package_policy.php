@@ -186,6 +186,7 @@ function package_required_entries()
         'upload/catalog/view/theme/default/template/extension/mt_uni_credit/image/uni_mini_logo.png',
         'upload/catalog/view/theme/default/template/extension/mt_uni_credit/image/popup-calc-bg.png',
         'upload/system/library/mt_uni_credit/constants.php',
+        'upload/system/library/mt_uni_credit/consent_gate.php',
         'upload/system/library/mt_uni_credit/config/environment.php',
         'upload/system/library/mt_uni_credit/keys/.htaccess',
         'upload/system/library/mt_uni_credit/keys/index.php',

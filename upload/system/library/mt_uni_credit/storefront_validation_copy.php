@@ -57,6 +57,8 @@ final class MtUniCreditStorefrontValidationCopy
             'error_phone2_invalid' => (string) $language->get('error_phone2_invalid'),
             'error_validation_incomplete' => (string) $language->get('error_validation_incomplete'),
             'error_request_failed' => (string) $language->get('error_request_failed'),
+            'error_consent_unknown' => (string) $language->get('error_consent_unknown'),
+            'error_consent_refresh' => (string) $language->get('error_consent_refresh'),
             'error_recalculate' => (string) $language->get('error_recalculate'),
             'error_validation' => (string) $language->get('error_validation'),
             'error_required_options' => (string) $language->get('error_required_options'),

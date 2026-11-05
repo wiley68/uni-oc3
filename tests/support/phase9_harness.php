@@ -198,6 +198,8 @@ final class Phase9TestHarness
             'store_id' => $storeId,
             'currency_code' => 'EUR',
             'scheme_key' => 'standard|KOPSTD|12',
+            'consent' => array(1),
+            'consent_config_hash' => (new MtUniCreditStorefrontConsentResolver())->context(mtuc4_valid_shop_snapshot(), 'KOPSTD', 12, array())['config_hash'],
             'product_line' => $line,
             'application_token' => $applicationToken,
             'customer' => array(
@@ -307,6 +309,8 @@ final class Phase9TestHarness
             'store_id' => $storeId,
             'currency_code' => 'EUR',
             'scheme_key' => 'standard|KOPSTD|12',
+            'consent' => array(1),
+            'consent_config_hash' => (new MtUniCreditStorefrontConsentResolver())->context(mtuc4_valid_shop_snapshot(), 'KOPSTD', 12, array())['config_hash'],
             'cart_context' => $cart,
             'cart_fingerprint' => $fingerprint,
             'application_token' => $applicationToken,
@@ -514,6 +518,8 @@ final class Phase9TestHarness
             'currency_code' => (string) $order['currency_code'],
             'currency_value' => isset($order['currency_value']) ? (float) $order['currency_value'] : 1.0,
             'scheme_key' => 'standard|KOPSTD|12',
+            'consent' => array(1),
+            'consent_config_hash' => (new MtUniCreditStorefrontConsentResolver())->context(mtuc4_valid_shop_snapshot(), 'KOPSTD', 12, array())['config_hash'],
             'first_installment' => 0.0,
             'actor' => Phase5TestHarness::guestActor((string) $order['email']),
             'get_order_options' => function () {

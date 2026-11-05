@@ -410,6 +410,9 @@ final class MtUniCreditShopConfigurationSnapshotValidator
             return;
         }
 
+        try { (new MtUniCreditStorefrontConsentResolver())->normalize($shopData); }
+        catch (Throwable $exception) { $this->add('consents', 'invalid_type'); return; }
+
         $seenIds = array();
         foreach ($raw as $index => $item) {
             $path = 'consents[' . $index . ']';

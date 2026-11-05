@@ -132,11 +132,11 @@
               <span class="mt-uni-credit-storefront__field-error" data-mtuc-submit-error role="alert"></span>
             </div>
             {% if consents %}
-              <div class="mt-uni-credit-storefront__consents" data-mtuc-consents aria-label="{{ text_consents }}">
+              <div class="mt-uni-credit-storefront__consents" data-mtuc-consents data-mtuc-consent-config="{{ modal_meta.consent_config_hash }}" aria-label="{{ text_consents }}">
                 {% for consent in consents %}
-                  <div class="mt-uni-credit-storefront__consent{% if not consent.has_checkbox %} mt-uni-credit-storefront__consent--info{% endif %}">
+                  <div{% if consent.interest_scope != 'all' %} hidden{% endif %} data-mtuc-consent-id="{{ consent.id }}" data-mtuc-consent-scope="{{ consent.interest_scope }}" class="mt-uni-credit-storefront__consent{% if not consent.has_checkbox %} mt-uni-credit-storefront__consent--info{% endif %}">
                     {% if consent.has_checkbox %}
-                      <input type="checkbox" class="mt-uni-credit-storefront__consent-checkbox" id="mtuc-consent-{{ field_suffix }}-{{ consent.id }}" name="consent[]" value="{{ consent.id }}" data-mtuc-consent-checkbox>
+                      <input type="checkbox" class="mt-uni-credit-storefront__consent-checkbox" id="mtuc-consent-{{ field_suffix }}-{{ consent.id }}" name="consent[]" value="{{ consent.id }}" data-mtuc-consent-checkbox{% if consent.interest_scope != 'all' %} disabled{% endif %}>
                       <label class="mt-uni-credit-storefront__consent-label" for="mtuc-consent-{{ field_suffix }}-{{ consent.id }}">
                         {% if consent.url %}<a href="{{ consent.url }}" target="_blank" rel="noopener noreferrer">{{ consent.name }}</a>{% else %}{{ consent.name }}{% endif %}
                       </label>
@@ -148,13 +148,6 @@
                     <span class="mt-uni-credit-storefront__field-error" data-mtuc-field-error="consent-{{ consent.id }}" role="alert"></span>
                   </div>
                 {% endfor %}
-              </div>
-            {% else %}
-              <div class="mt-uni-credit-storefront__consents" data-mtuc-consents>
-                <div class="mt-uni-credit-storefront__consent">
-                  <input type="checkbox" class="mt-uni-credit-storefront__consent-checkbox" id="mtuc-consent-{{ field_suffix }}" name="consent" value="1" data-mtuc-consent-checkbox data-mtuc-consent>
-                  <label class="mt-uni-credit-storefront__consent-label" for="mtuc-consent-{{ field_suffix }}">{{ text_consent }}</label>
-                </div>
               </div>
             {% endif %}
             <div class="mt-uni-credit-storefront__popup-actions mt-uni-credit-storefront__popup-actions--step2">

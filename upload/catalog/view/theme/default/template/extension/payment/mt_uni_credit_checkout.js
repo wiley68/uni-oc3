@@ -28,6 +28,59 @@
     return n.toFixed(2) + "%";
   }
 
+
+  /** Module-owned form state; server context is display transport, backend always revalidates. */
+  function consentForm($host) {
+    var context = null;
+    var ready = false;
+    var key = null;
+    function invalidate(nextKey) {
+      ready = false;
+      if (key !== null && nextKey !== key) {
+        $host.find('[data-mtuc-consent-scope]').each(function () {
+          if ($(this).attr('data-mtuc-consent-scope') !== 'all') {
+            $(this).find('[data-mtuc-consent-checkbox]').prop('checked', false);
+          }
+        });
+      }
+      key = nextKey;
+    }
+    function apply(next, nextKey) {
+      invalidate(nextKey);
+      context = next || null;
+      if (!context || !context.valid || context.kop_code == null) { return false; }
+      var required = context.mandatory_ids || [];
+      var available = context.applicable_ids || [];
+      var markupHash = $host.find('[data-mtuc-consents]').attr('data-mtuc-consent-config');
+      if (markupHash && markupHash !== context.config_hash) { return false; }
+      var missing = false;
+      $.each(required, function (_, id) {
+        if (!$host.find('[data-mtuc-consent-checkbox][value="' + id + '"]').length) { missing = true; }
+      });
+      $host.find('[data-mtuc-consent-id]').each(function () {
+        var $row = $(this);
+        var visible = $.inArray(Number($row.attr('data-mtuc-consent-id')), available) !== -1;
+        $row.prop('hidden', !visible);
+        var $box = $row.find('[data-mtuc-consent-checkbox]');
+        $box.prop('disabled', !visible);
+        if (!visible) { $box.prop('checked', false); }
+      });
+      ready = !missing;
+      return ready;
+    }
+    function accepted() {
+      if (!ready || !context) { return false; }
+      var ok = true;
+      $.each(context.mandatory_ids || [], function (_, id) {
+        var $cb = $host.find('[data-mtuc-consent-checkbox][value="' + id + '"]');
+        if (!$cb.length || $cb.prop('disabled') || !$cb.is(':checked')) { ok = false; }
+      });
+      return ok;
+    }
+    return {invalidate: invalidate, apply: apply, accepted: accepted,
+      ready: function () { return ready; }, hash: function () { return context ? context.config_hash : ''; }};
+  }
+
   function initRoot(root) {
     if (!root || root.getAttribute("data-mtuc-bound") === "1") {
       return;
@@ -50,6 +103,9 @@
     root.setAttribute("data-mtuc-bound", "1");
 
     var $root = $(root);
+    var consent = consentForm($root);
+    function mounted() { return $.contains(document.documentElement, root); }
+    function invalidateConsent() { sequence += 1; calcBusy = true; lastCalculation = null; consent.invalidate(selectedSchemeKey); updateConfirmState(); }
     var selectedSchemeKey = "";
     var lastCalculation = null;
     var calcBusy = false;
@@ -119,26 +175,7 @@
       });
     }
 
-    function consentsAccepted() {
-      var required = consentsRequired();
-      if (!required.length) {
-        return true;
-      }
-      var ok = true;
-      $.each(required, function (_, consent) {
-        var $cb = $root.find(
-          "#mtuc-checkout-consent-" +
-            consent.id +
-            ', [data-mtuc-consent-checkbox][value="' +
-            consent.id +
-            '"]',
-        );
-        if (!$cb.length || !$cb.is(":checked")) {
-          ok = false;
-        }
-      });
-      return ok;
-    }
+    function consentsAccepted() { return consent.accepted(); }
 
     function process2Ok() {
       if (!(state.modal && state.modal.process2)) {
@@ -282,9 +319,9 @@
       if (!scheme || !state.recalculate_url) {
         return;
       }
-      calcBusy = true;
-      updateConfirmState();
-      var seq = ++sequence;
+      if (firstTimer) { clearTimeout(firstTimer); firstTimer = null; }
+      invalidateConsent();
+      var seq = sequence;
       var firstVal;
       if (typeof forcedFirst === "number") {
         firstVal = forcedFirst;
@@ -305,11 +342,14 @@
           sequence: seq,
         },
         success: function (json) {
-          if (seq !== sequence) {
+          if (seq !== sequence || !mounted()) {
             return;
           }
           if (json && json.success && json.calculation) {
             $root.find("[data-mtuc-popup-error]").text("");
+            if (json.calculation.key !== selectedSchemeKey || !consent.apply(json.calculation.consent_context, selectedSchemeKey)) {
+              $root.find('[data-mtuc-popup-error]').text((state.i18n && (json.calculation.consent_context && !json.calculation.consent_context.valid ? state.i18n.consent_unknown : state.i18n.consent_refresh)) || 'Обновете страницата за актуални съгласия.'); return;
+            }
             renderCalculation(json.calculation);
           } else {
             $root
@@ -322,7 +362,7 @@
           }
         },
         error: function () {
-          if (seq !== sequence) {
+          if (seq !== sequence || !mounted()) {
             return;
           }
           $root
@@ -330,7 +370,7 @@
             .text((state.i18n && state.i18n.unavailable) || "");
         },
         complete: function () {
-          if (seq !== sequence) {
+          if (seq !== sequence || !mounted()) {
             return;
           }
           calcBusy = false;
@@ -371,13 +411,15 @@
     function confirmOrder() {
       if (
         confirmBusy ||
+        calcBusy ||
+        !mounted() ||
         redirectTerminal ||
         !selectedScheme() ||
         !lastCalculation
       ) {
         return;
       }
-      if (!consentsAccepted()) {
+      if (calcBusy || !consent.ready() || !consentsAccepted()) {
         $root
           .find("[data-mtuc-submit-error]")
           .text((state.i18n && state.i18n.consent) || "");
@@ -396,6 +438,7 @@
       var data = {
         csrf_token: state.csrf_token,
         scheme_key: scheme.key,
+        consent_config_hash: consent.hash(),
         first_installment: resolveSubmitFirstInstallment(scheme),
         egn: String($root.find('[name="egn"]').val() || ""),
         phone2: String($root.find('[name="phone2"]').val() || ""),
@@ -413,6 +456,7 @@
         dataType: "json",
         data: data,
         success: function (json) {
+          if (!mounted()) { return; }
           if (json && json.redirect) {
             redirectTerminal = true;
             // Keep loader ON until navigation leaves the page.
@@ -430,6 +474,7 @@
             );
         },
         error: function () {
+          if (!mounted()) { return; }
           confirmBusy = false;
           setProcessing(false);
           $root
@@ -440,9 +485,12 @@
     }
 
     $root.on("change", "[data-mtuc-schemes]", function () {
+      if (confirmBusy || redirectTerminal) { return; }
       applySchemeFromSelect();
     });
     $root.on("input change", "[data-mtuc-first]", function () {
+      if (confirmBusy || redirectTerminal) { return; }
+      invalidateConsent();
       if (firstTimer) {
         clearTimeout(firstTimer);
       }
@@ -465,6 +513,33 @@
       confirmOrder();
     });
 
+    function externalChange() {
+      if (!mounted()) { return; }
+      if (firstTimer) { clearTimeout(firstTimer); firstTimer = null; }
+      invalidateConsent();
+    }
+    $(document).on('change.mtucConsent', '[name="payment_method"], [name="shipping_method"], #input-shipping-country, #input-shipping-zone', externalChange);
+    function externalRequest(_event, _xhr, settings) {
+      var url = String(settings && settings.url || '');
+      try { url = decodeURIComponent(url); } catch (ignored) {}
+      if (!mounted() || /extension\/(?:payment\/mt_uni_credit|mt_uni_credit)/.test(url)) { return; }
+      if (/(?:checkout\/(?:shipping|payment_method|payment_address|cart)|common\/cart)/.test(url)) {
+        if (firstTimer) { clearTimeout(firstTimer); firstTimer = null; }
+        invalidateConsent();
+      }
+    }
+    $(document).on('ajaxSend.mtucConsent', externalRequest);
+    if (window.MutationObserver) {
+      var observer = new MutationObserver(function () {
+        if (mounted()) { return; }
+        sequence += 1; calcBusy = true; consent.invalidate(selectedSchemeKey);
+        if (firstTimer) { clearTimeout(firstTimer); }
+        $(document).off('change.mtucConsent', externalChange);
+        $(document).off('ajaxSend.mtucConsent', externalRequest);
+        observer.disconnect();
+      });
+      observer.observe(document.documentElement, {childList: true, subtree: true});
+    }
     var select = schemeSelect();
     if (select && select.value) {
       selectedSchemeKey = String(select.value);

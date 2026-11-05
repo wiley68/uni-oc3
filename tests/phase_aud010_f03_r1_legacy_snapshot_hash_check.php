@@ -7,6 +7,7 @@
  * PHP 7.3 compatible. Offline.
  */
 require_once __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/support/legacy_attempt_fixture.php';
 require_once __DIR__ . '/support/phase2_memory_db.php';
 
 $root = MTUC_PHASE0_ROOT;
@@ -180,7 +181,7 @@ function mtucAud010F03R1_persistLegacyAttempt($state, array $legacySnapshot, $op
         return Phase9TestHarness::NOW;
     });
     $attempts = new MtUniCreditFinancingAttemptRepository($db, $clock);
-    $attempt = $attempts->findOrCreateAttempt(
+    $attempt = mtuc_test_legacy_attempt($attempts,
         Phase5TestHarness::STORE_A,
         $orderId,
         Phase4TestHarness::TEST_UNICID,
@@ -439,7 +440,7 @@ $attempts8 = new MtUniCreditFinancingAttemptRepository(
         return Phase9TestHarness::NOW;
     })
 );
-$attempt8 = $attempts8->findOrCreateAttempt(
+$attempt8 = mtuc_test_legacy_attempt($attempts8,
     Phase5TestHarness::STORE_A,
     $oid8,
     Phase4TestHarness::TEST_UNICID,
@@ -500,7 +501,7 @@ $attempts10 = new MtUniCreditFinancingAttemptRepository(
         return Phase9TestHarness::NOW;
     })
 );
-$attempt10 = $attempts10->findOrCreateAttempt(
+$attempt10 = mtuc_test_legacy_attempt($attempts10,
     Phase5TestHarness::STORE_A,
     $oid10,
     Phase4TestHarness::TEST_UNICID,

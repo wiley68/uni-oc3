@@ -115,6 +115,23 @@ final class MtUniCreditApplicationSnapshot
         );
     }
 
+    /** New attempts only; v1 fromLive/encode/hash bytes remain unchanged. */
+    public static function withConsent(array $snapshot, array $shop, MtUniCreditCalculationResult $calculation, array $input, $storeId, $orderId)
+    {
+        $snapshot['version'] = 2;
+        $snapshot['consent_evidence'] = MtUniCreditConsentGate::evidence($shop, $calculation, $input,
+            MtUniCreditConsentGate::binding($snapshot, $storeId, $orderId));
+        return $snapshot;
+    }
+
+    /** Full integrity is checked separately; consent timestamps never become financial drift. */
+    public static function intentProjection(array $snapshot)
+    {
+        unset($snapshot['consent_evidence']);
+        $snapshot['version'] = 1;
+        return $snapshot;
+    }
+
     /**
      * @param array<string, mixed> $snapshot
      * @return string
@@ -178,6 +195,15 @@ final class MtUniCreditApplicationSnapshot
         $existing = self::decode(isset($attempt['application_snapshot_json']) ? $attempt['application_snapshot_json'] : null);
 
         if ($existing !== null) {
+            try { MtUniCreditConsentGate::snapshot($attempt); }
+            catch (Throwable $exception) { return array('ok' => false, 'error' => 'consent_evidence'); }
+            if ($existing['version'] === 2) {
+                if (self::mustMatchLiveIntent($attempt)
+                    && self::hash(self::intentProjection($existing)) !== self::hash(self::intentProjection($liveSnapshot))) {
+                    return array('ok' => false, 'error' => 'application_drift');
+                }
+                return array('ok' => true, 'attempt' => $attempt, 'snapshot' => $existing, 'calculation' => self::toCalculationResult($existing));
+            }
             $existingHash = isset($attempt['application_snapshot_hash'])
                 ? (string) $attempt['application_snapshot_hash']
                 : self::hash($existing);
@@ -221,42 +247,8 @@ final class MtUniCreditApplicationSnapshot
             );
         }
 
-        // Pre-production: never invent a snapshot from live data after remote CP side effects.
-        if (!self::mustMatchLiveIntent($attempt)) {
-            return array('ok' => false, 'error' => 'application_drift');
-        }
-
-        if (
-            !hash_equals(
-                (string) (isset($attempt['selection_hash']) ? $attempt['selection_hash'] : ''),
-                (string) (isset($liveSnapshot['selection_hash']) ? $liveSnapshot['selection_hash'] : '')
-            )
-        ) {
-            return array('ok' => false, 'error' => 'application_drift');
-        }
-        $storedFp = isset($attempt['request_fingerprint']) ? (string) $attempt['request_fingerprint'] : '';
-        $liveFp = isset($liveSnapshot['request_fingerprint']) ? (string) $liveSnapshot['request_fingerprint'] : '';
-        if ($storedFp !== '' && !hash_equals($storedFp, $liveFp)) {
-            return array('ok' => false, 'error' => 'fingerprint_drift');
-        }
-
-        try {
-            $attempt = $attempts->persistApplicationSnapshot((int) $attempt['attempt_id'], $liveSnapshot);
-        } catch (MtUniCreditPersistenceValidationException $exception) {
-            return array('ok' => false, 'error' => 'application_drift');
-        }
-
-        $stored = self::decode(isset($attempt['application_snapshot_json']) ? $attempt['application_snapshot_json'] : null);
-        if ($stored === null) {
-            return array('ok' => false, 'error' => 'application_drift');
-        }
-
-        return array(
-            'ok' => true,
-            'attempt' => $attempt,
-            'snapshot' => $stored,
-            'calculation' => self::toCalculationResult($stored),
-        );
+        // Existing historical attempts are never backfilled with newly invented evidence.
+        return array('ok' => false, 'error' => 'consent_evidence');
     }
 
     /**

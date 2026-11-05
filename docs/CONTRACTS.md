@@ -1632,3 +1632,8 @@ Phase 0 does **not** create: admin/catalog payment implementation, product/cart 
 D5–D12 remain as in the Master Plan (several already approved there: D5 targets, D6 OCMOD, D9 preserve tables). D8/D11 stay open for later phases.
 
 **Phase 0 STOP GATE:** **PASS** (developer approved D1–D4 on commit `9a63d70cb1f1cb9183925880c070950cf8fa5e3a`).
+
+
+### UNI-CONSENT-001 consent authority
+
+See `UNI_CONSENT_001.md` for interest_scope filtering, immutable v2 consent evidence for new attempts, v1 recovery restrictions, and the isolated regression workflow. Financial formulas, external payloads and operation/order identities remain unchanged. Valid frozen v2 evidence governs replay of the same attempt; historical snapshots are not backfilled.

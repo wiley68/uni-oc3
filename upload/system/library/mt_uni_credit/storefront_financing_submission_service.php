@@ -241,6 +241,14 @@ final class MtUniCreditStorefrontFinancingSubmissionService
                 ? $input['load_order']
                 : null;
 
+            $priorClaim = $this->orderClaims->find($storeId, $entryPoint, $operationKeyHash);
+            if ($orderId <= 0 && $priorClaim === null) {
+                try {
+                    if (!$calculation instanceof MtUniCreditCalculationResult) { return $this->fail('unavailable', true); }
+                    MtUniCreditConsentGate::evidence($shop, $calculation, $input, array());
+                } catch (Throwable $exception) { return MtUniCreditConsentGate::failure($exception->getMessage()) + array('session' => $sessionData); }
+            }
+
             // Durable pre-order claim outlives the 45s mutex lease.
             $claim = $this->orderClaims->ensureClaim(
                 $storeId,
@@ -270,6 +278,8 @@ final class MtUniCreditStorefrontFinancingSubmissionService
                 $this->bindOrderId($sessionData, $operationKeyHash, $orderId);
             }
 
+            $existingAttempt = null;
+            $frozenReplay = false;
             $decision = 'fresh';
             $reuseReason = '';
             $order = null;
@@ -322,6 +332,17 @@ final class MtUniCreditStorefrontFinancingSubmissionService
                     return $this->fail('conflict', true);
                 }
 
+                if ($existingAttempt !== null) {
+                    try {
+                        $saved = MtUniCreditConsentGate::snapshot($existingAttempt);
+                        $parsed = array('type' => $saved['scheme']['type'], 'kop_code' => $saved['scheme']['kop_code'], 'months' => $saved['scheme']['months']);
+                        if ($saved['version'] === 2) {
+                            $calculation = MtUniCreditApplicationSnapshot::toCalculationResult($saved);
+                            $frozenReplay = true;
+                        }
+                    } catch (Throwable $exception) { return MtUniCreditConsentGate::failure('consent_evidence', $orderId) + array('session' => $sessionData); }
+                }
+
                 $decision = 'replay';
                 $reuseReason = $claimOrderId > 0 ? 'durable_claim_order' : 'session_bind_match';
 
@@ -358,6 +379,10 @@ final class MtUniCreditStorefrontFinancingSubmissionService
             $this->pruneLegacyBareBinds($sessionData, $selectionIdentityHash, $operationKeyHash);
 
             if ($orderId <= 0) {
+                try {
+                    if (!$calculation instanceof MtUniCreditCalculationResult) { return $this->fail('unavailable', true); }
+                    MtUniCreditConsentGate::evidence($shop, $calculation, $input, array());
+                } catch (Throwable $exception) { return MtUniCreditConsentGate::failure($exception->getMessage()) + array('session' => $sessionData); }
                 if (!$currentFactorValid
                     || (int) (isset($input['currency_id']) ? $input['currency_id'] : 0) <= 0
                     || !$calculation instanceof MtUniCreditCalculationResult) {
@@ -486,8 +511,8 @@ final class MtUniCreditStorefrontFinancingSubmissionService
             }
             // A bound order owns its historical rate. Never reprice it using today's rate.
             $eurOrderTotal = MtUniCreditEurAmount::fromBase($order['total'], $savedFactor);
-            if ($decision === 'replay' || !$calculation instanceof MtUniCreditCalculationResult
-                || abs($calculation->price - $eurOrderTotal) > 0.011) {
+            if (!$frozenReplay && ($decision === 'replay' || !$calculation instanceof MtUniCreditCalculationResult
+                || abs($calculation->price - $eurOrderTotal) > 0.011)) {
                 if ($entryPoint === MtUniCreditOperationEntryPoint::PRODUCT) {
                     $historicalProduct = new MtUniCreditProductContext($line->productId, $line->categories, $eurOrderTotal);
                     $scheme = $this->findScheme($shop, $historicalProduct, $parsed);
@@ -539,6 +564,23 @@ final class MtUniCreditStorefrontFinancingSubmissionService
                 $calculation->scheme->kopCode . '|' . $calculation->scheme->months . '|' . $fingerprint
             );
 
+            $liveSnapshot = MtUniCreditApplicationSnapshot::fromLive(
+                $calculation,
+                $order,
+                $orderProducts,
+                $shop,
+                $entryPoint,
+                $operationKeyHash,
+                $selectionHash,
+                $fingerprint
+            );
+            try {
+                if ($existingAttempt === null) {
+                    $liveSnapshot = MtUniCreditApplicationSnapshot::withConsent($liveSnapshot, $shop, $calculation, $input, $storeId, $orderId);
+                } elseif (!$frozenReplay) {
+                    MtUniCreditConsentGate::authorizeLegacy($existingAttempt, $shop, $input);
+                }
+            } catch (Throwable $exception) { return MtUniCreditConsentGate::failure($exception->getMessage(), $orderId) + array('session' => $sessionData); }
             try {
                 $attempt = $this->attempts->findOrCreateAttempt(
                     $storeId,
@@ -547,7 +589,8 @@ final class MtUniCreditStorefrontFinancingSubmissionService
                     $operationKeyHash,
                     $selectionHash,
                     $fingerprint,
-                    $entryPoint
+                    $entryPoint,
+                    $liveSnapshot
                 );
             } catch (MtUniCreditPersistenceValidationException $exception) {
                 $this->logDecision(
@@ -579,16 +622,6 @@ final class MtUniCreditStorefrontFinancingSubmissionService
                 return $this->fail('conflict', true);
             }
 
-            $liveSnapshot = MtUniCreditApplicationSnapshot::fromLive(
-                $calculation,
-                $order,
-                $orderProducts,
-                $shop,
-                $entryPoint,
-                $operationKeyHash,
-                $selectionHash,
-                $fingerprint
-            );
             $bound = MtUniCreditApplicationSnapshot::bindToAttempt($this->attempts, $attempt, $liveSnapshot);
             if (empty($bound['ok'])) {
                 $driftError = isset($bound['error']) ? (string) $bound['error'] : 'application_drift';
@@ -603,9 +636,11 @@ final class MtUniCreditStorefrontFinancingSubmissionService
                     $driftError
                 );
 
+                if (strpos($driftError, 'consent_') === 0) { return MtUniCreditConsentGate::failure($driftError, $orderId) + array('session' => $sessionData); }
                 return $this->fail($driftError, true);
             }
             $attempt = $bound['attempt'];
+            if (!MtUniCreditConsentGate::permits($attempt, $shop)) { return MtUniCreditConsentGate::failure('consent_evidence', $orderId) + array('session' => $sessionData); }
             $calculation = $bound['calculation'];
 
             $this->logDecision(

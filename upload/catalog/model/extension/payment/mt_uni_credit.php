@@ -133,11 +133,62 @@ class ModelExtensionPaymentMtUniCredit extends Model
             'currency_value' => $this->resolveSessionCurrencyValue($currency),
             'actor' => $this->resolveCheckoutActor(),
             'process2' => is_array($process2) ? $process2 : array(),
+            'consent' => isset($selection['consent']) ? $selection['consent'] : array(),
+            'consent_config_hash' => isset($selection['consent_config_hash']) ? $selection['consent_config_hash'] : '',
             'scheme_key' => isset($selection['scheme_key']) ? (string) $selection['scheme_key'] : '',
             'first_installment' => isset($selection['first_installment'])
                 ? (float) $selection['first_installment']
                 : 0.0,
         ));
+    }
+
+    public function preparedConsentContext($orderId, $selection)
+    {
+        $attempts = new MtUniCreditFinancingAttemptRepository(MtUniCreditBootstrap::dbFromModel($this));
+        $attempt = $attempts->findByStoreOrder($this->resolveStoreId(), $orderId);
+        if ($attempt !== null) {
+            $snapshot = MtUniCreditConsentGate::snapshot($attempt);
+            if ($snapshot['version'] === 2) { return $snapshot['consent_evidence']['context'] + array('frozen' => true); }
+            $kop = $snapshot['scheme']['kop_code']; $months = $snapshot['scheme']['months'];
+        } else {
+            $parsed = MtUniCreditStorefrontCalculatorPresenter::parseSchemeKey(is_array($selection) && isset($selection['scheme_key']) ? $selection['scheme_key'] : '');
+            if ($parsed === null) { throw new InvalidArgumentException('consent_evidence'); }
+            $kop = $parsed['kop_code']; $months = $parsed['months'];
+        }
+        $shop = $this->shopConfigurationService()->getForPresentation();
+        if (!is_array($shop)) { throw new InvalidArgumentException('consent_unknown'); }
+        $entry = (new MtUniCreditCoefficientResolver(new MtUniCreditMonthResolver()))->find(isset($shop['coeff_list']) ? $shop['coeff_list'] : array(), $kop, $months);
+        return (new MtUniCreditStorefrontConsentResolver())->context($shop, $kop, $months, is_array($entry) ? $entry : array());
+    }
+
+    /** Strict pre-prepare gate. Existing attempts use frozen evidence, never posted selection. */
+    public function validateCheckoutConsents(array $posted)
+    {
+        $stack = $this->shopConfigurationService();
+        $shop = $stack->getForSubmission();
+        $storeId = $this->resolveStoreId();
+        $orderId = isset($this->session->data['order_id']) ? (int) $this->session->data['order_id'] : 0;
+        $attempts = new MtUniCreditFinancingAttemptRepository(MtUniCreditBootstrap::dbFromModel($this));
+        $attempt = $orderId > 0 ? $attempts->findByStoreOrder($storeId, $orderId) : null;
+        if ($attempt !== null) {
+            MtUniCreditConsentGate::authorizeLegacy($attempt, $shop, $posted);
+            if (!MtUniCreditConsentGate::permits($attempt, $shop)) { throw new InvalidArgumentException('consent_evidence'); }
+            return;
+        }
+        $parsed = MtUniCreditStorefrontCalculatorPresenter::parseSchemeKey(isset($posted['scheme_key']) ? $posted['scheme_key'] : '');
+        if ($parsed === null || $orderId <= 0) { throw new InvalidArgumentException('consent_unknown'); }
+        $this->load->model('checkout/order');
+        $order = $this->model_checkout_order->getOrder($orderId);
+        $factor = is_array($order) ? MtUniCreditEurAmount::orderFactor($order, $storeId, $orderId) : null;
+        if ($factor === null) { throw new InvalidArgumentException('consent_unknown'); }
+        $cart = MtUniCreditEurAmount::cartContext($this->createCheckoutCartContext(), $factor);
+        $resolution = (new MtUniCreditCartSchemeResolver(new MtUniCreditCalculator()))->resolve($shop, $cart);
+        $scheme = (new MtUniCreditStorefrontCalculatorPresenter())->findCartScheme($resolution, $shop, $parsed);
+        if ($scheme === null) { throw new InvalidArgumentException('consent_unknown'); }
+        $entry = $scheme->coefficient;
+        $r = new MtUniCreditStorefrontConsentResolver();
+        $context = $r->context($shop, $parsed['kop_code'], $parsed['months'], is_array($entry) ? $entry : array());
+        $r->validate($context, isset($posted['consent']) ? $posted['consent'] : array(), isset($posted['consent_config_hash']) ? $posted['consent_config_hash'] : null);
     }
 
     /**

@@ -46,3 +46,12 @@ $_['error_consent'] = 'Please accept the terms.';
 $_['text_egn'] = 'Personal ID (EGN)';
 $_['text_phone2'] = 'Second phone';
 $_['text_required'] = '*';
+
+// UNI-CONSENT-001: local refusal never represents a banking rejection.
+$_['error_consent_required'] = 'Accept the required consents.';
+$_['error_consent_refresh'] = 'The consents have changed. Refresh the page before submitting.';
+$_['error_consent_unknown'] = 'Consent applicability could not be verified. Refreshing may not resolve this issue; contact support.';
+$_['error_consent_evidence'] = 'The consent evidence could not be verified. Contact support.';
+$_['error_consent_configuration'] = 'The consent configuration is invalid. Contact support.';
+$_['error_consent_ids'] = 'Invalid accepted consent IDs.';
+$_['error_consent_existing'] = 'Continuation of the existing application is blocked. Refreshing may not resolve this issue; contact support. Do not create another order.';

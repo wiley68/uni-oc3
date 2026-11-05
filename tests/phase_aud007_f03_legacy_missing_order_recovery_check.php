@@ -7,6 +7,7 @@
  * PHP 7.3 compatible. Offline.
  */
 require_once __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/support/legacy_attempt_fixture.php';
 require_once __DIR__ . '/support/phase2_memory_db.php';
 
 $failures = array();
@@ -55,7 +56,7 @@ mtucAud007F03_assert(mtuc_phase0_network_isolation_active(), 'isolation: offline
  */
 function mtucAud007F03_seedAttempt(array $stack, $orderId, $opHash, $state)
 {
-    $attempt = $stack['attempts']->findOrCreateAttempt(
+    $attempt = mtuc_test_legacy_attempt($stack['attempts'],
         $stack['storeId'],
         (int) $orderId,
         Phase4TestHarness::TEST_UNICID,

@@ -44,6 +44,7 @@ final class MtUniCreditStorefrontModalPresenter
             'process2' => $process2,
             'customer' => array_merge($customerDefaults, $customer),
             'consents' => $consents,
+            'consent_config_hash' => hash('sha256', json_encode($consents, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)),
             'fields' => $process2
                 ? array('firstname', 'lastname', 'address', 'phone', 'email', 'phone2', 'egn')
                 : array('firstname', 'lastname', 'address', 'phone', 'email'),

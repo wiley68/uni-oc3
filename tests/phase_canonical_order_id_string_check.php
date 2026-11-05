@@ -55,6 +55,13 @@ $p2 = MtUniCreditBankStatus::process2Sent();
 $memoryA = new Phase2MemoryDb();
 $dbA = new MtUniCreditDbAdapter($memoryA, 'oc_');
 $attemptsA = new MtUniCreditFinancingAttemptRepository($dbA);
+$repoSnapshot = array('version' => 1, 'entry_point' => MtUniCreditOperationEntryPoint::CHECKOUT,
+    'operation_key_hash' => hash('sha256', 'oid-a-op'), 'selection_hash' => hash('sha256', 'oid-a-sel'),
+    'request_fingerprint' => hash('sha256', 'oid-a-fp'), 'scheme' => array('type' => 'standard', 'kop_code' => 'KOPSTD', 'months' => 12, 'filter_id' => 0),
+    'financial' => array());
+$repoScheme = new MtUniCreditAvailableScheme('standard', 'KOPSTD', 12, 0, null, array('coeff' => 0.1, 'interestPercent' => 5));
+$repoCalc = new MtUniCreditCalculationResult($repoScheme, 500, new MtUniCreditFirstInstallmentState(0, true, false), 500, 50, 600, 5, 6);
+$repoSnapshot = MtUniCreditApplicationSnapshot::withConsent($repoSnapshot, array(), $repoCalc, array(), $storeId, $order13);
 $created = $attemptsA->findOrCreateAttempt(
     $storeId,
     $order13,
@@ -62,7 +69,8 @@ $created = $attemptsA->findOrCreateAttempt(
     hash('sha256', 'oid-a-op'),
     hash('sha256', 'oid-a-sel'),
     hash('sha256', 'oid-a-fp'),
-    MtUniCreditOperationEntryPoint::CHECKOUT
+    MtUniCreditOperationEntryPoint::CHECKOUT,
+    $repoSnapshot
 );
 mtucCanonOid_assert(is_string($created['order_id']) && $created['order_id'] === $order13, 'A: attempt persists 13-digit string');
 $reloaded = $attemptsA->findByStoreOrder($storeId, $order13);

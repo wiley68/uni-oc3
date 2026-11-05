@@ -76,6 +76,17 @@ final class MtUniCreditCheckoutFinancingSubmissionService
             ? (string) $input['lock_owner_token']
             : MtUniCreditLockOwnerTokenGenerator::generate();
 
+        if ($storeId < 0) { return array('success' => false, 'error' => 'validation', 'message' => MtUniCreditControlPanelOrderLifecycleService::CUSTOMER_FAILURE_MESSAGE); }
+        $existingAttempt = $orderId !== null ? $this->attempts->findByStoreOrder($storeId, $orderId) : null;
+        if ($existingAttempt !== null) {
+            try {
+                $saved = MtUniCreditConsentGate::snapshot($existingAttempt);
+                $input['scheme_key'] = MtUniCreditStorefrontCalculatorPresenter::schemeKey($saved['scheme']['type'], $saved['scheme']['kop_code'], $saved['scheme']['months']);
+                $input['first_installment'] = (float) $saved['financial']['first_installment'];
+                $input['_consent_attempt'] = $existingAttempt;
+            } catch (Throwable $exception) { return MtUniCreditConsentGate::failure('consent_evidence', $orderId); }
+        }
+
         $validation = $this->revalidate($storeId, $orderId, $order, $orderProducts, $cartContext, $input);
         if (isset($validation['error'])) {
             return array(
@@ -96,6 +107,21 @@ final class MtUniCreditCheckoutFinancingSubmissionService
         $selectionHash = hash('sha256', $calculation->scheme->kopCode . '|' . $calculation->scheme->months . '|' . $fingerprint);
         $operationKeyHash = hash('sha256', 'checkout|' . $storeId . '|' . $orderId);
 
+        $liveSnapshot = MtUniCreditApplicationSnapshot::fromLive(
+            $calculation,
+            $order,
+            $orderProducts,
+            $shop,
+            MtUniCreditOperationEntryPoint::CHECKOUT,
+            $operationKeyHash,
+            $selectionHash,
+            $fingerprint
+        );
+        try {
+            if ($existingAttempt === null) {
+                $liveSnapshot = MtUniCreditApplicationSnapshot::withConsent($liveSnapshot, $shop, $calculation, $input, $storeId, $orderId);
+            } else { MtUniCreditConsentGate::authorizeLegacy($existingAttempt, $shop, $input); }
+        } catch (Throwable $exception) { return MtUniCreditConsentGate::failure($exception->getMessage(), $orderId); }
         try {
             $attempt = $this->attempts->findOrCreateCheckoutAttempt(
                 $storeId,
@@ -103,7 +129,8 @@ final class MtUniCreditCheckoutFinancingSubmissionService
                 $unicid,
                 $operationKeyHash,
                 $selectionHash,
-                $fingerprint
+                $fingerprint,
+                $liveSnapshot
             );
         } catch (MtUniCreditPersistenceValidationException $exception) {
             return array(
@@ -121,16 +148,6 @@ final class MtUniCreditCheckoutFinancingSubmissionService
             );
         }
 
-        $liveSnapshot = MtUniCreditApplicationSnapshot::fromLive(
-            $calculation,
-            $order,
-            $orderProducts,
-            $shop,
-            MtUniCreditOperationEntryPoint::CHECKOUT,
-            $operationKeyHash,
-            $selectionHash,
-            $fingerprint
-        );
         $bound = MtUniCreditApplicationSnapshot::bindToAttempt($this->attempts, $attempt, $liveSnapshot);
         if (empty($bound['ok'])) {
             return array(
@@ -141,6 +158,7 @@ final class MtUniCreditCheckoutFinancingSubmissionService
             );
         }
         $attempt = $bound['attempt'];
+        if (!MtUniCreditConsentGate::permits($attempt, $shop)) { return MtUniCreditConsentGate::failure('consent_evidence', $orderId); }
         $calculation = $bound['calculation'];
 
         $isProcess2 = MtUniCreditShopConfigurationFlags::isSecondaryProcess($shop);
@@ -375,6 +393,14 @@ final class MtUniCreditCheckoutFinancingSubmissionService
             $eurOrderTotal = MtUniCreditEurAmount::fromBase($orderTotal, $savedFactor);
         } catch (InvalidArgumentException $exception) {
             return array('error' => 'unavailable');
+        }
+        if (isset($input['_consent_attempt'])) {
+            $saved = MtUniCreditConsentGate::snapshot($input['_consent_attempt']);
+            if ($saved['version'] === 2) {
+                $frozen = MtUniCreditApplicationSnapshot::toCalculationResult($saved);
+                if (abs($frozen->price - $eurOrderTotal) > 0.009) { return array('error' => 'amount_changed'); }
+                return array('shop' => $shop, 'calculation' => $frozen, 'unicid' => $unicid);
+            }
         }
         $resolution = $this->cartSchemes->resolve($shop, $eurCart);
         $schemeKey = trim((string) (isset($input['scheme_key']) ? $input['scheme_key'] : ''));

@@ -227,14 +227,6 @@ class ControllerExtensionMtUniCreditProduct extends Controller
             }
 
             $shop = MtUniCreditStorefrontRuntime::loadPresentationShop($this);
-            $consent = isset($this->request->post['consent']) ? $this->request->post['consent'] : array();
-            if (!$this->consentAccepted($consent, $shop)) {
-                $json['error'] = 'consent';
-                $json['message'] = $this->language->get('error_consent');
-                MtUniCreditStorefrontRuntime::respondJson($this, $json);
-                return;
-            }
-
             $customerValidation = $this->validateStep2Customer($shop);
             if (!$customerValidation['ok']) {
                 $json['error'] = 'validation';
@@ -304,6 +296,8 @@ class ControllerExtensionMtUniCreditProduct extends Controller
             'store_id' => (int) $this->config->get('config_store_id'),
             'currency_code' => $currency,
             'scheme_key' => (string) $this->posted('scheme_key', ''),
+            'consent' => isset($this->request->post['consent']) ? $this->request->post['consent'] : array(),
+            'consent_config_hash' => $this->posted('consent_config_hash', ''),
             'product_line' => $line,
             'application_token' => (string) $this->posted('application_token', ''),
             'customer' => $this->customerPayload(),
@@ -389,6 +383,9 @@ class ControllerExtensionMtUniCreditProduct extends Controller
         // Native status only when lifecycle explicitly authorizes it (not CP-only success).
         $this->maybeApplyNativeOrderStatus($result);
 
+        if (isset($result['error']) && strpos($result['error'], 'consent_') === 0) {
+            $result['message'] = $this->language->get(!empty($result['order_id']) ? 'error_consent_existing' : 'error_' . $result['error']);
+        }
         $json['error'] = isset($result['error']) ? (string) $result['error'] : 'request_failed';
         $json['message'] = isset($result['message']) ? (string) $result['message'] : $json['message'];
         if (!empty($result['order_id'])) {

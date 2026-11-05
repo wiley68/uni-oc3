@@ -182,14 +182,6 @@ class ControllerExtensionMtUniCreditCart extends Controller
         }
 
         $shop = MtUniCreditStorefrontRuntime::loadPresentationShop($this);
-        $consent = isset($this->request->post['consent']) ? $this->request->post['consent'] : array();
-        if (!$this->consentAccepted($consent, $shop)) {
-            $json['error'] = 'consent';
-            $json['message'] = $this->language->get('error_consent');
-            MtUniCreditStorefrontRuntime::respondJson($this, $json);
-            return;
-        }
-
         $customerValidation = $this->validateStep2Customer($shop);
         if (!$customerValidation['ok']) {
             $json['error'] = 'validation';
@@ -234,6 +226,8 @@ class ControllerExtensionMtUniCreditCart extends Controller
             'store_id' => (int) $this->config->get('config_store_id'),
             'currency_code' => $currency,
             'scheme_key' => (string) $this->posted('scheme_key', ''),
+            'consent' => isset($this->request->post['consent']) ? $this->request->post['consent'] : array(),
+            'consent_config_hash' => $this->posted('consent_config_hash', ''),
             'cart_context' => $cart,
             'cart_fingerprint' => $fingerprint,
             'application_token' => (string) $this->posted('application_token', ''),
@@ -351,6 +345,9 @@ class ControllerExtensionMtUniCreditCart extends Controller
 
         $this->maybeApplyNativeOrderStatus($result);
 
+        if (isset($result['error']) && strpos($result['error'], 'consent_') === 0) {
+            $result['message'] = $this->language->get(!empty($result['order_id']) ? 'error_consent_existing' : 'error_' . $result['error']);
+        }
         $json['error'] = isset($result['error']) ? (string) $result['error'] : 'request_failed';
         $json['message'] = isset($result['message']) ? (string) $result['message'] : $json['message'];
         $json['cart_unchanged'] = true;

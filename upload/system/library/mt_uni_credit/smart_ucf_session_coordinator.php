@@ -188,6 +188,10 @@ final class MtUniCreditSmartUcfSessionCoordinator
             ? trim($authoritativeShopUnicid)
             : '';
 
+        $consentRow = $this->lifecycle->findByAttempt($attemptId);
+        if ($consentRow === null || !MtUniCreditConsentGate::permits($consentRow, $shop)) {
+            return MtUniCreditSmartUcfCoordinationResult::failed(MtUniCreditConsentGate::failure('consent_evidence', $localOrderId)['message'], false, 'consent_evidence');
+        }
         $row = $this->lifecycle->readAndNormalize($attemptId);
         if ($row === null) {
             return MtUniCreditSmartUcfCoordinationResult::failed(
@@ -1006,6 +1010,7 @@ final class MtUniCreditSmartUcfSessionCoordinator
         if ($row === null) {
             return false;
         }
+        if (!MtUniCreditConsentGate::permits($row)) { return false; }
         if (
             (string) (isset($row['smartucf_state']) ? $row['smartucf_state'] : '')
             !== MtUniCreditSmartUcfLifecycleStates::CREATED
