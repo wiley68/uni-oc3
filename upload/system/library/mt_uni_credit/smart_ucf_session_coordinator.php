@@ -192,14 +192,7 @@ final class MtUniCreditSmartUcfSessionCoordinator
         if ($consentRow === null || !MtUniCreditConsentGate::permits($consentRow, $shop)) {
             return MtUniCreditSmartUcfCoordinationResult::failed(MtUniCreditConsentGate::failure('consent_evidence', $localOrderId)['message'], false, 'consent_evidence');
         }
-        $row = $this->lifecycle->readAndNormalize($attemptId);
-        if ($row === null) {
-            return MtUniCreditSmartUcfCoordinationResult::failed(
-                self::CUSTOMER_FAILED,
-                true,
-                MtUniCreditSmartUcfFailureClassification::CLASS_PRE_SEND
-            );
-        }
+        $row = $consentRow;
         $snapshot = MtUniCreditApplicationSnapshot::decode(
             isset($row['application_snapshot_json']) ? $row['application_snapshot_json'] : null
         );
@@ -218,6 +211,24 @@ final class MtUniCreditSmartUcfSessionCoordinator
                 self::CUSTOMER_FAILED,
                 false,
                 MtUniCreditSmartUcfFailureClassification::CLASS_PRE_SEND
+            );
+        }
+        // Direct callers must prove the same terms as CP_CREATED, not merely its price.
+        // Refuse before normalization/claims/certificate work; never mark banking failure.
+        if (!$this->matchesFrozenCalculation($snapshot, $calculation)) {
+            return MtUniCreditSmartUcfCoordinationResult::failed(
+                MtUniCreditConsentGate::failure('consent_evidence', $localOrderId)['message'], false, 'application_drift'
+            );
+        }
+        $handoff = MtUniCreditApplicationSnapshot::resolveHandoffInputs($snapshot, $order);
+        $calculation = $handoff['calculation'];
+        $order = $handoff['order'];
+        $orderProducts = $handoff['order_products'];
+
+        $row = $this->lifecycle->readAndNormalize($attemptId);
+        if ($row === null) {
+            return MtUniCreditSmartUcfCoordinationResult::failed(
+                self::CUSTOMER_FAILED, true, MtUniCreditSmartUcfFailureClassification::CLASS_PRE_SEND
             );
         }
         if (MtUniCreditShopConfigurationFlags::isSecondaryProcess($shop)) {
@@ -422,6 +433,30 @@ final class MtUniCreditSmartUcfSessionCoordinator
             (string) $session['redirect_url'],
             (string) $session['session_id']
         );
+    }
+
+    /** Same identity and cent-precision financial authority as the immutable snapshot. */
+    private function matchesFrozenCalculation(array $snapshot, MtUniCreditCalculationResult $calculation)
+    {
+        $scheme = $calculation->scheme;
+        if (!$scheme instanceof MtUniCreditAvailableScheme || !isset($snapshot['scheme']['type'])
+            || $scheme->type !== $snapshot['scheme']['type'] || $scheme->kopCode !== $snapshot['scheme']['kop_code']
+            || $scheme->months !== $snapshot['scheme']['months']
+            || !$calculation->firstInstallment instanceof MtUniCreditFirstInstallmentState) {
+            return false;
+        }
+        $values = array('price' => $calculation->price, 'first_installment' => $calculation->firstInstallment->amount,
+            'financed_amount' => $calculation->financedAmount, 'monthly_installment' => $calculation->monthlyInstallment,
+            'total_payable' => $calculation->totalPayable, 'glp' => $calculation->glp, 'gpr' => $calculation->gpr);
+        foreach ($values as $field => $value) {
+            if (!isset($snapshot['financial'][$field]) || !MtUniCreditStorefrontConsentResolver::finite($value)
+                || !MtUniCreditStorefrontConsentResolver::finite($snapshot['financial'][$field])
+                || MtUniCreditApplicationSnapshot::decimalString($value, 2)
+                    !== MtUniCreditApplicationSnapshot::decimalString($snapshot['financial'][$field], 2)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

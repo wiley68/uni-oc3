@@ -67,6 +67,22 @@ Actual default/Journal browser rendering, third-party checkout sequencing, PHP 7
 
 No live tests, dependency installation, DB connections, real orders, mail, banking requests, commits or pushes were performed. Actual PHP 7.3 execution, full browser DOM/Journal behavior and real database concurrency remain runtime acceptance work.
 
+## Phase 5D — targeted remediation
+
+Baseline: `3c99ab8f9a9de1ed8802ad7f658ca990f83491eb`, branch `work/uni-consent-001-oc3`, clean initial worktree; version remains `2.0.3`.
+
+- F1: direct `SmartUcfSessionCoordinator::run()` now compares scheme type/KOP/months and all seven financial fields against the persisted snapshot at its existing two-decimal precision. Incompatible inputs return order-aware `application_drift` before stale-state normalization, claims, certificate work or session creation. Matching calls reconstruct calculation/customer/products with the existing `resolveHandoffInputs()` service. Legacy request authorization and CP_CREATED/session replay rules remain in force; no snapshot is rewritten.
+- F2: scoped consent contexts inspect raw entries for the effective KOP/months. An invalid matching coefficient/interest or conflicting zero/nonzero class yields unknown/refusal in either row order. Same-class duplicates and unrelated KOP/months remain valid. Financial coefficient selection/deduplication and formulas are unchanged. All-only lists retain selected-entry classification and add no ambiguity gate because applicability is independent of interest. Frozen v2 evidence remains self-contained; no evidence schema or historical hash changes.
+- F3: the frontend harness executes production Apply with real queued fake-timer callbacks for Product and Cart, drains the queue, and checks readiness/context plus pending acceptance refusal. In-memory removal of Apply timer cancellation fails both regressions. Production JS is unchanged.
+
+The initial targeted backend regression reproduced the defects with 27 PASS / 46 FAIL before production remediation, then 73 PASS / 0 FAIL afterward. Additional service-boundary/stale-state cases bring `phase_uni_consent_remediation_check.php` to **81 PASS**. The frontend harness reports **46 PASS**, including both mutation detections.
+
+Existing safe regressions: consent/backend 147; immutable snapshots 58; legacy hash 20; missing-order recovery 35; Product/Cart 368; checkout presentation 57; prepared selection/controller 82; calculator golden/domain 35; calculator authority 60; canonical 14/14 suites — PASS. Counts overlap and include static assertions; they are not browser certifications. Source packaging policy validates exactly 260 files; no ZIP build is part of Phase 5D.
+
+An additional historical `phase11_check.php` run stops at `support/phase11_body_1.php:319`, whose unchanged fixture calls the new-attempt API without v2 evidence. The failing call and repository requirement are unchanged from the checkpoint; this unrelated fixture gap is left outside remediation scope.
+
+Phase 5D changes only `smart_ucf_session_coordinator.php`, `storefront_consent_resolver.php`, `tests/support/consent_frontend_check.js`, this document, and new `tests/phase_uni_consent_remediation_check.php`. PHP 7.3 compatibility is source-assessed; execution uses PHP 8.3.6. Default/Journal browser acceptance, actual PHP 7.3 runtime and real DB concurrency remain pending.
+
 ## Change inventory
 
 Created:

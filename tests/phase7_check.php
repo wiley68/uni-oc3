@@ -21,6 +21,7 @@ require_once $lib . DIRECTORY_SEPARATOR . 'bootstrap.php';
 require_once __DIR__ . '/support/phase4_harness.php';
 require_once __DIR__ . '/support/phase5_harness.php';
 require_once __DIR__ . '/support/phase7_harness.php';
+require_once __DIR__ . '/support/phase9_harness.php';
 require_once __DIR__ . '/fixtures/cp_shop_snapshot.php';
 
 $failures = array();
@@ -153,48 +154,92 @@ mtuc7_assert(!isset($payload['status']) && !isset($payload['status_id']), 'creat
 mtuc7_assert($payload['version'] === '2.0.3', 'payload version frozen 2.0.3');
 mtuc7_assert($payload['products_name'] === 'Example_Product', 'product name underscore preserved');
 
-// Attempt persistence + reuse
+// Missing rendered consent context must refuse before any financing side effect.
+$missingContextTransport = new Phase4FakeCpHttpTransport();
+$missingContextStack = Phase9TestHarness::stack($missingContextTransport);
+$missingContextOrderId = 7000;
+Phase9TestHarness::seedBankOrder($missingContextStack['memoryDb'], $missingContextOrderId, $missingContextStack['storeId']);
+$missingContextInput = Phase7TestHarness::submitInput($missingContextOrderId, $missingContextStack['storeId']);
+unset($missingContextInput['consent'], $missingContextInput['consent_config_hash']);
+// Observe the complete isolated native-order inventory, including unexpected IDs.
+$orderInventory = new ReflectionProperty('Phase2MemoryDb', 'orders');
+$orderInventory->setAccessible(true);
+$ordersBeforeMissingContext = $orderInventory->getValue($missingContextStack['memoryDb']);
+$missingContextResult = $missingContextStack['submission']->submit($missingContextInput);
+mtuc7_assert(empty($missingContextResult['success'])
+    && isset($missingContextResult['error']) && $missingContextResult['error'] === 'consent_refresh',
+    'missing consent context: consent_refresh refusal');
+mtuc7_assert($missingContextStack['attempts']->findByStoreOrder($missingContextStack['storeId'], $missingContextOrderId) === null,
+    'missing consent context: no financing attempt');
+mtuc7_assert(count($missingContextTransport->requests) === 0,
+    'missing consent context: no CP request or create');
+mtuc7_assert(Phase9TestHarness::smartUcfCallCount($missingContextStack['smartUcfProbe']) === 0,
+    'missing consent context: no SmartUCF session');
+mtuc7_assert(count($missingContextStack['process2Mailer']->sent) === 0,
+    'missing consent context: no mail operation');
+mtuc7_assert(count($ordersBeforeMissingContext) === 1
+    && $orderInventory->getValue($missingContextStack['memoryDb']) === $ordersBeforeMissingContext,
+    'missing consent context: existing native order unchanged, no duplicate order');
+mtuc7_assert($missingContextStack['bankStatuses']->findByOrderId($missingContextStack['storeId'], $missingContextOrderId) === null,
+    'missing consent context: no banking failure status');
+
+// Attempt persistence + reuse: a new application with current, explicit acceptance.
 $transport = new Phase4FakeCpHttpTransport();
 $payloads = Phase7TestHarness::loginAndOrderSuccessPayloads();
 $transport->enqueueJson(200, $payloads['login']);
 $transport->enqueueJson(201, $payloads['order']);
 $stack = Phase7TestHarness::stack($transport);
-$input = array(
-    'store_id' => $stack['storeId'],
-    'order_id' => Phase7TestHarness::ORDER_ID,
-    'order' => Phase7TestHarness::orderRow(),
-    'order_products' => Phase7TestHarness::orderProducts(),
-    'cart_context' => Phase7TestHarness::cartContext(),
-    'scheme_key' => 'standard|KOPSTD|12',
-    'first_installment' => 0.0,
-    'currency_code' => 'EUR',
-    'currency_value' => 1.0,
-    'actor' => Phase5TestHarness::guestActor('example.customer@example.test'),
-    'get_order_options' => function () {
-        return array();
-    },
-);
+$input = Phase7TestHarness::submitInput(Phase7TestHarness::ORDER_ID, $stack['storeId']);
+$consentShop = mtuc4_valid_shop_snapshot();
+$consentEntry = (new MtUniCreditCoefficientResolver(new MtUniCreditMonthResolver()))->find(
+    $consentShop['coeff_list'], $calc->scheme->kopCode, $calc->scheme->months);
+$consentContext = (new MtUniCreditStorefrontConsentResolver())->context(
+    $consentShop, $calc->scheme->kopCode, $calc->scheme->months, $consentEntry);
+$input['consent'] = $consentContext['mandatory_ids'];
+$input['consent_config_hash'] = $consentContext['config_hash'];
 $first = $stack['submission']->submit($input);
 mtuc7_assert(!empty($first['success']), 'first CP submit succeeds');
-mtuc7_assert((int) $first['control_panel_order_id'] === 555001, 'CP order id persisted');
+mtuc7_assert(isset($first['control_panel_order_id']) && (int) $first['control_panel_order_id'] === 555001, 'CP order id persisted');
 mtuc7_assert(Phase7TestHarness::countOrderPosts($transport) === 1, 'exactly one POST /orders on success');
 $attempt = $stack['attempts']->findByStoreOrder($stack['storeId'], Phase7TestHarness::ORDER_ID);
-mtuc7_assert($attempt !== null && $attempt['state'] === MtUniCreditFinancingAttemptState::CP_CREATED, 'attempt state cp_created');
-mtuc7_assert($attempt['request_fingerprint'] !== '', 'fingerprint persisted');
+mtuc7_assert(is_array($attempt) && isset($attempt['state'])
+    && $attempt['state'] === MtUniCreditFinancingAttemptState::CP_CREATED, 'attempt state cp_created');
+mtuc7_assert(is_array($attempt) && isset($attempt['request_fingerprint'])
+    && is_string($attempt['request_fingerprint']) && $attempt['request_fingerprint'] !== '', 'fingerprint persisted');
+$snapshot = is_array($attempt) && isset($attempt['application_snapshot_json'])
+    ? MtUniCreditApplicationSnapshot::decode($attempt['application_snapshot_json']) : null;
+mtuc7_assert(is_array($attempt) && MtUniCreditConsentGate::permits($attempt, $consentShop)
+    && $snapshot['version'] === 2 && $snapshot['consent_evidence']['context'] === $consentContext
+    && $snapshot['consent_evidence']['coefficient'] === (float) $consentEntry['coeff']
+    && $snapshot['consent_evidence']['interest_percent'] === (float) $consentEntry['interestPercent']
+    && $snapshot['consent_evidence']['accepted_ids'] === $consentContext['mandatory_ids'],
+    'new attempt: valid v2 evidence/hash and trusted KOP/month/coefficient consent context');
+$expectedFingerprint = MtUniCreditControlPanelOrderPayloadBuilder::fingerprint($payload);
+mtuc7_assert(is_array($attempt)
+    && isset($attempt['operation_key_hash'], $attempt['request_fingerprint'], $attempt['selection_hash'])
+    && $attempt['operation_key_hash'] === hash('sha256', 'checkout|' . $stack['storeId'] . '|' . Phase7TestHarness::ORDER_ID)
+    && $attempt['request_fingerprint'] === $expectedFingerprint
+    && $attempt['selection_hash'] === hash('sha256', $calc->scheme->kopCode . '|' . $calc->scheme->months . '|' . $expectedFingerprint),
+    'new attempt: original order/operation/financial fingerprint and selection preserved');
 
 $second = $stack['submission']->submit($input);
 mtuc7_assert(!empty($second['success']) && !empty($second['local_replay']), 'revisit replays locally without new POST');
 mtuc7_assert(Phase7TestHarness::countOrderPosts($transport) === 1, 'revisit does not POST /orders again');
 
-$same = $stack['attempts']->findOrCreateCheckoutAttempt(
-    $stack['storeId'],
-    Phase7TestHarness::ORDER_ID,
-    Phase4TestHarness::TEST_UNICID,
-    $attempt['operation_key_hash'],
-    $attempt['selection_hash'],
-    $attempt['request_fingerprint']
-);
-mtuc7_assert((int) $same['attempt_id'] === (int) $attempt['attempt_id'], 'same order reuses attempt');
+$same = null;
+if (is_array($attempt) && isset($attempt['attempt_id'], $attempt['operation_key_hash'], $attempt['selection_hash'], $attempt['request_fingerprint'])) {
+    $same = $stack['attempts']->findOrCreateCheckoutAttempt(
+        $stack['storeId'],
+        Phase7TestHarness::ORDER_ID,
+        Phase4TestHarness::TEST_UNICID,
+        $attempt['operation_key_hash'],
+        $attempt['selection_hash'],
+        $attempt['request_fingerprint']
+    );
+}
+mtuc7_assert(is_array($same) && is_array($attempt)
+    && isset($same['attempt_id'], $attempt['attempt_id'])
+    && (int) $same['attempt_id'] === (int) $attempt['attempt_id'], 'same order reuses attempt');
 
 // Store isolation
 $cross = $stack['attempts']->findByStoreOrder(Phase5TestHarness::STORE_B, Phase7TestHarness::ORDER_ID);

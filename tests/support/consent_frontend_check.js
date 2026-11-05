@@ -98,6 +98,65 @@ calls[2].cb(null, {success:true, calculation:{key:'standard|A|12',consent_contex
 check(displays.length === 1, 'detached modal callback cannot restore context');
 scope.attached = true; scope.scheduleRecalculate(true); calls[3].cb(true, null);
 check(scope.pendingCalculation, 'calculation error never restores eligibility');
+
+// Apply must drain obsolete timer work even when a current context is already ready.
+// Exercise callbacks, not timer IDs: surviving work must not issue a request or revoke consent.
+function exerciseApplyTimers(source, entryPoint) {
+  const f = form(); const queued = new Map(); const requests = []; let nextTimer = 0;
+  const s = {console, $: f.$, entryPoint, bootstrap: {}, selectedSchemeKey: 'standard|A|12',
+    firstInstallmentTimer: null, calcTimer: null, sequence: 0, pendingCalculation: false, step: null,
+    window: {setTimeout(fn) { queued.set(++nextTimer, fn); return nextTimer; }, clearTimeout(id) { queued.delete(id); }},
+    $root: {attr(name) { return name === 'data-route-recalculate' ? 'recalculate' : name === 'data-route-calculate' ? 'calculate' : ''; }},
+    $modal: {attr() { return false; }, find() { return {val() { return '10'; }}; }},
+    isTerminalSubmitLocked() { return false; }, mounted() { return true; },
+    updateSubmitState() {}, setProcessing() {}, setPopupError() {}, setOffersBusy() {}, setEntryError() {},
+    productFormData() { return {quantity: 1, option: {}}; }, fillDisplays() {}, t() { return ''; },
+    postJson(route, data, cb) { requests.push({route, data, cb}); },
+    setStep(step) { s.step = step; }};
+  vm.createContext(s);
+  const start = source.indexOf('      apply: function () {');
+  const end = source.indexOf('\n      recalculate:', start);
+  vm.runInContext(declaration(source, 'consentForm') + '\n' + declaration(source, 'scheduleRecalculate') + '\n'
+    + declaration(source, 'runRecalculate') + '\n' + declaration(source, 'runCalculate')
+    + '\nglobalThis.applyPopup = ' + source.slice(start, end).trim().replace(/^apply: /, '').replace(/,$/, '') + ';', s);
+  s.consent = s.consentForm(f.$, f.host);
+  s.invalidateConsent = () => { s.pendingCalculation = true; s.sequence++; s.consent.invalidate(s.selectedSchemeKey); };
+  const context = {valid: true, kop_code: 'A', months: 12, config_hash: 'config', applicable_ids: [1, 2], mandatory_ids: [1, 2]};
+  s.consent.apply(context, s.selectedSchemeKey);
+  f.rows[0].box.checked = f.rows[1].box.checked = true;
+  // A ready context plus obsolete queued work is the Apply cleanup boundary under test.
+  s.firstInstallmentTimer = s.window.setTimeout(s.runRecalculate, 400);
+  if (entryPoint === 'product') s.calcTimer = s.window.setTimeout(s.runCalculate, 250);
+  assert.ok(queued.size > 0 && s.consent.accepted(), entryPoint + ' queued callbacks and accepted context fixture');
+  s.applyPopup();
+  for (const [id, fn] of Array.from(queued)) { queued.delete(id); fn(); }
+  assert.ok(s.step === 2 && requests.length === 0 && !s.pendingCalculation && s.consent.accepted()
+    && s.consent.hash() === 'config', entryPoint + ' Apply leaves no obsolete recalculation after timer drain');
+
+  // Actual input debounce invalidates immediately; Apply must wait for its current response.
+  s.step = null;
+  s.scheduleRecalculate(false);
+  assert.ok(!s.consent.accepted() && queued.size === 1, entryPoint + ' pending debounce blocks stale acceptance');
+  s.applyPopup();
+  for (const [id, fn] of Array.from(queued)) { queued.delete(id); fn(); }
+  assert.ok(s.step === null && requests.length === 1 && s.pendingCalculation && !s.consent.accepted(),
+    entryPoint + ' pending Apply emits only the current recalculation and never advances');
+  const current = requests[0];
+  current.cb(null, {success: true, sequence: current.data.sequence, calculation: {key: s.selectedSchemeKey, consent_context: context}});
+  assert.ok(!s.pendingCalculation && s.consent.accepted(), entryPoint + ' current response restores same-selection acceptance');
+  s.applyPopup();
+  assert.ok(s.step === 2, entryPoint + ' Apply advances only after current response');
+}
+const applyMutation = popup.slice(0, applyStart) + popup.slice(applyStart, applyEnd)
+  .replace('if (firstInstallmentTimer) { window.clearTimeout(firstInstallmentTimer); firstInstallmentTimer = null; }', '')
+  .replace('if (calcTimer) { window.clearTimeout(calcTimer); calcTimer = null; }', '') + popup.slice(applyEnd);
+assert.notStrictEqual(applyMutation, popup, 'Apply mutation must change the extracted production handler');
+for (const entryPoint of ['product', 'cart']) {
+  exerciseApplyTimers(popup, entryPoint);
+  check(true, entryPoint + ' Apply timer drain and stale-acceptance regression');
+  assert.throws(() => exerciseApplyTimers(applyMutation, entryPoint), /Apply leaves no obsolete recalculation/);
+  check(true, entryPoint + ' Apply timer-cancellation mutation detected in memory');
+}
 // Checkout production scheduler: scheme change cancels first timer, latest success and error guards.
 const requests = []; const checkoutScope = {console, firstTimer: 99, sequence:0, calcBusy:false, selectedSchemeKey:'standard|A|12', attached:true,
   clearTimeout(id) { checkoutScope.cleared = id; },

@@ -68,15 +68,19 @@ function mtuc115a_nonce()
  */
 function mtuc115a_seedFinancingAttempt(array $stack, $orderId, $smartucfState = null)
 {
-    $attempts = new MtUniCreditFinancingAttemptRepository($stack['db']);
-    $row = $attempts->findOrCreateCheckoutAttempt(
-        $stack['storeId'],
-        (int) $orderId,
-        $stack['unicid'],
-        hash('sha256', 'mtuc115a-op-' . $stack['storeId'] . '-' . $orderId),
-        hash('sha256', 'mtuc115a-sel-' . $stack['storeId'] . '-' . $orderId),
-        hash('sha256', 'mtuc115a-fp-' . $stack['storeId'] . '-' . $orderId)
-    );
+    $now = gmdate('Y-m-d H:i:s');
+    $row = $stack['memoryDb']->seedFinancingAttempt(array(
+        'store_id' => $stack['storeId'],
+        'order_id' => (string) $orderId,
+        'unicid' => $stack['unicid'],
+        'operation_key_hash' => hash('sha256', 'mtuc115a-op-' . $stack['storeId'] . '-' . $orderId),
+        'selection_hash' => hash('sha256', 'mtuc115a-sel-' . $stack['storeId'] . '-' . $orderId),
+        'request_fingerprint' => hash('sha256', 'mtuc115a-fp-' . $stack['storeId'] . '-' . $orderId),
+        'entry_point' => MtUniCreditOperationEntryPoint::CHECKOUT,
+        'state' => MtUniCreditFinancingAttemptState::ORDER_CREATED,
+        'created_at' => $now,
+        'updated_at' => $now,
+    ));
     if ($smartucfState === null) {
         return;
     }

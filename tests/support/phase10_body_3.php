@@ -33,15 +33,19 @@ $svc = new MtUniCreditFinancingPresentationService(
 );
 // Direct HTML path via service customerThankYouHtml against seeded attempt
 Phase9TestHarness::seedBankOrder($stackValid['memoryDb'], 10130, $stackValid['storeId']);
-$attemptRow = $stackValid['attempts']->findOrCreateAttempt(
-    $stackValid['storeId'],
-    10130,
-    Phase4TestHarness::TEST_UNICID,
-    hash('sha256', 'thankyou-test'),
-    hash('sha256', 'sel'),
-    hash('sha256', 'fp'),
-    MtUniCreditOperationEntryPoint::PRODUCT
-);
+$presentationTime = $stackValid['clock']->formatUtc($stackValid['clock']->now());
+$attemptRow = $stackValid['memoryDb']->seedFinancingAttempt(array(
+    'store_id' => $stackValid['storeId'],
+    'order_id' => 10130,
+    'unicid' => Phase4TestHarness::TEST_UNICID,
+    'operation_key_hash' => hash('sha256', 'thankyou-test'),
+    'selection_hash' => hash('sha256', 'sel'),
+    'request_fingerprint' => hash('sha256', 'fp'),
+    'entry_point' => MtUniCreditOperationEntryPoint::PRODUCT,
+    'state' => MtUniCreditFinancingAttemptState::ORDER_CREATED,
+    'created_at' => $presentationTime,
+    'updated_at' => $presentationTime,
+));
 (new MtUniCreditProcessTwoLifecycleRepository(new MtUniCreditDbAdapter($stackValid['memoryDb'], 'oc_')))
     ->persistLeasingPresentationJson((int) $attemptRow['attempt_id'], json_encode($snap->toArray()));
 (new MtUniCreditOrderBankStatusRepository(new MtUniCreditDbAdapter($stackValid['memoryDb'], 'oc_')))

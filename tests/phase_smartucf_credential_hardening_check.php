@@ -517,32 +517,61 @@ function mtucCredHard_runProcess1(array $stack, $orderId)
         $stack['creds']
     );
     $order = Phase7TestHarness::orderRow((int) $orderId, $stack['storeId']);
+    Phase9TestHarness::seedBankOrder($stack['memoryDb'], $orderId, $stack['storeId']);
+    $products = Phase7TestHarness::orderProducts();
+    $calc = Phase9TestHarness::calculation($shopData);
+    $operation = hash('sha256', 'cred-hard|' . $orderId);
+    $payload = (new MtUniCreditControlPanelOrderPayloadBuilder())->build($orderId, $order, $products, $calc, $shopData);
+    $fingerprint = MtUniCreditControlPanelOrderPayloadBuilder::fingerprint($payload);
+    $selection = hash('sha256', $calc->scheme->kopCode . '|' . $calc->scheme->months . '|' . $fingerprint);
+    $snapshot = MtUniCreditApplicationSnapshot::fromLive($calc, $order, $products, $shopData,
+        MtUniCreditOperationEntryPoint::CHECKOUT, $operation, $selection, $fingerprint);
+    $context = MtUniCreditConsentGate::context($shopData, $calc->scheme);
+    // A new, explicitly accepted test application; credentials under test are independent.
+    $snapshot = MtUniCreditApplicationSnapshot::withConsent($snapshot, $shopData, $calc,
+        array('consent' => array(1), 'consent_config_hash' => $context['config_hash']), $stack['storeId'], $orderId);
     $attempt = $stack['attempts']->findOrCreateCheckoutAttempt(
         $stack['storeId'],
         $orderId,
         Phase4TestHarness::TEST_UNICID,
-        hash('sha256', 'cred-hard|' . $orderId),
-        hash('sha256', 'sel|' . $orderId),
-        hash('sha256', 'fp|' . $orderId)
+        $operation,
+        $selection,
+        $fingerprint,
+        $snapshot
     );
+    mtucCredHard_assert(MtUniCreditConsentGate::snapshot($attempt) === $snapshot
+        && $snapshot['version'] === 2 && $snapshot['consent_evidence']['accepted_ids'] === array(1)
+        && $attempt['application_snapshot_hash'] === MtUniCreditApplicationSnapshot::hash($snapshot)
+        && MtUniCreditEurAmount::matchesSnapshot($snapshot, $order),
+        'F fixture ' . $orderId . ': valid atomic v2 evidence/hash/identity and EUR financial context');
     $table = $stack['db']->getPrefix() . MtUniCreditPersistenceTableNames::FINANCING_ATTEMPT;
     $stack['db']->query(
         "UPDATE `{$table}` SET `control_panel_order_id` = 4242, `state` = 'cp_created'"
             . ' WHERE `attempt_id` = ' . (int) $attempt['attempt_id']
     );
-    $calc = Phase9TestHarness::calculation($shopData);
-
-    return $stack['process1']->run(
+    $callsBefore = Phase9TestHarness::smartUcfCallCount($stack['smartUcfProbe']);
+    $result = $stack['process1']->run(
         (int) $attempt['attempt_id'],
         $shopData,
         $order,
-        Phase7TestHarness::orderProducts(),
+        $products,
         $calc,
         $orderId,
         4242,
         $stack['bankStatuses'],
         Phase4TestHarness::TEST_UNICID
     );
+    $row = $stack['smartUcfLifecycle']->findByAttempt((int) $attempt['attempt_id']);
+    $credentialsComplete = isset($shopData['uni_user'], $shopData['uni_password'])
+        && trim($shopData['uni_user']) !== '' && trim($shopData['uni_password']) !== '';
+    mtucCredHard_assert($credentialsComplete
+        ? ($result->isCreated() && Phase9TestHarness::smartUcfCallCount($stack['smartUcfProbe']) === $callsBefore + 1)
+        : ($result->errorClass() === MtUniCreditSmartUcfSessionCoordinator::ERROR_CREDENTIALS_INCOMPLETE
+            && $row['smartucf_state'] === MtUniCreditSmartUcfLifecycleStates::FAILED
+            && $row['smartucf_error_class'] === MtUniCreditSmartUcfSessionCoordinator::ERROR_CREDENTIALS_INCOMPLETE
+            && Phase9TestHarness::smartUcfCallCount($stack['smartUcfProbe']) === $callsBefore),
+        'F boundary ' . $orderId . ': credential guard/client exercised after consent authority');
+    return $result;
 }
 
 $rtMissingUser = mtucCredHard_runtimeStack(new Phase4FakeCpHttpTransport());

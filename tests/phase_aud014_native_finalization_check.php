@@ -88,14 +88,19 @@ function mtucAud014_seedAttempt(Phase2MemoryDb $memoryDb, $storeId, $orderId)
     Phase9TestHarness::seedBankOrder($memoryDb, $orderId, $storeId);
     $memoryDb->orderStatuses[5] = true;
 
-    return $attempts->findOrCreateCheckoutAttempt(
-        $storeId,
-        $orderId,
-        'unicid-aud014',
-        str_repeat('a', 64),
-        str_repeat('b', 64),
-        str_repeat('c', 64)
-    );
+    $now = $clock->formatUtc($clock->now());
+    return $memoryDb->seedFinancingAttempt(array(
+        'store_id' => $storeId,
+        'order_id' => (string) $orderId,
+        'unicid' => 'unicid-aud014',
+        'operation_key_hash' => str_repeat('a', 64),
+        'selection_hash' => str_repeat('b', 64),
+        'request_fingerprint' => str_repeat('c', 64),
+        'entry_point' => MtUniCreditOperationEntryPoint::CHECKOUT,
+        'state' => MtUniCreditFinancingAttemptState::ORDER_CREATED,
+        'created_at' => $now,
+        'updated_at' => $now,
+    ));
 }
 
 /**

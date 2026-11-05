@@ -316,15 +316,22 @@ $snap = new MtUniCreditFinancingPresentationSnapshot(
     5.5,
     6.1
 );
-$attemptRow = $stack['attempts']->findOrCreateAttempt(
-    $stack['storeId'],
-    $orderId,
-    Phase4TestHarness::TEST_UNICID,
-    hash('sha256', 'phase11-admin'),
-    hash('sha256', 'sel11'),
-    hash('sha256', 'fp11'),
-    MtUniCreditOperationEntryPoint::PRODUCT
-);
+// Stored presentation fixture only; not a new financing submission or consent record.
+$presentationTime = $stack['clock']->formatUtc($stack['clock']->now());
+$attemptRow = $stack['memoryDb']->seedFinancingAttempt(array(
+    'store_id' => $stack['storeId'],
+    'order_id' => (string) $orderId,
+    'unicid' => Phase4TestHarness::TEST_UNICID,
+    'operation_key_hash' => hash('sha256', 'phase11-admin'),
+    'selection_hash' => hash('sha256', 'sel11'),
+    'request_fingerprint' => hash('sha256', 'fp11'),
+    'entry_point' => MtUniCreditOperationEntryPoint::PRODUCT,
+    'state' => MtUniCreditFinancingAttemptState::ORDER_CREATED,
+    'created_at' => $presentationTime,
+    'updated_at' => $presentationTime,
+));
+mtuc11_assert($attemptRow['created_at'] === $presentationTime && $attemptRow['updated_at'] === $presentationTime,
+    'presentation fixture: created_at/updated_at use the deterministic stack clock');
 $lifecycleRepo = new MtUniCreditProcessTwoLifecycleRepository(
     new MtUniCreditDbAdapter($stack['memoryDb'], 'oc_')
 );

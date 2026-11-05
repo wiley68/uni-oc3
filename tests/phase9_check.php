@@ -466,14 +466,19 @@ mtuc9_assert(
 // ---------------------------------------------------------------------------
 $transportClaim = new Phase4FakeCpHttpTransport();
 $stackClaim = Phase9TestHarness::stack($transportClaim);
-$claimAttempt = $stackClaim['attempts']->findOrCreateCheckoutAttempt(
-    $stackClaim['storeId'],
-    9401,
-    Phase4TestHarness::TEST_UNICID,
-    hash('sha256', 'checkout|' . $stackClaim['storeId'] . '|9401'),
-    hash('sha256', 'selection'),
-    hash('sha256', 'fingerprint')
-);
+$claimTime = $stackClaim['clock']->formatUtc($stackClaim['clock']->now());
+$claimAttempt = $stackClaim['memoryDb']->seedFinancingAttempt(array(
+    'store_id' => $stackClaim['storeId'],
+    'order_id' => '9401',
+    'unicid' => Phase4TestHarness::TEST_UNICID,
+    'operation_key_hash' => hash('sha256', 'checkout|' . $stackClaim['storeId'] . '|9401'),
+    'selection_hash' => hash('sha256', 'selection'),
+    'request_fingerprint' => hash('sha256', 'fingerprint'),
+    'entry_point' => MtUniCreditOperationEntryPoint::CHECKOUT,
+    'state' => MtUniCreditFinancingAttemptState::ORDER_CREATED,
+    'created_at' => $claimTime,
+    'updated_at' => $claimTime,
+));
 $claimId = (int) $claimAttempt['attempt_id'];
 $firstClaim = $stackClaim['smartUcfLifecycle']->claimForSubmitting($claimId);
 $secondClaim = $stackClaim['smartUcfLifecycle']->claimForSubmitting($claimId);

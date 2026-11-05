@@ -70,6 +70,12 @@ final class MtUniCreditStorefrontConsentResolver
     {
         $consents = $this->normalize($shop);
         $class = self::classify($entry);
+        foreach ($consents as $consent) {
+            if ($consent['interest_scope'] !== 'all') {
+                $class = $this->scopedSelectionClass($shop, $kop, $months, $entry);
+                break;
+            }
+        }
         $applicable = $mandatory = array();
         $valid = true;
         foreach ($consents as $consent) {
@@ -84,6 +90,27 @@ final class MtUniCreditStorefrontConsentResolver
             'interest_class' => $class, 'valid' => $valid, 'consents' => $consents,
             'applicable_ids' => $applicable, 'mandatory_ids' => $mandatory,
             'config_hash' => hash('sha256', json_encode($consents, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)));
+    }
+
+    /** Consent-only ambiguity guard; never changes financial coefficient selection. */
+    private function scopedSelectionClass(array $shop, $kop, $months, array $selected)
+    {
+        $class = self::classify($selected);
+        // Frozen evidence is self-contained and intentionally has no live coeff_list.
+        if (!array_key_exists('coeff_list', $shop)) { return $class; }
+        if (!is_array($shop['coeff_list'])) { return 'unknown'; }
+        $matched = false;
+        foreach ($shop['coeff_list'] as $entry) {
+            if (!is_array($entry) || !isset($entry['onlineProductCode'], $entry['installmentCount'])
+                || !is_string($entry['onlineProductCode']) || !self::finite($entry['installmentCount'])
+                || trim($entry['onlineProductCode']) !== (string) $kop || (int) $entry['installmentCount'] !== (int) $months) {
+                continue;
+            }
+            $matched = true;
+            $candidate = self::classify($entry);
+            if ($candidate === 'unknown' || $candidate !== $class) { return 'unknown'; }
+        }
+        return $matched ? $class : 'unknown';
     }
 
     public function validate(array $context, $accepted, $renderedHash = null)

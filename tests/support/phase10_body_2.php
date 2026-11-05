@@ -22,7 +22,7 @@ $selectionHash = MtUniCreditStorefrontOperationIdentity::productHash(
     42,
     array(),
     1,
-    'BGN'
+    $staleInput['currency_code']
 );
 $bindKey = MtUniCreditStorefrontApplicationToken::bindKey(
     $selectionHash,
@@ -130,9 +130,9 @@ $inputA = Phase9TestHarness::productStorefrontInput($stackA, $orderA);
 $selectionA = MtUniCreditStorefrontOperationIdentity::productHash(
     (int) $stackA['storeId'],
     42,
-    array(7),
+    $inputA['product_line']->options,
     1,
-    'BGN'
+    $inputA['currency_code']
 );
 $opHashA = MtUniCreditStorefrontApplicationToken::bindKey($selectionA, (string) $inputA['application_token']);
 // Incomplete A: order + attempt exist in ORDER_CREATED, no CP / no snapshot yet.
@@ -163,15 +163,20 @@ $payloadA = (new MtUniCreditControlPanelOrderPayloadBuilder())->build(
 );
 $fpA = MtUniCreditControlPanelOrderPayloadBuilder::fingerprint($payloadA);
 $selHashA = hash('sha256', $calcA->scheme->kopCode . '|' . $calcA->scheme->months . '|' . $fpA);
-$attemptA = $stackA['attempts']->findOrCreateAttempt(
-    $stackA['storeId'],
-    $orderA,
-    $unicidA,
-    $opHashA,
-    $selHashA,
-    $fpA,
-    MtUniCreditOperationEntryPoint::PRODUCT
-);
+$attemptATime = $stackA['clock']->formatUtc($stackA['clock']->now());
+$stackA['memoryDb']->seedFinancingAttempt(array(
+    'store_id' => $stackA['storeId'],
+    'order_id' => $orderA,
+    'unicid' => $unicidA,
+    'operation_key_hash' => $opHashA,
+    'selection_hash' => $selHashA,
+    'request_fingerprint' => $fpA,
+    'entry_point' => MtUniCreditOperationEntryPoint::PRODUCT,
+    'state' => MtUniCreditFinancingAttemptState::ORDER_CREATED,
+    'created_at' => $attemptATime,
+    'updated_at' => $attemptATime,
+));
+$attemptA = $stackA['attempts']->findByStoreOrder($stackA['storeId'], $orderA);
 $inputA['session'][MtUniCreditStorefrontFinancingSubmissionService::SESSION_ORDER_BIND_KEY] = array(
     $opHashA => $orderA,
 );
@@ -213,8 +218,7 @@ mtuc10_assert((string) $attemptAAfter['updated_at'] === $updatedABefore, 'cross-
 mtuc10_assert((int) $attemptAAfter['control_panel_order_id'] === $cpABefore, 'cross-op A: CP id untouched');
 mtuc10_assert($addA === 1, 'cross-op A: no new OC order');
 
-// Explicit replay of A resumes only A (token already authenticated via B on shared DB).
-Phase9TestHarness::enqueueCpOrderCreateSuccess($transportA);
+// A predates snapshots: replay must refuse without inventing historical consent.
 $inputAReplay = $inputA;
 $inputAReplay['add_order'] = function ($orderData) use (&$addA) {
     $addA++;
@@ -222,9 +226,112 @@ $inputAReplay['add_order'] = function ($orderData) use (&$addA) {
     return 99999;
 };
 $resultAReplay = $stackA['storefront']->submit($inputAReplay);
-mtuc10_assert(!empty($resultAReplay['success']), 'cross-op A replay: resumes itself');
+mtuc10_assert(empty($resultAReplay['success']) && $resultAReplay['error'] === 'consent_evidence',
+    'cross-op A replay: snapshot-less history fails closed');
 mtuc10_assert($addA === 1, 'cross-op A replay: addOrder = 0 additional');
 mtuc10_assert((int) $resultAReplay['order_id'] === $orderA, 'cross-op A replay: same order');
+$attemptAReplay = $stackA['attempts']->findByStoreOrder($stackA['storeId'], $orderA);
+mtuc10_assert($attemptAReplay === $attemptAAfter
+    && $attemptAReplay['application_snapshot_json'] === null
+    && $attemptAReplay['application_snapshot_hash'] === '',
+    'cross-op A replay: attempt identity/state/timestamps unchanged; no snapshot or consent backfill');
+mtuc10_assert(count($transportA->requests) === 0
+    && Phase9TestHarness::smartUcfCallCount($stackA['smartUcfProbe']) === 0
+    && count($stackA['process2Mailer']->sent) === 0,
+    'cross-op A replay: no CP, SmartUCF or mail effects');
+mtuc10_assert($stackA['bankStatuses']->findByOrderId($stackA['storeId'], $orderA) === null,
+    'cross-op A replay: no banking failure state');
+mtuc10_assert($stackA['db']->query("SELECT * FROM `oc_mt_uni_credit_financing_attempt` WHERE `store_id` = "
+    . (int) $stackA['storeId'] . " AND `order_id` = '" . (int) $orderA . "'")->num_rows === 1,
+    'cross-op A replay: one existing attempt, no duplicate');
+
+// A genuine persisted v1 application may continue with current-request acceptance.
+$legacyTransport = new Phase4FakeCpHttpTransport();
+$legacyStack = Phase9TestHarness::stack($legacyTransport, null, null, Phase5TestHarness::STORE_A, array('uni_proces' => 1));
+$legacyOrderId = 20111;
+$legacyInput = Phase9TestHarness::productStorefrontInput($legacyStack, $legacyOrderId);
+$legacyProductHash = MtUniCreditStorefrontOperationIdentity::productHash(
+    $legacyStack['storeId'], 42, $legacyInput['product_line']->options, 1, $legacyInput['currency_code']);
+$legacyOperation = MtUniCreditStorefrontApplicationToken::bindKey($legacyProductHash, $legacyInput['application_token']);
+$legacyOrder = Phase7TestHarness::orderRow($legacyOrderId, $legacyStack['storeId']);
+Phase9TestHarness::seedBankOrder($legacyStack['memoryDb'], $legacyOrderId, $legacyStack['storeId']);
+$legacyPayload = (new MtUniCreditControlPanelOrderPayloadBuilder())->build(
+    $legacyOrderId, $legacyOrder, $orderAProducts, $calcA, $shopA);
+$legacyFingerprint = MtUniCreditControlPanelOrderPayloadBuilder::fingerprint($legacyPayload);
+$legacySelection = hash('sha256', $calcA->scheme->kopCode . '|' . $calcA->scheme->months . '|' . $legacyFingerprint);
+$legacySnapshot = MtUniCreditApplicationSnapshot::fromLive($calcA, $legacyOrder, $orderAProducts, $shopA,
+    MtUniCreditOperationEntryPoint::PRODUCT, $legacyOperation, $legacySelection, $legacyFingerprint);
+$legacyJson = MtUniCreditApplicationSnapshot::encode($legacySnapshot);
+$legacyHash = MtUniCreditApplicationSnapshot::hash($legacySnapshot);
+$legacyTime = $legacyStack['clock']->formatUtc($legacyStack['clock']->now());
+$legacySeed = $legacyStack['memoryDb']->seedFinancingAttempt(array(
+    'store_id' => $legacyStack['storeId'],
+    'order_id' => $legacyOrderId,
+    'unicid' => $unicidA,
+    'operation_key_hash' => $legacyOperation,
+    'selection_hash' => $legacySelection,
+    'request_fingerprint' => $legacyFingerprint,
+    'entry_point' => MtUniCreditOperationEntryPoint::PRODUCT,
+    'state' => MtUniCreditFinancingAttemptState::ORDER_CREATED,
+    'created_at' => $legacyTime,
+    'updated_at' => $legacyTime,
+    'application_snapshot_json' => $legacyJson,
+    'application_snapshot_hash' => $legacyHash,
+));
+$legacyInput['session'][MtUniCreditStorefrontFinancingSubmissionService::SESSION_ORDER_BIND_KEY] = array(
+    $legacyOperation => $legacyOrderId,
+);
+$legacyAdds = 0;
+$legacyInput['add_order'] = function ($orderData) use (&$legacyAdds) {
+    $legacyAdds++;
+
+    return 99998;
+};
+// Posted selection B cannot replace the persisted selection A.
+$legacyInput['scheme_key'] = 'standard|POST-B|24';
+$legacyNoConsent = $legacyInput;
+$legacyNoConsent['consent'] = array();
+$legacyBefore = $legacyStack['attempts']->findByStoreOrder($legacyStack['storeId'], $legacyOrderId);
+$legacyRefused = $legacyStack['storefront']->submit($legacyNoConsent);
+mtuc10_assert(empty($legacyRefused['success']) && $legacyRefused['error'] === 'consent_required',
+    'v1 replay: current-request mandatory acceptance required');
+mtuc10_assert($legacyAdds === 0 && count($legacyTransport->requests) === 0
+    && Phase9TestHarness::smartUcfCallCount($legacyStack['smartUcfProbe']) === 0
+    && count($legacyStack['process2Mailer']->sent) === 0,
+    'v1 replay: missing acceptance has no order/CP/SmartUCF/mail effects');
+mtuc10_assert($legacyStack['attempts']->findByStoreOrder($legacyStack['storeId'], $legacyOrderId) === $legacyBefore
+    && $legacyStack['bankStatuses']->findByOrderId($legacyStack['storeId'], $legacyOrderId) === null,
+    'v1 replay: refusal preserves historical attempt and bank state');
+Phase9TestHarness::enqueueCpCreateSuccess($legacyTransport);
+$legacyResult = $legacyStack['storefront']->submit($legacyInput);
+mtuc10_assert(!empty($legacyResult['success']) && (int) $legacyResult['order_id'] === $legacyOrderId
+    && $legacyAdds === 0, 'v1 replay: authorized continuation reuses its own existing order');
+$legacyAfter = $legacyStack['attempts']->findByStoreOrder($legacyStack['storeId'], $legacyOrderId);
+mtuc10_assert($legacySnapshot['version'] === 1 && !isset($legacySnapshot['consent_evidence'])
+    && $legacyAfter['application_snapshot_json'] === $legacyJson
+    && $legacyAfter['application_snapshot_hash'] === $legacyHash
+    && hash('sha256', $legacyJson) === $legacyHash,
+    'v1 replay: original serialization/hash unchanged, no consent evidence backfill');
+mtuc10_assert($legacyAfter['selection_hash'] === $legacySelection
+    && $legacySnapshot['scheme']['kop_code'] === 'KOPSTD' && $legacySnapshot['scheme']['months'] === 12
+    && (int) $legacyAfter['attempt_id'] === (int) $legacySeed['attempt_id'],
+    'v1 replay: persisted selection A and existing attempt retained despite posted B');
+$legacyMailCount = count($legacyStack['process2Mailer']->sent);
+mtuc10_assert(Phase7TestHarness::countOrderPosts($legacyTransport) === 1 && $legacyMailCount > 0
+    && Phase9TestHarness::smartUcfCallCount($legacyStack['smartUcfProbe']) === 0,
+    'v1 replay: Process 2 reaches fake CP/mail ports, no SmartUCF session');
+$legacyInput['session'] = $legacyResult['session'];
+$legacyReplay = $legacyStack['storefront']->submit($legacyInput);
+mtuc10_assert(!empty($legacyReplay['success']) && (int) $legacyReplay['order_id'] === $legacyOrderId
+    && $legacyAdds === 0 && Phase7TestHarness::countOrderPosts($legacyTransport) === 1
+    && count($legacyStack['process2Mailer']->sent) === $legacyMailCount,
+    'v1 replay: repeated authorized continuation is idempotent');
+$legacyFinal = $legacyStack['attempts']->findByStoreOrder($legacyStack['storeId'], $legacyOrderId);
+mtuc10_assert($legacyFinal['application_snapshot_json'] === $legacyJson
+    && $legacyFinal['application_snapshot_hash'] === $legacyHash
+    && $legacyStack['db']->query("SELECT * FROM `oc_mt_uni_credit_financing_attempt` WHERE `store_id` = "
+        . (int) $legacyStack['storeId'] . " AND `order_id` = '" . $legacyOrderId . "'")->num_rows === 1,
+    'v1 replay: repeated continuation preserves legacy bytes/hash without duplicate attempt');
 
 // Completed A + new B (same product/scheme, new application token).
 $transportC = new Phase4FakeCpHttpTransport();
@@ -301,7 +408,7 @@ $selectionConc = MtUniCreditStorefrontOperationIdentity::productHash(
     42,
     array(),
     1,
-    'BGN'
+    $concInput['currency_code']
 );
 $opConc = MtUniCreditStorefrontApplicationToken::bindKey($selectionConc, (string) $concInput['application_token']);
 $ownerA = MtUniCreditLockOwnerTokenGenerator::generate();

@@ -605,6 +605,10 @@
   margin: 0;
 }
 
+.mt-uni-credit-storefront__consent[hidden] {
+  display: none !important;
+}
+
 #mt-uni-credit-product-modal .mt-uni-credit-storefront__consent--info,
 #mt-uni-credit-cart-modal .mt-uni-credit-storefront__consent--info {
   padding-left: 28px;

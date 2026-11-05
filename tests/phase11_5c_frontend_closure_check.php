@@ -507,14 +507,19 @@ Phase9TestHarness::seedBankOrder($memoryDb, $orderId, $storeId);
 $attempts = new MtUniCreditFinancingAttemptRepository($db, new MtUniCreditPersistenceClock(function () {
     return 1700000000;
 }));
-$attempt = $attempts->findOrCreateCheckoutAttempt(
-    $storeId,
-    $orderId,
-    Phase4TestHarness::TEST_UNICID,
-    hash('sha256', 'p1-mail-op'),
-    hash('sha256', 'p1-mail-sel'),
-    hash('sha256', 'p1-mail-fp')
-);
+$mailFixtureTime = gmdate('Y-m-d H:i:s', 1700000000);
+$attempt = $memoryDb->seedFinancingAttempt(array(
+    'store_id' => $storeId,
+    'order_id' => (string) $orderId,
+    'unicid' => Phase4TestHarness::TEST_UNICID,
+    'operation_key_hash' => hash('sha256', 'p1-mail-op'),
+    'selection_hash' => hash('sha256', 'p1-mail-sel'),
+    'request_fingerprint' => hash('sha256', 'p1-mail-fp'),
+    'entry_point' => MtUniCreditOperationEntryPoint::CHECKOUT,
+    'state' => MtUniCreditFinancingAttemptState::ORDER_CREATED,
+    'created_at' => $mailFixtureTime,
+    'updated_at' => $mailFixtureTime,
+));
 
 $calc = new MtUniCreditCalculationResult(
     new MtUniCreditAvailableScheme(

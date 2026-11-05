@@ -70,15 +70,19 @@ $storeId = Phase5TestHarness::STORE_A;
 $orderId = 27001;
 Phase9TestHarness::seedBankOrder($memoryDb, $orderId, $storeId);
 $attempts = new MtUniCreditFinancingAttemptRepository($dbAdapter, $clock);
-$attemptRow = $attempts->findOrCreateAttempt(
-    $storeId,
-    $orderId,
-    Phase4TestHarness::TEST_UNICID,
-    hash('sha256', 'aud027-op'),
-    hash('sha256', 'aud027-sel'),
-    hash('sha256', 'aud027-fp'),
-    MtUniCreditOperationEntryPoint::CHECKOUT
-);
+$attemptTime = $clock->formatUtc($clock->now());
+$attemptRow = $memoryDb->seedFinancingAttempt(array(
+    'store_id' => $storeId,
+    'order_id' => (string) $orderId,
+    'unicid' => Phase4TestHarness::TEST_UNICID,
+    'operation_key_hash' => hash('sha256', 'aud027-op'),
+    'selection_hash' => hash('sha256', 'aud027-sel'),
+    'request_fingerprint' => hash('sha256', 'aud027-fp'),
+    'entry_point' => MtUniCreditOperationEntryPoint::CHECKOUT,
+    'state' => MtUniCreditFinancingAttemptState::ORDER_CREATED,
+    'created_at' => $attemptTime,
+    'updated_at' => $attemptTime,
+));
 $attemptId = (int) $attemptRow['attempt_id'];
 
 $cipher = new MtUniCreditProcessTwoSensitiveCipher(Phase4TestHarness::testSecretInput());
@@ -410,15 +414,19 @@ $failDb = new class($memoryDb) {
 // Seed a fresh attempt for failure probe
 $orderFail = 27002;
 Phase9TestHarness::seedBankOrder($memoryDb, $orderFail, $storeId);
-$attemptFail = $attempts->findOrCreateAttempt(
-    $storeId,
-    $orderFail,
-    Phase4TestHarness::TEST_UNICID,
-    hash('sha256', 'aud027-op-fail'),
-    hash('sha256', 'aud027-sel-fail'),
-    hash('sha256', 'aud027-fp-fail'),
-    MtUniCreditOperationEntryPoint::CHECKOUT
-);
+$attemptFailTime = $clock->formatUtc($clock->now());
+$attemptFail = $memoryDb->seedFinancingAttempt(array(
+    'store_id' => $storeId,
+    'order_id' => (string) $orderFail,
+    'unicid' => Phase4TestHarness::TEST_UNICID,
+    'operation_key_hash' => hash('sha256', 'aud027-op-fail'),
+    'selection_hash' => hash('sha256', 'aud027-sel-fail'),
+    'request_fingerprint' => hash('sha256', 'aud027-fp-fail'),
+    'entry_point' => MtUniCreditOperationEntryPoint::CHECKOUT,
+    'state' => MtUniCreditFinancingAttemptState::ORDER_CREATED,
+    'created_at' => $attemptFailTime,
+    'updated_at' => $attemptFailTime,
+));
 $failId = (int) $attemptFail['attempt_id'];
 $nowTs = $t0;
 $lifecycleOk = new MtUniCreditProcessTwoLifecycleRepository($dbAdapter, $clock);
