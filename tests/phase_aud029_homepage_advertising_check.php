@@ -11,6 +11,7 @@
  * PHP 7.3 compatible. Offline.
  */
 require_once __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/support/phase2_memory_db.php';
 
 $root = MTUC_PHASE0_ROOT;
 $lib = $root . DIRECTORY_SEPARATOR . 'upload' . DIRECTORY_SEPARATOR . 'system' . DIRECTORY_SEPARATOR
@@ -27,6 +28,10 @@ if (!defined('DB_PASSWORD')) {
 }
 if (!defined('DB_PREFIX')) {
     define('DB_PREFIX', 'oc_');
+}
+
+if (!defined('DIR_APPLICATION')) {
+    define('DIR_APPLICATION', $root . '/upload/catalog/');
 }
 
 require_once $lib . DIRECTORY_SEPARATOR . 'bootstrap.php';
@@ -604,6 +609,120 @@ foreach ($homeCodes as $c) {
 }
 mtucAud029_assert($maxDup === 1, 'events: repeated ensure no duplicate canonical codes');
 mtucAud029_assert(count($evDb->rows) === $countBeforeRepeat, 'events: repeated ensure row count stable');
+
+// Exercise the real catalog events with a fresh in-memory CP snapshot and no CP secret.
+if (!class_exists('Controller', false)) {
+    class Controller
+    {
+        public $config;
+        public $db;
+        public $document;
+        public $request;
+        public $load;
+        public $language;
+    }
+}
+require_once $root . '/upload/catalog/controller/extension/mt_uni_credit/home.php';
+
+function mtucAud029_homeEvents(array $config, array $shop, $unicid, $route, $userAgent)
+{
+    $home = new ControllerExtensionMtUniCreditHome();
+    $home->db = new Phase2MemoryDb();
+    $db = new MtUniCreditDbAdapter($home->db, DB_PREFIX);
+    $settings = new MtUniCreditSettingStore($db, MtUniCreditConstants::MODULE_SETTINGS_CODE);
+    $settings->set(2, MtUniCreditConstants::MODULE_SETTING_UNICID, $unicid);
+    $cache = new MtUniCreditShopCacheRepository($db);
+    $cache->replaceValidated(2, 'TEST-SHOP', $shop);
+
+    $home->config = new class {
+        public $values;
+
+        public function get($key)
+        {
+            return isset($this->values[$key]) ? $this->values[$key] : null;
+        }
+    };
+    $home->config->values = $config + array('config_store_id' => 2, 'config_ssl' => 'https://shop.example/');
+    $home->document = new class {
+        public $styles = array();
+        public $scripts = array();
+
+        public function addStyle($url)
+        {
+            $this->styles[] = strtok($url, '?');
+        }
+
+        public function addScript($url)
+        {
+            $this->scripts[] = strtok($url, '?');
+        }
+    };
+    $home->request = (object) array('get' => array('route' => $route), 'server' => array('HTTP_USER_AGENT' => $userAgent));
+    $home->load = new class {
+        public $context;
+
+        public function language($route) {}
+
+        public function view($route, $data)
+        {
+            $this->context = $data['mt_uni_credit_advertising'];
+
+            return '<div id="mt-uni-credit-advertising-root"></div>';
+        }
+    };
+    $home->language = new class {
+        public function get($key)
+        {
+            return $key;
+        }
+    };
+
+    MtUniCreditHomepageAdvertisingContextResolver::resetRequestCache();
+    $page = $route === '' ? 'common/home' : $route;
+    $footer = 'common/footer';
+    $data = array();
+    $output = '<footer></footer>';
+    $home->beforeHome($page, $data);
+    $home->afterFooter($footer, $data, $output);
+
+    return array($output, $home->document->styles, $home->document->scripts, $home->load->context);
+}
+
+$statusKey = MtUniCreditConstants::MODULE_SETTING_STATUS;
+$legacyKey = 'module_mt_uni_credit_advertising_enabled';
+$styles = array(MtUniCreditConstants::STOREFRONT_ASSET_FONTS_CSS_RELATIVE, MtUniCreditConstants::HOMEPAGE_ADVERTISING_CSS_RELATIVE);
+$scripts = array(MtUniCreditConstants::HOMEPAGE_ADVERTISING_JS_RELATIVE);
+$defaultLogo = MtUniCreditStorefrontRuntime::assetUrls(null)['logo_standard'];
+$hidden = array('<footer></footer>', array(), array(), null);
+$iphone = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) Mobile';
+foreach (array(0, 1) as $cpFlag) {
+    foreach (array('0', '1', null) as $legacyValue) {
+        $config = array($statusKey => '1');
+        if ($legacyValue !== null) {
+            $config[$legacyKey] = $legacyValue;
+        }
+        $shop = mtucAud029_validShop();
+        $shop['uni_container_status'] = $cpFlag;
+        foreach (array('Desktop' => false, $iphone => true) as $userAgent => $mobile) {
+            $expectedContext = $presenter->present($shop, $mobile, $defaultLogo);
+            $expected = $cpFlag === 1
+                ? array('<footer></footer><div id="mt-uni-credit-advertising-root"></div>', $styles, $scripts, $expectedContext)
+                : $hidden;
+            mtucAud029_assert(
+                mtucAud029_homeEvents($config, $shop, 'TEST-SHOP', $mobile ? '' : 'common/home', $userAgent) === $expected,
+                'home events: CP ' . $cpFlag . ', legacy ' . var_export($legacyValue, true)
+                    . ', ' . ($mobile ? 'mobile' : 'desktop') . ' controls markup and assets'
+            );
+        }
+    }
+}
+$shop = mtucAud029_validShop();
+mtucAud029_assert(mtucAud029_homeEvents(array($statusKey => '1'), $shop, 'TEST-SHOP', 'product/product', 'Desktop') === $hidden, 'home events: product route is excluded');
+mtucAud029_assert(mtucAud029_homeEvents(array($statusKey => '0'), $shop, 'TEST-SHOP', 'common/home', 'Desktop') === $hidden, 'home events: inactive module is excluded');
+mtucAud029_assert(mtucAud029_homeEvents(array($statusKey => '1'), $shop, '', 'common/home', 'Desktop') === $hidden, 'home events: missing UNICID is excluded');
+mtucAud029_assert(mtucAud029_homeEvents(array($statusKey => '1', 'config_store_id' => 3), $shop, 'TEST-SHOP', 'common/home', 'Desktop') === $hidden, 'home events: another store cannot use the configured snapshot');
+$shop['uni_status'] = 0;
+mtucAud029_assert(mtucAud029_homeEvents(array($statusKey => '1'), $shop, 'TEST-SHOP', 'common/home', 'Desktop') === $hidden, 'home events: CP uni_status off excludes markup and assets');
 
 // ---------------------------------------------------------------------------
 // Duplicate footer injection sentinel (controller source + behavioral count)

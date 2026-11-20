@@ -221,7 +221,7 @@ mtuc8_assert(
         && strpos($packageScript, 'package_forbidden_entries()') !== false,
     'package forbids catalog/view/image storefront logos'
 );
-$distZip = $root . DIRECTORY_SEPARATOR . 'dist' . DIRECTORY_SEPARATOR . 'oc3_uni_2.0.3.ocmod.zip';
+$distZip = $root . DIRECTORY_SEPARATOR . 'dist' . DIRECTORY_SEPARATOR . mtuc_phase0_load_fixture('extension_identity.json')['package_filename'];
 if (is_file($distZip) && class_exists('ZipArchive')) {
     $zip = new ZipArchive();
     mtuc8_assert($zip->open($distZip) === true, 'dist package ZIP opens');

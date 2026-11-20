@@ -407,7 +407,6 @@ function mtucF00301_post(array $base, array $overrides = array())
 
 $baseFlags = array(
     MtUniCreditConstants::MODULE_SETTING_STATUS => '1',
-    MtUniCreditConstants::MODULE_SETTING_ADVERTISING => '0',
     MtUniCreditConstants::MODULE_SETTING_DEBUG => '0',
     MtUniCreditConstants::MODULE_SETTING_PRODUCT_BUTTON_ACTION => MtUniCreditConstants::BUTTON_ACTION_ADD_TO_CART,
     MtUniCreditConstants::MODULE_SETTING_BUTTON_TOP_SPACING => '0',

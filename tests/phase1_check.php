@@ -105,9 +105,11 @@ foreach ($identity['oc3_module_defaults'] as $settingKey => $expectedDefault) {
         'module default matches OC4 authority: ' . $settingKey
     );
 }
+$legacyAdvertisingKey = 'module_mt_uni_credit_advertising_enabled';
 mtuc1_assert(
-    MtUniCreditConstants::MODULE_SETTING_ADVERTISING === $identity['oc3_module_setting_advertising'],
-    'constants advertising setting key'
+    !array_key_exists($legacyAdvertisingKey, MtUniCreditConstants::defaultModuleSettings())
+        && !in_array($legacyAdvertisingKey, MtUniCreditConstants::phase1ModulePersistedSettingKeys(), true),
+    'legacy advertising setting is outside install defaults and admin writes'
 );
 mtuc1_assert(
     in_array(MtUniCreditConstants::DEFAULT_PRODUCT_BUTTON_ACTION, $identity['oc3_module_product_button_actions'], true),
@@ -168,14 +170,14 @@ mtuc1_assert(strpos($moduleTwig, 'class="mt-uni-credit-module"') !== false || st
 mtuc1_assert(strpos($moduleTwig, 'mt-uni-toggle') !== false, 'module twig uses mt-uni-toggle class');
 mtuc1_assert(strpos($moduleTwig, 'mt-uni-toggle__input') !== false, 'module twig keeps native checkbox input');
 mtuc1_assert(strpos($moduleTwig, 'mt-uni-toggle__track') !== false, 'module twig renders toggle track');
-mtuc1_assert(substr_count($moduleTwig, 'mt-uni-toggle__input') === 3, 'module twig has three toggle inputs');
+mtuc1_assert(substr_count($moduleTwig, 'mt-uni-toggle__input') === 2, 'module twig has two toggle inputs');
 mtuc1_assert(strpos($moduleController, 'mt_uni_credit_module.css') !== false, 'module controller loads scoped admin CSS only');
 $toggleCssPath = $root . DIRECTORY_SEPARATOR . 'upload/admin/view/stylesheet/mt_uni_credit_module.css';
 $toggleCss = file_get_contents($toggleCssPath);
 mtuc1_assert(strpos($toggleCss, '.mt-uni-credit-module') !== false, 'toggle CSS scoped to module container');
 mtuc1_assert(strpos($toggleCss, '.mt-uni-toggle') !== false, 'toggle CSS defines mt-uni-toggle');
 mtuc1_assert(stripos($toggleCss, 'bootstrap') === false, 'toggle CSS has no Bootstrap dependency');
-mtuc1_assert(strpos($moduleTwig, 'module_mt_uni_credit_advertising_enabled') !== false, 'module twig has advertising toggle');
+mtuc1_assert(strpos($moduleTwig, 'advertising_enabled') === false && strpos($moduleTwig, 'input-advertising') === false, 'module twig omits advertising toggle and labels');
 mtuc1_assert(strpos($moduleTwig, 'module_mt_uni_credit_product_button_action') !== false, 'module twig has product button action');
 mtuc1_assert(strpos($moduleTwig, 'module_mt_uni_credit_button_top_spacing') !== false, 'module twig has button top spacing');
 mtuc1_assert(strpos($moduleTwig, 'button_refresh_bank_data') !== false, 'module twig has refresh bank data button');
@@ -237,8 +239,6 @@ mtuc1_assert(strpos($moduleTwig, 'type="hidden" name="module_mt_uni_credit_statu
 mtuc1_assert(strpos($moduleTwig, 'type="checkbox" name="module_mt_uni_credit_status"') !== false, 'module status checkbox control');
 mtuc1_assert(strpos($moduleTwig, 'type="hidden" name="module_mt_uni_credit_debug_enabled" value="0"') !== false, 'module debug hidden false value');
 mtuc1_assert(strpos($moduleTwig, 'type="checkbox" name="module_mt_uni_credit_debug_enabled"') !== false, 'module debug checkbox control');
-mtuc1_assert(strpos($moduleTwig, 'type="hidden" name="module_mt_uni_credit_advertising_enabled" value="0"') !== false, 'module advertising hidden false value');
-mtuc1_assert(strpos($moduleTwig, 'type="checkbox" name="module_mt_uni_credit_advertising_enabled"') !== false, 'module advertising checkbox control');
 mtuc1_assert(strpos($moduleTwig, 'name="module_mt_uni_credit_secret" value=""') !== false, 'module secret never renders stored value');
 mtuc1_assert(strpos($moduleTwig, 'maxlength="64"') !== false, 'module twig secret maxlength 64');
 mtuc1_assert(strpos($moduleTwig, 'type="password"') !== false, 'module secret uses password input');
@@ -294,7 +294,6 @@ foreach ($health['checks'] as $check) {
 
 $post = array(
     MtUniCreditConstants::MODULE_SETTING_STATUS => '1',
-    MtUniCreditConstants::MODULE_SETTING_ADVERTISING => '0',
     MtUniCreditConstants::MODULE_SETTING_DEBUG => '0',
     MtUniCreditConstants::MODULE_SETTING_PRODUCT_BUTTON_ACTION => MtUniCreditConstants::BUTTON_ACTION_ADD_TO_CART,
     MtUniCreditConstants::MODULE_SETTING_BUTTON_TOP_SPACING => '0',
@@ -322,7 +321,6 @@ mtuc1_assert(isset($errors['secret']), 'module validate requires secret when non
 
 $postSecretPersist = array(
     MtUniCreditConstants::MODULE_SETTING_STATUS => '1',
-    MtUniCreditConstants::MODULE_SETTING_ADVERTISING => '0',
     MtUniCreditConstants::MODULE_SETTING_DEBUG => '0',
     MtUniCreditConstants::MODULE_SETTING_PRODUCT_BUTTON_ACTION => MtUniCreditConstants::BUTTON_ACTION_BUY,
     MtUniCreditConstants::MODULE_SETTING_BUTTON_TOP_SPACING => '10',
@@ -408,7 +406,6 @@ $storeId = $saveHarness->storeId();
 
 $firstPost = array(
     MtUniCreditConstants::MODULE_SETTING_STATUS => '1',
-    MtUniCreditConstants::MODULE_SETTING_ADVERTISING => '0',
     MtUniCreditConstants::MODULE_SETTING_DEBUG => '0',
     MtUniCreditConstants::MODULE_SETTING_PRODUCT_BUTTON_ACTION => MtUniCreditConstants::BUTTON_ACTION_ADD_TO_CART,
     MtUniCreditConstants::MODULE_SETTING_BUTTON_TOP_SPACING => '0',
@@ -417,9 +414,16 @@ $firstPost = array(
 );
 mtuc1_assert(isset($saveModel->validateSettings($firstPost)['secret']), 'first blank Secret fails validation when none stored');
 
+$firstPost[$legacyAdvertisingKey] = '1';
 $firstPost[MtUniCreditConstants::MODULE_SETTING_SECRET] = 'initial-secret-value';
 mtuc1_assert($saveModel->validateSettings($firstPost) === array(), 'first non-empty Secret passes validation');
 $saveModel->saveSettings($firstPost);
+$settingModel = $saveModel->model_setting_setting;
+$moduleCode = MtUniCreditConstants::MODULE_SETTINGS_CODE;
+$saved = $settingModel->getSetting($moduleCode, $storeId);
+mtuc1_assert(!array_key_exists($legacyAdvertisingKey, $saved), 'admin save ignores a legacy POST key on fresh settings');
+$saved[$legacyAdvertisingKey] = '0';
+$settingModel->editSetting($moduleCode, $saved, $storeId);
 $firstEnvelope = $saveCredentials->getStoredSecretEnvelope($storeId);
 mtuc1_assert(is_string($firstEnvelope) && MtUniCreditSettingCipher::hasEncryptedPrefix($firstEnvelope), 'first save stores encrypted Secret');
 mtuc1_assert($saveCredentials->hasSecret($storeId) === true, 'isSecretConfigured/hasSecret true after first save');
@@ -431,6 +435,9 @@ $secondPost[MtUniCreditConstants::MODULE_SETTING_SECRET] = '';
 $secondPost[MtUniCreditConstants::MODULE_SETTING_BUTTON_TOP_SPACING] = '12';
 mtuc1_assert($saveModel->validateSettings($secondPost) === array(), 'blank Secret validation passes when configured');
 $saveModel->saveSettings($secondPost);
+$saved = $settingModel->getSetting($moduleCode, $storeId);
+mtuc1_assert($saved[$legacyAdvertisingKey] === '0', 'admin save preserves the existing legacy value despite a conflicting POST');
+mtuc1_assert($saved[MtUniCreditConstants::MODULE_SETTING_BUTTON_TOP_SPACING] === '12', 'admin save updates active settings');
 $secondEnvelope = $saveCredentials->getStoredSecretEnvelope($storeId);
 mtuc1_assert($secondEnvelope === $firstEnvelope, 'blank second save preserves encrypted Secret byte-for-byte');
 mtuc1_assert($saveCredentials->getSecret($storeId) === 'initial-secret-value', 'blank second save keeps readable Secret');
@@ -512,6 +519,11 @@ $moduleFirst = $moduleHarness->getInsertCount();
 $moduleHarness->installDefaults(MtUniCreditConstants::defaultModuleSettings());
 mtuc1_assert($moduleFirst > 0, 'module install inserts default settings');
 mtuc1_assert($moduleHarness->getInsertCount() === $moduleFirst, 'module install twice is idempotent');
+mtuc1_assert($moduleHarness->getSettingValue($legacyAdvertisingKey) === null, 'fresh install does not seed the legacy setting');
+$moduleHarness->insertDefault($legacyAdvertisingKey, '1');
+$moduleHarness->installDefaults(MtUniCreditConstants::defaultModuleSettings());
+mtuc1_assert($moduleHarness->getSettingValue($legacyAdvertisingKey) === '1', 'install defaults preserve a stored legacy value');
+
 
 $paymentHarness = new Phase1InstallHarness();
 $paymentDefaults = MtUniCreditConstants::defaultPaymentSettings();

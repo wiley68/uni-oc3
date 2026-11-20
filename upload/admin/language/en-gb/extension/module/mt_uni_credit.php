@@ -20,14 +20,12 @@ $_['text_bank_data_scheme_count'] = 'Schemes in cache: %d.';
 $_['entry_status'] = 'Status';
 $_['entry_unicid'] = 'Shop unique identification code';
 $_['entry_secret'] = 'Shop secret code';
-$_['entry_advertising_enabled'] = 'Show advertising';
 $_['entry_debug_enabled'] = 'Debug mode';
 $_['entry_product_button_action'] = 'Buy button';
 $_['entry_button_top_spacing'] = 'Space above the button';
 
 $_['help_unicid'] = 'Your unique shop identification code in the UniCredit system.';
 $_['help_secret'] = 'Your shop secret code in the UniCredit system.';
-$_['help_advertising_enabled'] = 'Enable or disable advertising on the store home page.';
 $_['help_debug_enabled'] = 'When enabled, server-side SmartUCF diagnostic entries (request/response) are stored for support. Data is redacted and never shown to customers.';
 $_['help_product_button_action'] = 'Behavior of the secondary button in the product popup.';
 $_['help_button_top_spacing'] = 'Space above the button in px (0–200).';

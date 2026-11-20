@@ -93,7 +93,7 @@ Homepage advertising may later use the catalog module/layout surface (decision D
 
 | Surface | Admin route                       | Permission             | Settings prefix           | Phase 1 owns                                                                                         |
 | ------- | --------------------------------- | ---------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Module  | `extension/module/mt_uni_credit`  | `modify` on same route | `module_mt_uni_credit_*`  | status, UNICID, advertising, debug, product button, spacing, secret placeholder, operational buttons |
+| Module  | `extension/module/mt_uni_credit`  | `modify` on same route | `module_mt_uni_credit_*`  | status, UNICID, debug, product button, spacing, secret placeholder, operational buttons |
 | Payment | `extension/payment/mt_uni_credit` | `modify` on same route | `payment_mt_uni_credit_*` | order status, geo zone, payment status, sort order                                                   |
 
 Install/uninstall ownership:
@@ -111,8 +111,8 @@ Phase 1 admin UX (developer-approved final parity):
 > OC3 Module administration follows the established UniCredit family settings, ordering, terminology and operational controls as closely as OpenCart 3 permits.
 
 - Visible Bulgarian title: **УниКредит покупки на Кредит** (module and payment admin surfaces).
-- Module boolean settings (`status`, `advertising_enabled`, `debug_enabled`) use OC3 checkbox + hidden `0` semantics.
-- Module fields (order): status, UNICID, secret, advertising, debug, product button action, button top spacing, operational buttons (refresh bank data, download journal).
+- Module boolean settings (`status`, `debug_enabled`) use OC3 checkbox + hidden `0` semantics.
+- Module fields (order): status, UNICID, secret, debug, product button action, button top spacing, operational buttons (refresh bank data, download journal).
 - **Environment is not exposed** in Module admin UI (Phase 4 owns CP environment configuration).
 - **Health/readiness panel is not exposed** in Module admin UI; internal helpers may remain for later phases/tests.
 - Payment listing logo: `admin/view/image/payment/uni_logo.svg` via `text_mt_uni_credit`, rendered at `max-width:200px`.
@@ -1076,7 +1076,7 @@ Do not weaken privacy because OC3 is older. Customer/business-facing leasing and
 - Admin order detail (`ADMIN_PANEL`) and admin native mail (`ADMIN_EMAIL`): EGN/phone2 only for Process 2 when decrypt succeeds (OC4 parity).
 - Thank You identity is session-only; GET `order_id` is never trusted.
 - Admin Orders list: local DB only; no CP HTTP on page render.
-- Homepage advertising: local DB + shared lazy shop-configuration resolution. A home-page render
+- Homepage advertising: CP `uni_container_status` controls visibility subject to homepage eligibility and CP `uni_status`. Existing merchant advertising values are ignored. The surface uses local DB + shared lazy shop-configuration resolution. A home-page render
   never sends customer data to CP; at most one coordinated credential-less `GET /shop` per exact
   scope (see CACHE-003) may occur when the local snapshot is not fresh.
 - Logs: identifiers, state, error class, HTTP status only — never secrets, keys, EGN, email, phone, address, raw payloads.

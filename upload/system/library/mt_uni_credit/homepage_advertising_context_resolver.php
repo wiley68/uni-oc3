@@ -49,18 +49,16 @@ final class MtUniCreditHomepageAdvertisingContextResolver
     /**
      * @param bool $isHomepage
      * @param bool $moduleEnabled
-     * @param bool $advertisingEnabled
      * @param bool $isMobile
      * @param string $defaultLogoUrl
      * @return array<string, mixed>|null
      */
-    public function resolve($isHomepage, $moduleEnabled, $advertisingEnabled, $isMobile, $defaultLogoUrl)
+    public function resolve($isHomepage, $moduleEnabled, $isMobile, $defaultLogoUrl)
     {
         $cacheKey = implode('|', array(
             (string) $this->storeId,
             $isHomepage ? '1' : '0',
             $moduleEnabled ? '1' : '0',
-            $advertisingEnabled ? '1' : '0',
             $isMobile ? '1' : '0',
         ));
         if (array_key_exists($cacheKey, self::$requestCache)) {
@@ -74,7 +72,6 @@ final class MtUniCreditHomepageAdvertisingContextResolver
             || !$this->gate->allowsLocalSettings(
                 (bool) $moduleEnabled,
                 (bool) $moduleEnabled,
-                (bool) $advertisingEnabled,
                 $this->credentials->getUnicid($this->storeId)
             )
         ) {
@@ -83,8 +80,8 @@ final class MtUniCreditHomepageAdvertisingContextResolver
             return null;
         }
 
-        $shop = $this->shopConfiguration->getForPresentation(function () use ($moduleEnabled, $advertisingEnabled) {
-            return (bool) $moduleEnabled && (bool) $advertisingEnabled;
+        $shop = $this->shopConfiguration->getForPresentation(function () use ($moduleEnabled) {
+            return (bool) $moduleEnabled;
         });
         if ($shop === null || $shop === array()) {
             self::$requestCache[$cacheKey] = false;

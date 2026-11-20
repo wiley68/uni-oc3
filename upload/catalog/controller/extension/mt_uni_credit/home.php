@@ -95,9 +95,6 @@ class ControllerExtensionMtUniCreditHome extends Controller
         $moduleEnabled = MtUniCreditLocalSettings::normalizeFlag(
             $this->config->get(MtUniCreditConstants::MODULE_SETTING_STATUS)
         ) === '1';
-        $advertisingEnabled = MtUniCreditLocalSettings::normalizeFlag(
-            $this->config->get(MtUniCreditConstants::MODULE_SETTING_ADVERTISING)
-        ) === '1';
 
         $storeId = (int) $this->config->get('config_store_id');
         try {
@@ -132,7 +129,6 @@ class ControllerExtensionMtUniCreditHome extends Controller
         return $resolver->resolve(
             MtUniCreditStorefrontRouteResolver::isHomepageRoute($route),
             $moduleEnabled,
-            $advertisingEnabled,
             MtUniCreditStorefrontMobileDetector::isMobile($ua),
             $this->defaultLogoUrl()
         );

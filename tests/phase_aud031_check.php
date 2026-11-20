@@ -136,7 +136,7 @@ mtucAud031_assert(empty($uploadHits['UNIPAYMENT_ENABLE_TEST_FAILURES']), 'prior 
 mtucAud031_assert(empty($uploadHits['ShopApiTestFailure']), 'prior exclusion: ShopApiTestFailure');
 mtucAud031_assert(empty($uploadHits['test_force_reject']), 'prior exclusion: test_force_reject');
 
-$packagePath = $root . DIRECTORY_SEPARATOR . 'dist' . DIRECTORY_SEPARATOR . 'oc3_uni_2.0.3.ocmod.zip';
+$packagePath = $root . DIRECTORY_SEPARATOR . 'dist' . DIRECTORY_SEPARATOR . mtuc_phase0_load_fixture('extension_identity.json')['package_filename'];
 if (is_file($packagePath)) {
     $zip = new ZipArchive();
     mtucAud031_assert($zip->open($packagePath) === true, 'package opens');

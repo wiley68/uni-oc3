@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Homepage advertising permission gates (local settings vs CP shop flags).
+ * Homepage advertising permission gates (module eligibility and CP shop flags).
  */
 final class MtUniCreditHomepageAdvertisingGate
 {
@@ -17,15 +17,13 @@ final class MtUniCreditHomepageAdvertisingGate
     /**
      * @param bool $moduleActive
      * @param bool $moduleEnabled
-     * @param bool $advertisingEnabled
      * @param string $unicid
      * @return bool
      */
-    public function allowsLocalSettings($moduleActive, $moduleEnabled, $advertisingEnabled, $unicid)
+    public function allowsLocalSettings($moduleActive, $moduleEnabled, $unicid)
     {
         return $moduleActive
             && $moduleEnabled
-            && $advertisingEnabled
             && trim((string) $unicid) !== '';
     }
 
@@ -33,14 +31,13 @@ final class MtUniCreditHomepageAdvertisingGate
      * @param string $route
      * @param bool $moduleActive
      * @param bool $moduleEnabled
-     * @param bool $advertisingEnabled
      * @param string $unicid
      * @return bool
      */
-    public function allowsAssets($route, $moduleActive, $moduleEnabled, $advertisingEnabled, $unicid)
+    public function allowsAssets($route, $moduleActive, $moduleEnabled, $unicid)
     {
         return $this->allowsPage($route)
-            && $this->allowsLocalSettings($moduleActive, $moduleEnabled, $advertisingEnabled, $unicid);
+            && $this->allowsLocalSettings($moduleActive, $moduleEnabled, $unicid);
     }
 
     /**

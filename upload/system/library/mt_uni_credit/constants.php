@@ -13,7 +13,7 @@ final class MtUniCreditConstants
 
     const EXTENSION_TYPE_MODULE = 'module';
 
-    const VERSION = '2.0.3';
+    const VERSION = '2.0.4';
 
     const AUTHOR = 'Авалон ООД';
 
@@ -88,8 +88,6 @@ final class MtUniCreditConstants
 
     const MODULE_SETTING_UNICID = 'module_mt_uni_credit_unicid';
 
-    const MODULE_SETTING_ADVERTISING = 'module_mt_uni_credit_advertising_enabled';
-
     const MODULE_SETTING_DEBUG = 'module_mt_uni_credit_debug_enabled';
 
     const MODULE_SETTING_PRODUCT_BUTTON_ACTION = 'module_mt_uni_credit_product_button_action';
@@ -105,8 +103,6 @@ final class MtUniCreditConstants
     const BUTTON_ACTION_ADD_TO_CART = 'add_to_cart';
 
     const BUTTON_ACTION_BUY = 'buy';
-
-    const DEFAULT_ADVERTISING_ENABLED = '0';
 
     const DEFAULT_DEBUG_ENABLED = '0';
 
@@ -154,7 +150,6 @@ final class MtUniCreditConstants
         return array(
             self::MODULE_SETTING_STATUS => '0',
             self::MODULE_SETTING_UNICID => '',
-            self::MODULE_SETTING_ADVERTISING => self::DEFAULT_ADVERTISING_ENABLED,
             self::MODULE_SETTING_DEBUG => self::DEFAULT_DEBUG_ENABLED,
             self::MODULE_SETTING_PRODUCT_BUTTON_ACTION => self::DEFAULT_PRODUCT_BUTTON_ACTION,
             self::MODULE_SETTING_BUTTON_TOP_SPACING => self::DEFAULT_BUTTON_TOP_SPACING,
@@ -182,7 +177,6 @@ final class MtUniCreditConstants
         return array(
             self::MODULE_SETTING_STATUS,
             self::MODULE_SETTING_UNICID,
-            self::MODULE_SETTING_ADVERTISING,
             self::MODULE_SETTING_DEBUG,
             self::MODULE_SETTING_PRODUCT_BUTTON_ACTION,
             self::MODULE_SETTING_BUTTON_TOP_SPACING,
@@ -198,7 +192,6 @@ final class MtUniCreditConstants
         return array(
             self::MODULE_SETTING_STATUS,
             self::MODULE_SETTING_UNICID,
-            self::MODULE_SETTING_ADVERTISING,
             self::MODULE_SETTING_DEBUG,
             self::MODULE_SETTING_PRODUCT_BUTTON_ACTION,
             self::MODULE_SETTING_BUTTON_TOP_SPACING,

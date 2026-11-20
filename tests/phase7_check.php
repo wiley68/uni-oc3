@@ -151,7 +151,8 @@ foreach ($fixture['ps9_create_field_order'] as $field) {
     mtuc7_assert(array_key_exists($field, $payload), 'payload field present: ' . $field);
 }
 mtuc7_assert(!isset($payload['status']) && !isset($payload['status_id']), 'create payload omits status/status_id');
-mtuc7_assert($payload['version'] === '2.0.3', 'payload version frozen 2.0.3');
+$identity = mtuc_phase0_load_fixture('extension_identity.json');
+mtuc7_assert($payload['version'] === $identity['cp_payload_version'], 'payload carries the current module version');
 mtuc7_assert($payload['products_name'] === 'Example_Product', 'product name underscore preserved');
 
 // Missing rendered consent context must refuse before any financing side effect.
