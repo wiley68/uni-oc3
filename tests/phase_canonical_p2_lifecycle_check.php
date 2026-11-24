@@ -81,6 +81,50 @@ mtucCanonP2_assert(
 mtucCanonP2_assert(Phase9TestHarness::countStatusPatches($transportOk) === 1, 'exactly one CP PATCH');
 mtucCanonP2_assert(Phase9TestHarness::smartUcfCallCount($stackOk['smartUcfProbe']) === 0, 'P2: zero SmartUCF');
 $attemptOk = $stackOk['attempts']->findByStoreOrder($stackOk['storeId'], $orderOk);
+$sensitiveRow = (new MtUniCreditProcessTwoLifecycleRepository($stackOk['db']))->findByAttempt((int) $attemptOk['attempt_id']);
+mtucCanonP2_assert(
+    array_key_exists('process2_sensitive_enc', $sensitiveRow)
+        && $sensitiveRow['process2_sensitive_enc'] === null
+        && array_key_exists('process2_sensitive_created_at', $sensitiveRow)
+        && $sensitiveRow['process2_sensitive_created_at'] === null,
+    'P2 reaches bank_sent_process2 with both sensitive columns SQL NULL'
+);
+$snapshot = MtUniCreditApplicationSnapshot::decode($attemptOk['application_snapshot_json']);
+mtucCanonP2_assert(
+    is_array($snapshot) && is_array($snapshot['customer'])
+        && array_keys($snapshot['customer']) === array('name', 'firstname', 'lastname', 'phone', 'email', 'address', 'address2'),
+    'P2 application snapshot uses the existing customer allowlist'
+);
+$wire = array();
+foreach ($transportOk->requests as $request) {
+    $path = parse_url($request['url'], PHP_URL_PATH);
+    if (substr($path, -7) === '/orders' || substr($path, -14) === '/orders/status') {
+        $wire[$request['method']] = $request['payload'];
+    }
+}
+$transportLegacy = new Phase4FakeCpHttpTransport();
+Phase9TestHarness::enqueueCpCreateSuccess($transportLegacy);
+$stackLegacy = Phase9TestHarness::stack(
+    $transportLegacy, null, null, Phase5TestHarness::STORE_A, array('uni_proces' => 1)
+);
+Phase9TestHarness::seedBankOrder($stackLegacy['memoryDb'], $orderOk, $stackLegacy['storeId']);
+$legacyInput = Phase9TestHarness::submitInputProcess2($orderOk, $stackLegacy['storeId']);
+$legacyInput['process2'] = array('egn' => 'obsolete-scalar', 'phone2' => array('nested' => array('obsolete')));
+$legacyInput['unipayment_egn'] = array('obsolete');
+mtucCanonP2_assert(!empty($stackLegacy['submission']->submit($legacyInput)['success']), 'P2 ignores obsolete scalar and nested inputs');
+$legacyWire = array();
+foreach ($transportLegacy->requests as $request) {
+    $path = parse_url($request['url'], PHP_URL_PATH);
+    if (substr($path, -7) === '/orders' || substr($path, -14) === '/orders/status') {
+        $legacyWire[$request['method']] = $request['payload'];
+    }
+}
+mtucCanonP2_assert(
+    isset($wire['POST'], $wire['PATCH']) && $wire === $legacyWire
+        && $wire['POST']['version'] === MtUniCreditConstants::VERSION
+        && $wire['PATCH'] === array('order_id' => (string) $orderOk, 'status' => $p2['status_label'], 'status_id' => $p2['status_id']),
+    'P2 exact CP create and status bodies are identical with obsolete inputs'
+);
 $targetOk = (new MtUniCreditControlPanelStatusSyncService(
     new MtUniCreditControlPanelStatusSyncRepository($stackOk['db']),
     $stackOk['client']

@@ -307,18 +307,11 @@ mtucAud010F01_assert(
 );
 
 // -------------------------------------------------------------------------
-// Process 2 unchanged (EGN/phone2 stay on ProcessTwoFieldValidator)
-// -------------------------------------------------------------------------
-$p2 = new MtUniCreditStorefrontProcessTwoFieldValidator();
-$p2bad = $p2->validate(array('egn' => '', 'phone2' => ''));
+// Primary telephone remains validated for both processes.
+$phoneValidator = new MtUniCreditStorefrontProcessTwoFieldValidator();
 mtucAud010F01_assert(
-    $p2bad['ok'] === false && isset($p2bad['errors']['egn'], $p2bad['errors']['phone2']),
-    'Process 2 EGN/phone2 still required'
-);
-mtucAud010F01_assert(
-    strpos($productSrc, 'MtUniCreditStorefrontProcessTwoFieldValidator') !== false
-        && strpos($cartSrc, 'MtUniCreditStorefrontProcessTwoFieldValidator') !== false,
-    'Process 2 validator still composed in Product/Cart'
+    $phoneValidator->isValidPhone('+359 (88) 123-456') && !$phoneValidator->isValidPhone('+ -'),
+    'shared primary-phone validation accepts formatting and requires a digit'
 );
 
 // -------------------------------------------------------------------------

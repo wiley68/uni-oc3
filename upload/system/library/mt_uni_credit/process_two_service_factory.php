@@ -10,7 +10,7 @@ final class MtUniCreditProcessTwoServiceFactory
      * @param MtUniCreditControlPanelClient $controlPanelClient
      * @param MtUniCreditProcessTwoMailPort|null $mailer
      * @param MtUniCreditPersistenceClock|null $clock
-     * @param string|null $encryptionSecretOverride
+     * @param string|null $encryptionSecretOverride Legacy positional argument, ignored
      * @return MtUniCreditProcessTwoLifecycleCoordinator
      */
     public static function coordinator(
@@ -27,7 +27,6 @@ final class MtUniCreditProcessTwoServiceFactory
             new MtUniCreditControlPanelStatusSyncRepository($db, $clock),
             $controlPanelClient
         );
-        $cipher = new MtUniCreditProcessTwoSensitiveCipher($encryptionSecretOverride);
         if (!$mailer instanceof MtUniCreditProcessTwoMailPort) {
             $mailer = new MtUniCreditPhpMailProcessTwoMailer();
         }
@@ -37,7 +36,6 @@ final class MtUniCreditProcessTwoServiceFactory
             $mailRecipients,
             $bankStatuses,
             $statusSync,
-            $cipher,
             $mailer
         );
     }

@@ -40,20 +40,6 @@ function assert(cond, message) {
 }
 
 function buildHtml(processMode) {
-  var p2 =
-    processMode === 2
-      ? [
-          '<div class="mt-uni-credit-storefront__customer-field">',
-          '<input class="mt-uni-credit-storefront__customer-input" name="phone2" type="tel" value="0888111222" data-mtuc-required="1" />',
-          '<span class="mt-uni-credit-storefront__field-error" data-mtuc-field-error="phone2" role="alert"></span>',
-          "</div>",
-          '<div class="mt-uni-credit-storefront__customer-field">',
-          '<input class="mt-uni-credit-storefront__customer-input" name="egn" type="text" value="2000010112" data-mtuc-required="1" />',
-          '<span class="mt-uni-credit-storefront__field-error" data-mtuc-field-error="egn" role="alert"></span>',
-          "</div>",
-        ].join("")
-      : "";
-
   var bootstrap = {
     entry_point: "product",
     button_title: "Buy on installments",
@@ -61,8 +47,6 @@ function buildHtml(processMode) {
       error_field_required: "This field is required.",
       error_phone_invalid: "Please enter a valid phone number.",
       error_email_invalid: "Please enter a valid email address.",
-      error_egn_invalid: "EGN must contain 10 digits.",
-      error_phone2_invalid: "Second phone invalid.",
       error_validation_incomplete: "Please fill in all required fields.",
       error_request_failed: "The request was not successful.",
       error_recalculate: "Calculation failed.",
@@ -121,7 +105,6 @@ function buildHtml(processMode) {
     '          <span data-mtuc-field-error="phone" role="alert"></span>',
     '          <input name="email" type="email" value="ivan@example.test" data-mtuc-required="1" />',
     '          <span data-mtuc-field-error="email" role="alert"></span>',
-    p2,
     '          <span data-mtuc-submit-error role="alert"></span>',
     '          <input type="checkbox" data-mtuc-consent-checkbox data-mtuc-consent name="consent" value="1" checked />',
     '          <button type="button" data-mtuc-submit>Submit</button>',
@@ -410,29 +393,16 @@ function runProofs() {
       api.setStep(2, { animate: false });
       $modal.removeAttr("hidden");
 
-      api.showFieldErrors({
-        phone2: "Second phone invalid.",
-        egn: "EGN must contain 10 digits.",
-        lastname: "Last required",
-      });
-      assert(spanText($, $modal, "phone2") === "Second phone invalid.", "JS: phone2 mapped");
-      assert(spanText($, $modal, "egn") === "EGN must contain 10 digits.", "JS: egn mapped");
-      assert(spanText($, $modal, "egn").indexOf("2000010112") === -1, "JS: egn error does not echo value");
-      api.focusFirstInvalidField({
-        phone2: "Second phone invalid.",
-        egn: "EGN must contain 10 digits.",
-        lastname: "Last required",
-      });
+      assert($modal.find('[name="egn"], [name="phone2"]').length === 0, "JS: Process 2 uses five applicant fields");
+      api.showFieldErrors({ phone: "keep", lastname: "clear-me", egn: "ignored" });
+      api.focusFirstInvalidField({ phone: "keep", lastname: "clear-me", egn: "ignored" });
       assert(
         window.document.activeElement === $modal.find('[name="lastname"]').get(0),
-        "JS: Process 2 first focus follows field order (lastname before phone2)",
+        "JS: Process 2 focuses the first remaining invalid field",
       );
-
-      // Prove input event clears only one field via production listener.
-      api.showFieldErrors({ phone2: "keep", egn: "clear-me" });
-      $modal.find('[name="egn"]').val("2001010112").trigger("input");
-      assert(spanText($, $modal, "egn") === "", "JS: input clears egn error via production listener");
-      assert(spanText($, $modal, "phone2") === "keep", "JS: input leaves phone2 error");
+      $modal.find('[name="lastname"]').val("Changed").trigger("input");
+      assert(spanText($, $modal, "lastname") === "", "JS: input clears its own error");
+      assert(spanText($, $modal, "phone") === "keep", "JS: input preserves the primary-phone error");
 
       env.dom.window.close();
     });

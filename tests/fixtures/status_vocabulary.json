@@ -69,7 +69,7 @@
       "flag": "uni_proces === 1",
       "phase_10b_cp_create_status_fields": false,
       "phase_11_after_cp": "native Process 2 bank handoff; no SmartUCF",
-      "customer_egn": true
+      "customer_egn": false
     }
   }
 }

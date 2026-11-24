@@ -459,21 +459,6 @@
       return email !== "" && EMAIL_VALID_PATTERN.test(email);
     }
 
-    function isValidEgn(digits) {
-      if (!/^\d{10}$/.test(digits)) {
-        return false;
-      }
-      var year = parseInt(digits.slice(0, 4), 10);
-      var month = parseInt(digits.slice(4, 6), 10);
-      var day = parseInt(digits.slice(6, 8), 10);
-      var date = new Date(year, month - 1, day);
-      return (
-        date.getFullYear() === year &&
-        date.getMonth() === month - 1 &&
-        date.getDate() === day
-      );
-    }
-
     function customerField(name) {
       return $modal.find('[data-mtuc-form] [name="' + name + '"]').get(0);
     }
@@ -507,16 +492,6 @@
     }
 
     function isFieldRenderable(name) {
-      if (name === "phone2" || name === "egn") {
-        var input = customerField(name);
-        if (!input) {
-          return false;
-        }
-        var $input = $(input);
-        if ($input.is(":hidden") || !$input.is(":visible")) {
-          return false;
-        }
-      }
       return !!fieldErrorEl(name);
     }
 
@@ -550,8 +525,6 @@
         "address",
         "phone",
         "email",
-        "phone2",
-        "egn",
       ];
       var i;
       for (i = 0; i < order.length; i += 1) {
@@ -577,13 +550,8 @@
           out[key] = t("error_field_required", "");
         } else if (key === "email") {
           out[key] = t("error_email_invalid", "");
-        } else if (key === "phone" || key === "phone2") {
-          out[key] = t(
-            key === "phone2" ? "error_phone2_invalid" : "error_phone_invalid",
-            "",
-          );
-        } else if (key === "egn") {
-          out[key] = t("error_egn_invalid", "");
+        } else if (key === "phone") {
+          out[key] = t("error_phone_invalid", "");
         } else {
           out[key] = t("error_field_required", "");
         }
@@ -632,24 +600,6 @@
       } else if (!isValidEmail(email)) {
         errors.email = "invalid";
       }
-      var egnField = customerField("egn");
-      if (egnField) {
-        var egn = String(egnField.value || "").replace(/\D/g, "");
-        if (egn === "") {
-          errors.egn = "required";
-        } else if (!isValidEgn(egn)) {
-          errors.egn = "invalid";
-        }
-      }
-      var phone2Field = customerField("phone2");
-      if (phone2Field) {
-        var phone2 = phone2Field.value;
-        if (!isNonEmpty(phone2)) {
-          errors.phone2 = "required";
-        } else if (!isValidPhone(phone2)) {
-          errors.phone2 = "invalid";
-        }
-      }
       return errors;
     }
 
@@ -683,7 +633,7 @@
           return;
         }
         var name = target.getAttribute("name") || "";
-        if (name === "phone" || name === "phone2") {
+        if (name === "phone") {
           var sanitized = sanitizePhoneValue(target.value);
           if (target.value !== sanitized) {
             target.value = sanitized;
@@ -1361,7 +1311,6 @@
         }
         terminalSubmitInFlight = true;
         setProcessing(true);
-        var process = $form.attr("data-mtuc-process") || "1";
         var data = {
           csrf: $root.attr("data-csrf"),
           application_token: $root.attr("data-application-token") || "",
@@ -1372,9 +1321,6 @@
         var payload = $form.serializeArray();
         $.each(payload, function (_, item) {
           var name = item.name;
-          if (process === "1" && (name === "egn" || name === "phone2")) {
-            return;
-          }
           if (name === "consent[]") {
             if (!data.consent) {
               data.consent = [];
@@ -1385,7 +1331,13 @@
             data.consent.push(item.value);
             return;
           }
-          data[name] = item.value;
+          if (
+            ["firstname", "lastname", "address", "phone", "email"].indexOf(name) !== -1 ||
+            name === "address_id" ||
+            name === "consent"
+          ) {
+            data[name] = item.value;
+          }
         });
         if (entryPoint === "product") {
           var form = productFormData();

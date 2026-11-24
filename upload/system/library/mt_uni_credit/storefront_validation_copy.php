@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Localized Product/Cart applicant + Process 2 validation copy (BG/EN language keys).
+ * Localized Product/Cart applicant validation copy (BG/EN language keys).
  */
 final class MtUniCreditStorefrontValidationCopy
 {
@@ -26,22 +26,6 @@ final class MtUniCreditStorefrontValidationCopy
     }
 
     /**
-     * Messages for MtUniCreditStorefrontProcessTwoFieldValidator.
-     *
-     * @param object $language OpenCart language loader with get($key)
-     * @return array<string, string>
-     */
-    public static function processTwoMessages($language)
-    {
-        return array(
-            'egn_required' => (string) $language->get('error_field_required'),
-            'egn_invalid' => (string) $language->get('error_egn_invalid'),
-            'phone2_required' => (string) $language->get('error_field_required'),
-            'phone2_invalid' => (string) $language->get('error_phone2_invalid'),
-        );
-    }
-
-    /**
      * Client bootstrap i18n bag (JSON-safe strings).
      *
      * @param object $language OpenCart language loader with get($key)
@@ -53,8 +37,6 @@ final class MtUniCreditStorefrontValidationCopy
             'error_field_required' => (string) $language->get('error_field_required'),
             'error_phone_invalid' => (string) $language->get('error_phone_invalid'),
             'error_email_invalid' => (string) $language->get('error_email_invalid'),
-            'error_egn_invalid' => (string) $language->get('error_egn_invalid'),
-            'error_phone2_invalid' => (string) $language->get('error_phone2_invalid'),
             'error_validation_incomplete' => (string) $language->get('error_validation_incomplete'),
             'error_request_failed' => (string) $language->get('error_request_failed'),
             'error_consent_unknown' => (string) $language->get('error_consent_unknown'),

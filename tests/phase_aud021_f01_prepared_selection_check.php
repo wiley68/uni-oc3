@@ -77,7 +77,7 @@ mtucAud021F01_assert(
 );
 mtucAud021F01_assert(
     preg_match(
-        '/submitCheckoutFinancing\\s*\\(\\s*\\(int\\)\\s*\\$context\\[\'order_id\'\\]\\s*,\\s*\\$process2\\s*,\\s*\\$selection\\s*\\)/s',
+        '/submitCheckoutFinancing\\s*\\(\\s*\\(int\\)\\s*\\$context\\[\'order_id\'\\]\\s*,\\s*array\\(\\)\\s*,\\s*\\$selection\\s*\\)/s',
         $ctrlSrc
     ) === 1,
     'wiring: prepared submit passes exact $selection'
@@ -492,7 +492,12 @@ final class MtucAud021Response
 
     public function addHeader($header) {}
 
-    public function setOutput($output) {}
+    public $output = '';
+
+    public function setOutput($output)
+    {
+        $this->output = $output;
+    }
 }
 
 final class MtucAud021Url
@@ -591,6 +596,11 @@ final class MtucAud021Cart
     /**
      * @return array<int, mixed>
      */
+    public function getTotal()
+    {
+        return 0.0;
+    }
+
     public function getProducts()
     {
         return array();
@@ -692,6 +702,23 @@ final class MtucAud021PaymentModelProbe
         return $this->lastResult;
     }
 
+    public function presentCheckoutFinancingPanel()
+    {
+        return array('shop' => array('uni_proces' => $this->process2 ? 1 : 0));
+    }
+
+    public function prepareCheckoutConfirm()
+    {
+        return array('success' => true);
+    }
+
+    public function validateCheckoutConsents(array $posted)
+    {
+        if ($posted['consent'] !== array(1)) {
+            throw new InvalidArgumentException('consent_required');
+        }
+    }
+
     public function preparedConsentContext($orderId, $selection)
     {
         $p = MtUniCreditStorefrontCalculatorPresenter::parseSchemeKey($selection['scheme_key']);
@@ -727,6 +754,7 @@ function mtucAud021F01_preparedSubmitController(array $stack, $orderId, array $b
     $registry = new MtucAud021Registry();
     $session = new MtucAud021Session();
     $session->data['order_id'] = $orderId;
+    $session->data['payment_method'] = array('code' => MtUniCreditConstants::EXTENSION_CODE);
     $session->data[MtUniCreditCheckoutConfirmPreparation::SESSION_PREPARED_ORDER_ID] = $orderId;
     MtUniCreditCheckoutPreparedSelection::store(
         $session->data,
@@ -743,16 +771,15 @@ function mtucAud021F01_preparedSubmitController(array $stack, $orderId, array $b
     $request->post = array_merge(
         array(
             'mt_uni_credit_submit_token' => $token,
+            'csrf_token' => MtUniCreditStorefrontCsrf::issue($session->data),
             'consent' => isset($posted['consent']) ? $posted['consent'] : array(1),
             'consent_config_hash' => isset($posted['consent_config_hash']) ? $posted['consent_config_hash'] : (new MtUniCreditStorefrontConsentResolver())->context(mtuc4_valid_shop_snapshot(), '', 0, array())['config_hash'],
             'scheme_key' => isset($posted['scheme_key']) ? (string) $posted['scheme_key'] : '',
             'first_installment' => isset($posted['first_installment'])
                 ? (string) $posted['first_installment']
                 : '0',
-            'egn' => isset($posted['egn']) ? (string) $posted['egn'] : '',
-            'phone2' => isset($posted['phone2']) ? (string) $posted['phone2'] : '',
         ),
-        array()
+        $posted
     );
 
     $response = new MtucAud021Response();
@@ -933,7 +960,6 @@ $stackCtrlP2 = Phase9TestHarness::stack(
 );
 $orderCtrlP2 = 22302;
 Phase9TestHarness::seedBankOrder($stackCtrlP2['memoryDb'], $orderCtrlP2, $storeId);
-$p2Fields = Phase9TestHarness::process2Fields();
 $harnessP2 = mtucAud021F01_preparedSubmitController(
     $stackCtrlP2,
     $orderCtrlP2,
@@ -941,8 +967,6 @@ $harnessP2 = mtucAud021F01_preparedSubmitController(
     array(
         'scheme_key' => $schemeS2,
         'first_installment' => '12.5',
-        'egn' => $p2Fields['egn'],
-        'phone2' => $p2Fields['phone2'],
     ),
     true
 );
@@ -976,6 +1000,38 @@ mtucAud021F01_assert(
     Phase9TestHarness::smartUcfCallCount($stackCtrlP2['smartUcfProbe']) === 0,
     'CTRL-P2: Smart P1 = 0'
 );
+
+foreach (array(
+    array('confirm', false),
+    array('confirm', true),
+    array('submit', true),
+) as $index => list($route, $withObsoleteFields)) {
+    $transport = new Phase4FakeCpHttpTransport();
+    Phase9TestHarness::enqueueCpCreateSuccess($transport);
+    $stack = Phase9TestHarness::stack($transport, null, null, $storeId, array('uni_proces' => 1));
+    $orderId = 22303 + $index;
+    Phase9TestHarness::seedBankOrder($stack['memoryDb'], $orderId, $storeId);
+    $selection = array('scheme_key' => $schemeS1, 'first_installment' => $firstF1);
+    $post = $selection;
+    if ($withObsoleteFields) {
+        $post['egn'] = array('nested' => array('obsolete'));
+        $post['phone2'] = 'obsolete-scalar';
+        $post['unipayment_phone2'] = array('obsolete');
+    }
+    $checkout = mtucAud021F01_preparedSubmitController($stack, $orderId, $selection, $post, true);
+    $checkout['controller']->$route();
+    if ($route === 'confirm') {
+        $json = json_decode($checkout['response']->output, true);
+        $successRedirect = !empty($json['success']) ? $json['redirect'] : '';
+    } else {
+        $successRedirect = $checkout['response']->redirect;
+    }
+    mtucAud021F01_assert(
+        $successRedirect === $expectedThankYou
+            && Phase9TestHarness::bankStatusId($stack, $orderId) === MtUniCreditBankStatus::SENT_PROCESS2,
+        'CTRL-P2 ' . $route . ($withObsoleteFields ? ': ignores obsolete POST values' : ': succeeds with no retired fields')
+    );
+}
 
 // Refresh focused source for mutation canaries that scan this file.
 $focusedSrc = (string) file_get_contents(__FILE__);

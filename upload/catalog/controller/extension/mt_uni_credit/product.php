@@ -559,8 +559,6 @@ class ControllerExtensionMtUniCreditProduct extends Controller
         $data['text_address'] = $this->language->get('text_address');
         $data['text_telephone'] = $this->language->get('text_telephone');
         $data['text_email'] = $this->language->get('text_email');
-        $data['text_phone2'] = $this->language->get('text_phone2');
-        $data['text_egn'] = $this->language->get('text_egn');
         $data['text_required'] = $this->language->get('text_required');
         $data['text_cancel'] = $this->language->get('button_cancel');
         $data['text_close'] = $this->language->get('button_close');
@@ -612,9 +610,6 @@ class ControllerExtensionMtUniCreditProduct extends Controller
      */
     private function customerPayload()
     {
-        $shop = MtUniCreditStorefrontRuntime::loadPresentationShop($this);
-        $shopData = is_array($shop) ? $shop : array();
-        $process2 = ((int) (isset($shopData['uni_proces']) ? $shopData['uni_proces'] : 0)) === 1;
         $normalized = (new MtUniCreditStorefrontPopupFormNormalizer())->normalize(
             $this->request->post,
             array()
@@ -642,15 +637,6 @@ class ControllerExtensionMtUniCreditProduct extends Controller
             'country' => '',
             'zone' => '',
         );
-
-        // Process 1 privacy: never attach EGN / second phone.
-        if ($process2) {
-            $p2 = (new MtUniCreditStorefrontProcessTwoFieldValidator())->validate($this->request->post);
-            if ($p2['ok']) {
-                $payload['phone2'] = $p2['phone2'];
-                $payload['egn'] = $p2['egn'];
-            }
-        }
 
         return $payload;
     }
@@ -726,17 +712,13 @@ class ControllerExtensionMtUniCreditProduct extends Controller
             MtUniCreditStorefrontValidationCopy::applicantMessages($this->language)
         ))->validate($normalized);
 
-        if ($process2) {
-            $p2 = (new MtUniCreditStorefrontProcessTwoFieldValidator(
-                MtUniCreditStorefrontValidationCopy::processTwoMessages($this->language)
-            ))->validate($this->request->post);
-            foreach ($p2['errors'] as $key => $message) {
-                $errors[$key] = $message;
-            }
-        } else {
-            // Process 1 privacy: reject accidental EGN/phone2 leakage as customer fields.
-            if (trim((string) $this->posted('egn', '')) !== '' || trim((string) $this->posted('phone2', '')) !== '') {
-                $errors['privacy'] = $this->language->get('error_privacy_process1');
+        if (!$process2) {
+            foreach (array('egn', 'phone2') as $field) {
+                $value = $this->posted($field, '');
+                if (is_array($value) || (is_scalar($value) && trim((string) $value) !== '')) {
+                    $errors['privacy'] = $this->language->get('error_privacy_process1');
+                    break;
+                }
             }
         }
 

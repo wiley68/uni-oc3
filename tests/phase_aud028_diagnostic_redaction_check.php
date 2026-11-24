@@ -457,6 +457,29 @@ mtucAud028_assert(
     'F03 gap: production CP sanitize still omits transport_error (external patch required)'
 );
 
+$aliases = array_fill_keys(
+    array('unipayment_egn', 'unipayment_phone2', 'second_phone', 'secondary_phone', 'secondaryPhone', 'personal_id', 'phone_2'),
+    'synthetic-retired-field-marker'
+);
+$redactedAliases = array_fill_keys(array_keys($aliases), '[REDACTED]');
+$privacyDb = new Phase2MemoryDb();
+$privacyRepository = new MtUniCreditDiagnosticDebugLogRepository(new MtUniCreditDbAdapter($privacyDb, 'oc_'));
+$privacyRepository->insert(0, 901, 'checkout', 'privacy_proof', 200, array('request' => $aliases));
+$stored = $privacyDb->query("SELECT * FROM oc_mt_uni_credit_diagnostic_debug_log WHERE store_id = 0");
+$persistedSummary = json_decode($stored->row['summary_json'], true);
+mtucAud028_assert($persistedSummary['request'] === $redactedAliases, 'P2 aliases redacted before diagnostic persistence');
+
+$historicSummary = $privacyDb->escape(json_encode(array('request' => $aliases)));
+$privacyDb->query(
+    "INSERT INTO `oc_mt_uni_credit_diagnostic_debug_log`"
+    . " (`store_id`, `order_id`, `entry_point`, `event_code`, `http_status`, `summary_json`, `created_at`)"
+    . " VALUES (0, '902', 'checkout', 'privacy_proof', 200, '" . $historicSummary . "', '2026-11-24 12:00:00')"
+);
+$historic = $privacyRepository->findLatestByOrderId(0, 902);
+mtucAud028_assert($historic['summary']['request'] === $redactedAliases, 'P2 aliases redacted on historical diagnostic read');
+$exports = array_column($privacyRepository->findAllForStore(0), 'request', 'order_id');
+mtucAud028_assert(isset($exports[902]) && $exports[902] === $redactedAliases, 'P2 aliases redacted on historical diagnostic export');
+
 echo PHP_EOL . 'AUD-028 diagnostic redaction: ' . $passes . ' PASS, ' . count($failures) . ' FAIL' . PHP_EOL;
 if ($failures !== array()) {
     fwrite(STDERR, implode(PHP_EOL, $failures) . PHP_EOL);

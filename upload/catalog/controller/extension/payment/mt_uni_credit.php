@@ -147,8 +147,6 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
             'text_glp',
             'text_gpr',
             'text_consents',
-            'text_egn',
-            'text_phone2',
             'text_required',
             'text_processing_title',
             'text_processing_message',
@@ -373,10 +371,6 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
         $preparedOrderId = (int) (isset($this->session->data[MtUniCreditCheckoutConfirmPreparation::SESSION_PREPARED_ORDER_ID])
             ? $this->session->data[MtUniCreditCheckoutConfirmPreparation::SESSION_PREPARED_ORDER_ID]
             : $orderId);
-        $process2 = array(
-            'egn' => (string) $this->posted('egn', ''),
-            'phone2' => (string) $this->posted('phone2', ''),
-        );
         $selection = array(
             'scheme_key' => $schemeKey,
             'first_installment' => (float) str_replace(',', '.', (string) $this->posted('first_installment', '0')),
@@ -400,7 +394,7 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
 
         $submit = $this->model_extension_payment_mt_uni_credit->submitCheckoutFinancing(
             $orderId,
-            $process2,
+            array(),
             $selection
         );
 
@@ -648,8 +642,6 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
                 ? (float) $selection['first_installment']
                 : 0.0,
             'process2' => $this->resolveCheckoutProcess2Flag(),
-            'text_egn' => $this->language->get('text_egn'),
-            'text_phone2' => $this->language->get('text_phone2'),
             'text_required' => '*',
             'continue' => !empty($view['success'])
                 ? $this->url->link('common/home', '', true)
@@ -752,13 +744,9 @@ class ControllerExtensionPaymentMtUniCredit extends Controller
 
         $this->load->model('extension/payment/mt_uni_credit');
         $this->load->model('checkout/order');
-        $process2 = array(
-            'egn' => isset($this->request->post['egn']) ? (string) $this->request->post['egn'] : '',
-            'phone2' => isset($this->request->post['phone2']) ? (string) $this->request->post['phone2'] : '',
-        );
         $result = $this->model_extension_payment_mt_uni_credit->submitCheckoutFinancing(
             (int) $context['order_id'],
-            $process2,
+            array(),
             $selection
         );
 

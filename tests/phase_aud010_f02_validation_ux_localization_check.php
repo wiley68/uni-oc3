@@ -81,8 +81,6 @@ $requiredKeys = array(
     'error_email_invalid',
     'error_email_length',
     'error_invalid_characters',
-    'error_egn_invalid',
-    'error_phone2_invalid',
 );
 
 $bgProduct = mtucAud010F02_loadLang($catalog . '/language/bg-bg/extension/mt_uni_credit/product.php');
@@ -145,7 +143,7 @@ mtucAud010F02_assert(
 );
 
 $modalTwig = (string) file_get_contents($modalPath);
-foreach (array('firstname', 'lastname', 'address', 'phone', 'email', 'phone2', 'egn') as $field) {
+foreach (array('firstname', 'lastname', 'address', 'phone', 'email') as $field) {
     mtucAud010F02_assert(
         strpos($modalTwig, 'data-mtuc-field-error="' . $field . '"') !== false,
         'modal exposes span for ' . $field
@@ -239,15 +237,12 @@ mtucAud010F02_assert(
     'BG validator message localized via ValidationCopy'
 );
 
-$p2 = new MtUniCreditStorefrontProcessTwoFieldValidator(
-    MtUniCreditStorefrontValidationCopy::processTwoMessages($enLang)
-);
-$p2err = $p2->validate(array('egn' => '123', 'phone2' => ''));
 mtucAud010F02_assert(
-    isset($p2err['errors']['egn'], $p2err['errors']['phone2'])
-        && $p2err['errors']['egn'] === $enProduct['error_egn_invalid']
-        && strpos($p2err['errors']['egn'], '123') === false,
-    'Process 2 messages localized EN without EGN echo'
+    !array_key_exists('error_egn_invalid', $enProduct)
+        && !array_key_exists('error_phone2_invalid', $enProduct)
+        && strpos($modalTwig, 'name="egn"') === false
+        && strpos($modalTwig, 'name="phone2"') === false,
+    'retired fields and localized validation copy are absent'
 );
 
 $bare = new MtUniCreditStorefrontApplicantFieldValidator();
@@ -274,30 +269,34 @@ mtucAud010F02_assert(
 );
 
 $nodeModules = $jsdomDir . DIRECTORY_SEPARATOR . 'node_modules' . DIRECTORY_SEPARATOR . 'jsdom';
-if (!is_dir($nodeModules)) {
-    $installCmd = 'npm install --prefix '
-        . escapeshellarg($jsdomDir);
-    exec($installCmd . ' 2>&1', $installOut, $installCode);
-    mtucAud010F02_assert($installCode === 0, 'R1 npm install jsdom harness deps');
+if (!is_dir($nodeModules) && in_array('--offline', $argv, true)) {
+    echo 'SKIP  R1 production storefront.js DOM proof (jsdom dependencies unavailable offline)' . PHP_EOL;
 } else {
-    mtucAud010F02_assert(true, 'R1 jsdom harness deps present');
-}
-
-$cmd = 'node ' . escapeshellarg($jsdomProof);
-exec($cmd . ' 2>&1', $jsOut, $jsCode);
-foreach ($jsOut as $line) {
-    echo $line . PHP_EOL;
-    if (strpos($line, 'PASS  ') === 0) {
-        $passes++;
-    } elseif (strpos($line, 'FAIL  ') === 0) {
-        $failures[] = substr($line, 6);
+    if (!is_dir($nodeModules)) {
+        $installCmd = 'npm install --prefix '
+            . escapeshellarg($jsdomDir);
+        exec($installCmd . ' 2>&1', $installOut, $installCode);
+        mtucAud010F02_assert($installCode === 0, 'R1 npm install jsdom harness deps');
+    } else {
+        mtucAud010F02_assert(true, 'R1 jsdom harness deps present');
     }
+
+    $cmd = 'node ' . escapeshellarg($jsdomProof);
+    exec($cmd . ' 2>&1', $jsOut, $jsCode);
+    foreach ($jsOut as $line) {
+        echo $line . PHP_EOL;
+        if (strpos($line, 'PASS  ') === 0) {
+            $passes++;
+        } elseif (strpos($line, 'FAIL  ') === 0) {
+            $failures[] = substr($line, 6);
+        }
+    }
+    mtucAud010F02_assert($jsCode === 0, 'R1 production storefront.js DOM proof exit 0');
+    mtucAud010F02_assert(
+        strpos(implode("\n", $jsOut), 'AUD-010 F02-R1 JSDOM: PASS') !== false,
+        'R1 JSDOM summary PASS'
+    );
 }
-mtucAud010F02_assert($jsCode === 0, 'R1 production storefront.js DOM proof exit 0');
-mtucAud010F02_assert(
-    strpos(implode("\n", $jsOut), 'AUD-010 F02-R1 JSDOM: PASS') !== false,
-    'R1 JSDOM summary PASS'
-);
 
 // -------------------------------------------------------------------------
 if (count($failures) > 0) {

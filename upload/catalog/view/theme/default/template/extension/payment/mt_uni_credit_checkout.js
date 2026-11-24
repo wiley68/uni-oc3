@@ -177,15 +177,6 @@
 
     function consentsAccepted() { return consent.accepted(); }
 
-    function process2Ok() {
-      if (!(state.modal && state.modal.process2)) {
-        return true;
-      }
-      var egn = String($root.find('[name="egn"]').val() || "").trim();
-      var phone2 = String($root.find('[name="phone2"]').val() || "").trim();
-      return egn.length === 10 && phone2.length > 0;
-    }
-
     function updateConfirmState() {
       var $btn = submitBtn();
       var enabled =
@@ -193,8 +184,7 @@
         !!lastCalculation &&
         !calcBusy &&
         !confirmBusy &&
-        consentsAccepted() &&
-        process2Ok();
+        consentsAccepted();
       $btn.prop("disabled", !enabled);
       $btn.attr("aria-disabled", enabled ? "false" : "true");
     }
@@ -425,10 +415,6 @@
           .text((state.i18n && state.i18n.consent) || "");
         return;
       }
-      if (!process2Ok()) {
-        return;
-      }
-
       confirmBusy = true;
       redirectTerminal = false;
       setProcessing(true);
@@ -440,8 +426,6 @@
         scheme_key: scheme.key,
         consent_config_hash: consent.hash(),
         first_installment: resolveSubmitFirstInstallment(scheme),
-        egn: String($root.find('[name="egn"]').val() || ""),
-        phone2: String($root.find('[name="phone2"]').val() || ""),
       };
       $.each(collectConsentIds(), function (_, id) {
         if (!data.consent) {
@@ -503,7 +487,7 @@
     });
     $root.on(
       "change input",
-      "[data-mtuc-consent-checkbox], [name='egn'], [name='phone2']",
+      "[data-mtuc-consent-checkbox]",
       function () {
         updateConfirmState();
       },

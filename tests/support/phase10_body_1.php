@@ -118,7 +118,7 @@ $customerMails = array_values(array_filter(
     }
 ));
 mtuc10_assert(count($adminMails) >= 1, 'P2 success: admin/bank mail sent');
-mtuc10_assert(!empty($adminMails[0]['has_egn']), 'P2 success: admin mail includes EGN');
+mtuc10_assert(empty($adminMails[0]['has_egn']), 'P2 success: merchant mail excludes EGN');
 mtuc10_assert(count($customerMails) >= 1, 'P2 success: customer mail sent');
 mtuc10_assert(empty($customerMails[0]['has_egn']), 'P2 success: customer mail excludes EGN');
 mtuc10_assert(
@@ -222,7 +222,7 @@ mtuc10_assert(
 );
 
 // ---------------------------------------------------------------------------
-// E. Missing/invalid EGN — no bank_sent_process2
+// E. Obsolete scalar and array inputs are ignored
 // ---------------------------------------------------------------------------
 $transportBad = new Phase4FakeCpHttpTransport();
 Phase9TestHarness::enqueueCpCreateSuccess($transportBad);
@@ -230,14 +230,15 @@ $stackBad = Phase9TestHarness::stack($transportBad, null, null, Phase5TestHarnes
 $orderBad = 10104;
 Phase9TestHarness::seedBankOrder($stackBad['memoryDb'], $orderBad, $stackBad['storeId']);
 $badInput = Phase9TestHarness::submitInputProcess2($orderBad, $stackBad['storeId']);
-$badInput['process2']['egn'] = '123';
+$badInput['process2'] = array('egn' => '123', 'phone2' => array('nested' => array('obsolete')));
+$badInput['unipayment_egn'] = array('obsolete');
 $resultBad = $stackBad['submission']->submit($badInput);
-mtuc10_assert(empty($resultBad['success']), 'invalid EGN: submit fails');
+mtuc10_assert(!empty($resultBad['success']), 'obsolete input: submit succeeds');
 mtuc10_assert(
-    Phase9TestHarness::bankStatusId($stackBad, $orderBad) !== MtUniCreditBankStatus::SENT_PROCESS2,
-    'invalid EGN: no bank_sent_process2'
+    Phase9TestHarness::bankStatusId($stackBad, $orderBad) === MtUniCreditBankStatus::SENT_PROCESS2,
+    'obsolete input: bank_sent_process2'
 );
-mtuc10_assert(Phase7TestHarness::countOrderPosts($transportBad) === 0, 'invalid EGN: no CP create before validation');
+mtuc10_assert(Phase7TestHarness::countOrderPosts($transportBad) === 1, 'obsolete input: one CP create');
 
 // ---------------------------------------------------------------------------
 // F. Product / Cart / Checkout shared Process 2 wiring
@@ -274,6 +275,18 @@ mtuc10_assert(
 );
 
 // ---------------------------------------------------------------------------
+$transportCart = new Phase4FakeCpHttpTransport();
+Phase9TestHarness::enqueueCpCreateSuccess($transportCart);
+$stackCart = Phase9TestHarness::stack($transportCart, null, null, Phase5TestHarness::STORE_A, array('uni_proces' => 1));
+$cartOrder = 10106;
+$cartResult = $stackCart['storefront']->submit(Phase9TestHarness::cartStorefrontInput($stackCart, $cartOrder));
+mtuc10_assert(
+    !empty($cartResult['success'])
+        && Phase9TestHarness::bankStatusId($stackCart, $cartOrder) === MtUniCreditBankStatus::SENT_PROCESS2,
+    'storefront Cart P2: succeeds without retired fields'
+);
+
+// ---------------------------------------------------------------------------
 // G. Diagnostic redactor still covers egn/phone2
 // ---------------------------------------------------------------------------
 $redactorSrc = mtuc10_read($lib . DIRECTORY_SEPARATOR . 'diagnostic_payload_redactor.php');
@@ -292,10 +305,8 @@ mtuc10_assert(
 );
 
 // ---------------------------------------------------------------------------
-// H. Validator parity
+// H. Primary phone validation
 // ---------------------------------------------------------------------------
 $validator = new MtUniCreditStorefrontProcessTwoFieldValidator();
-$okFields = $validator->validate(Phase9TestHarness::process2Fields());
-mtuc10_assert(!empty($okFields['ok']), 'validator: valid EGN/phone2 accepted');
-$badDate = $validator->validate(array('egn' => '1990139912', 'phone2' => '+35988'));
-mtuc10_assert(empty($badDate['ok']), 'validator: invalid EGN date rejected');
+mtuc10_assert($validator->isValidPhone('+359 (88) 123-456'), 'validator: primary phone formatting accepted');
+mtuc10_assert(!$validator->isValidPhone('+()-'), 'validator: primary phone requires a digit');

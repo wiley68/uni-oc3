@@ -110,8 +110,8 @@ mtuc115c3_assert(strpos($twig, 'id="button-confirm"') !== false, 'confirm button
 mtuc115c3_assert(strpos($twig, '{% if consents %}') !== false, 'consent block gated');
 mtuc115c3_assert(strpos($twig, 'name="consent" value="1"') === false, 'no language-fallback consent when empty (OC4 checkout)');
 mtuc115c3_assert(substr_count($twig, 'data-mtuc-consents') === 1, 'single consent container only when consents exist');
-mtuc115c3_assert(strpos($twig, '{% if process2 %}') !== false, 'P2 egn/phone2 gated');
-mtuc115c3_assert(strpos($twig, 'name="egn"') !== false && strpos($twig, 'name="phone2"') !== false, 'P2 fields present');
+mtuc115c3_assert(strpos($twig, 'name="egn"') === false, 'P2 omits EGN');
+mtuc115c3_assert(strpos($twig, 'name="phone2"') === false, 'P2 omits secondary phone');
 
 mtuc115c3_assert(strpos($controller, 'presentCheckoutFinancingPanel') !== false, 'index uses panel presenter');
 mtuc115c3_assert(strpos($controller, 'function calculate') !== false, 'calculate endpoint');

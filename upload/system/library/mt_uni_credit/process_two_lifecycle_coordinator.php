@@ -31,9 +31,6 @@ final class MtUniCreditProcessTwoLifecycleCoordinator
     /** @var MtUniCreditControlPanelStatusSyncService */
     private $statusSync;
 
-    /** @var MtUniCreditProcessTwoSensitiveCipher */
-    private $cipher;
-
     /** @var MtUniCreditProcessTwoMailPort */
     private $mailer;
 
@@ -42,7 +39,6 @@ final class MtUniCreditProcessTwoLifecycleCoordinator
      * @param MtUniCreditProcessTwoMailRecipientRepository $mailRecipients
      * @param MtUniCreditOrderBankStatusRepository $bankStatuses
      * @param MtUniCreditControlPanelStatusSyncService $statusSync
-     * @param MtUniCreditProcessTwoSensitiveCipher $cipher
      * @param MtUniCreditProcessTwoMailPort $mailer
      */
     public function __construct(
@@ -50,14 +46,12 @@ final class MtUniCreditProcessTwoLifecycleCoordinator
         MtUniCreditProcessTwoMailRecipientRepository $mailRecipients,
         MtUniCreditOrderBankStatusRepository $bankStatuses,
         MtUniCreditControlPanelStatusSyncService $statusSync,
-        MtUniCreditProcessTwoSensitiveCipher $cipher,
         MtUniCreditProcessTwoMailPort $mailer
     ) {
         $this->lifecycle = $lifecycle;
         $this->mailRecipients = $mailRecipients;
         $this->bankStatuses = $bankStatuses;
         $this->statusSync = $statusSync;
-        $this->cipher = $cipher;
         $this->mailer = $mailer;
     }
 
@@ -203,11 +197,6 @@ final class MtUniCreditProcessTwoLifecycleCoordinator
         }
 
         try {
-            $enc = (string) (isset($row['process2_sensitive_enc']) ? $row['process2_sensitive_enc'] : '');
-            if ($enc === '') {
-                throw new RuntimeException('Process 2 sensitive payload missing.');
-            }
-
             $decision = $this->statusSync->admitTarget(
                 $attemptId,
                 $status['status_id'],
@@ -386,16 +375,6 @@ final class MtUniCreditProcessTwoLifecycleCoordinator
             return;
         }
 
-        $sensitive = null;
-        $enc = (string) (isset($row['process2_sensitive_enc']) ? $row['process2_sensitive_enc'] : '');
-        if ($enc !== '') {
-            try {
-                $sensitive = $this->cipher->decrypt($enc);
-            } catch (Throwable $exception) {
-                error_log('mt_uni_credit: Process 2 sensitive decrypt failed attempt_id=' . $attemptId);
-            }
-        }
-
         try {
             $orderContext = $this->enrichMailContext($attemptId, $row, $orderContext);
         } catch (Throwable $exception) {
@@ -434,7 +413,7 @@ final class MtUniCreditProcessTwoLifecycleCoordinator
                 $ok = $this->mailer->sendProcess2Recipient(
                     $shop,
                     $orderContext,
-                    $sensitive,
+                    null,
                     (string) $recipient['audience'],
                     (string) $recipient['email']
                 );

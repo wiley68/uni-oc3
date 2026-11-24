@@ -349,7 +349,7 @@ final class Phase2MemoryDb
             return $this->insertIgnoreProcess2MailRecipient($sql);
         }
 
-        if (stripos($sql, 'INSERT INTO') === 0 && strpos($sql, 'shop_cache') !== false) {
+        if (preg_match('/^INSERT INTO `?[a-z0-9_]*mt_uni_credit_shop_cache`?\s/i', $sql) === 1) {
             return $this->upsertShopCache($sql);
         }
 

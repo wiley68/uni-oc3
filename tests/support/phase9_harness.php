@@ -214,8 +214,6 @@ final class Phase9TestHarness
                 'country_id' => 0,
                 'zone' => '',
                 'zone_id' => 0,
-                'egn' => self::process2Fields()['egn'],
-                'phone2' => self::process2Fields()['phone2'],
             ),
             'session' => $session,
             'invoice_prefix' => 'INV',
@@ -338,8 +336,6 @@ final class Phase9TestHarness
                 'country_id' => 0,
                 'zone' => '',
                 'zone_id' => 0,
-                'egn' => self::process2Fields()['egn'],
-                'phone2' => self::process2Fields()['phone2'],
             ),
             'session' => $session,
             'invoice_prefix' => 'INV',
@@ -549,7 +545,6 @@ final class Phase9TestHarness
     public static function submitInputProcess2($orderId, $storeId)
     {
         $input = self::submitInput($orderId, $storeId);
-        $input['process2'] = self::process2Fields();
         $order = $input['order'];
         $order['email'] = 'customer@example.test';
         $order['store_email'] = 'store@example.test';

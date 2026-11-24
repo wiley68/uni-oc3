@@ -28,8 +28,6 @@ final class MtUniCreditStorefrontCustomerPrefill
             'address_id' => 0,
             'is_logged' => false,
             // Process 2 extras — empty unless a real source exists later.
-            'phone2' => '',
-            'egn' => '',
         );
         if (!$isLogged) {
             return $empty;
@@ -53,8 +51,6 @@ final class MtUniCreditStorefrontCustomerPrefill
             'email' => trim((string) (isset($customer['email']) ? $customer['email'] : '')),
             'address_id' => (int) (isset($address['address_id']) ? $address['address_id'] : 0),
             'is_logged' => true,
-            'phone2' => '',
-            'egn' => '',
         );
     }
 

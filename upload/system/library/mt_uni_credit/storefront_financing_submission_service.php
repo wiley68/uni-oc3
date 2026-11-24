@@ -656,24 +656,6 @@ final class MtUniCreditStorefrontFinancingSubmissionService
             );
 
             $isProcess2 = MtUniCreditShopConfigurationFlags::isSecondaryProcess($shop);
-            if ($isProcess2) {
-                $posted = isset($input['customer']) && is_array($input['customer']) ? $input['customer'] : array();
-                try {
-                    $sensitive = MtUniCreditProcessTwoSubmissionSupport::validateIfRequired($shop, $posted);
-                    if ($sensitive instanceof MtUniCreditProcessTwoSensitiveData) {
-                        MtUniCreditProcessTwoSubmissionSupport::persist(
-                            $sensitive,
-                            (int) $attempt['attempt_id'],
-                            $this->attempts->database()
-                        );
-                    }
-                } catch (InvalidArgumentException $exception) {
-                    return $this->fail('validation', true);
-                } catch (RuntimeException $exception) {
-                    return $this->fail('process2_encryption_unavailable', true);
-                }
-            }
-
             MtUniCreditProcessTwoSubmissionSupport::persistLeasingSnapshot(
                 $calculation,
                 $orderId,

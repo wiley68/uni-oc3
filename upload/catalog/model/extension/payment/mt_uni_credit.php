@@ -95,7 +95,7 @@ class ModelExtensionPaymentMtUniCredit extends Model
      * Phase 7/10: submit/resume CP order lifecycle for the prepared native order.
      *
      * @param int $orderId
-     * @param array<string, mixed> $process2
+     * @param array<string, mixed> $process2 Legacy positional argument, ignored
      * @param array<string, mixed> $selection scheme_key / first_installment
      * @return array<string, mixed>
      */
@@ -132,7 +132,6 @@ class ModelExtensionPaymentMtUniCredit extends Model
             'currency_code' => $currency,
             'currency_value' => $this->resolveSessionCurrencyValue($currency),
             'actor' => $this->resolveCheckoutActor(),
-            'process2' => is_array($process2) ? $process2 : array(),
             'consent' => isset($selection['consent']) ? $selection['consent'] : array(),
             'consent_config_hash' => isset($selection['consent_config_hash']) ? $selection['consent_config_hash'] : '',
             'scheme_key' => isset($selection['scheme_key']) ? (string) $selection['scheme_key'] : '',

@@ -566,6 +566,12 @@ mtucAud012_assert(
     'F02 partial: customer sent'
 );
 $sentAfterPartial = count($mailerPartial->sent);
+$historicEgn = '1990010112';
+$historicPhone = '+35988111111';
+$historicCipher = new MtUniCreditProcessTwoSensitiveCipher(Phase4TestHarness::testSecretInput());
+$historicCiphertext = $historicCipher->encrypt(new MtUniCreditProcessTwoSensitiveData($historicEgn, $historicPhone));
+$historicRepository = new MtUniCreditProcessTwoLifecycleRepository($stackPartial['db']);
+$historicRepository->persistSensitiveEncrypted($attemptPartial, $historicCiphertext);
 $mailerPartial->forceFailureByEmail = array();
 $resultPartialRetry = $stackPartial['submission']->submit(
     Phase9TestHarness::submitInputProcess2($orderPartial, $stackPartial['storeId'])
@@ -593,7 +599,15 @@ foreach ($mailerPartial->sent as $item) {
         $customerHtml = (string) $item['html'];
     }
 }
-mtucAud012_assert(strpos($adminHtml, '1990010112') !== false, 'F02 privacy: admin may include EGN');
+mtucAud012_assert($adminHtml !== '' && strpos($adminHtml, $historicEgn) === false, 'F02 privacy: merchant mail excludes EGN');
+foreach ($sentDelta as $item) {
+    mtucAud012_assert(
+        strpos($item['html'], $historicEgn) === false && strpos($item['html'], $historicPhone) === false,
+        'F02 historical pending merchant retry excludes both values'
+    );
+}
+$historicRow = $historicRepository->findByAttempt($attemptPartial);
+mtucAud012_assert($historicRow['process2_sensitive_enc'] === $historicCiphertext, 'F02 retry preserves historical ciphertext');
 mtucAud012_assert(strpos($customerHtml, '1990010112') === false, 'F02 privacy: customer excludes EGN');
 
 // ---------------------------------------------------------------------------

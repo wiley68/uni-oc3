@@ -24,8 +24,6 @@ $_['text_lastname'] = 'Last name';
 $_['text_address'] = 'Address';
 $_['text_email'] = 'E-Mail';
 $_['text_telephone'] = 'Mobile phone';
-$_['text_egn'] = 'EGN';
-$_['text_phone2'] = 'Second phone';
 $_['text_required'] = '*';
 $_['text_processing_title'] = 'Processing request';
 $_['text_processing'] = 'Please wait...';
@@ -44,8 +42,6 @@ $_['error_phone_invalid'] = 'Please enter a valid phone number.';
 $_['error_email_invalid'] = 'Please enter a valid email address.';
 $_['error_email_length'] = 'This field must be at most 96 characters.';
 $_['error_invalid_characters'] = 'This field contains invalid characters.';
-$_['error_egn_invalid'] = 'EGN must contain 10 digits. The first 8 must be a valid date in YYYYMMDD format.';
-$_['error_phone2_invalid'] = 'The second phone may contain digits, spaces, +, -, ( and ).';
 $_['error_privacy_process1'] = 'Invalid fields for Process 1.';
 
 // UNI-CONSENT-001: local refusal never represents a banking rejection.

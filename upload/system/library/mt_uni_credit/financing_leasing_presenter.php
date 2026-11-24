@@ -46,7 +46,7 @@ final class MtUniCreditFinancingLeasingPresenter
      * @param MtUniCreditFinancingPresentationSnapshot $snapshot
      * @param string $bankStatusLabel
      * @param string $audience
-     * @param MtUniCreditProcessTwoSensitiveData|null $sensitive
+     * @param MtUniCreditProcessTwoSensitiveData|null $sensitive Legacy positional argument, ignored.
      * @return array<int, array{label: string, value: string}>
      */
     public function rows(
@@ -90,20 +90,6 @@ final class MtUniCreditFinancingLeasingPresenter
         );
 
         if ($snapshot->process2) {
-            if (
-                $this->includesEgn($audience)
-                && $sensitive instanceof MtUniCreditProcessTwoSensitiveData
-                && $sensitive->egn !== ''
-            ) {
-                $rows[] = array('label' => self::LABEL_EGN, 'value' => $sensitive->egn);
-            }
-            if (
-                $this->includesPhone2($audience)
-                && $sensitive instanceof MtUniCreditProcessTwoSensitiveData
-                && $sensitive->phone2 !== ''
-            ) {
-                $rows[] = array('label' => self::LABEL_PHONE2, 'value' => $sensitive->phone2);
-            }
             if ($audience === MtUniCreditFinancingPresentationAudience::CUSTOMER) {
                 $rows[] = array('label' => self::LABEL_MESSAGE, 'value' => self::PROCESS2_MESSAGE);
             }
@@ -204,24 +190,5 @@ final class MtUniCreditFinancingLeasingPresenter
     public function money($amount)
     {
         return number_format((float) $amount, 2, '.', '');
-    }
-
-    /**
-     * @param string $audience
-     * @return bool
-     */
-    public function includesEgn($audience)
-    {
-        return $audience === MtUniCreditFinancingPresentationAudience::ADMIN_EMAIL
-            || $audience === MtUniCreditFinancingPresentationAudience::ADMIN_PANEL;
-    }
-
-    /**
-     * @param string $audience
-     * @return bool
-     */
-    public function includesPhone2($audience)
-    {
-        return $audience !== MtUniCreditFinancingPresentationAudience::CUSTOMER;
     }
 }

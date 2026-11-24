@@ -392,7 +392,7 @@ $adminRows2 = $svc->rowsForOrder($stackValid['storeId'], 10130, MtUniCreditFinan
 $adminOut .= "\n\n" . $presenter->renderText($adminRows2);
 mtuc10_assert(strpos($adminOut, 'native admin alert') !== false, 'admin mail integration: native preserved');
 mtuc10_assert(substr_count($adminOut, 'УниКредит лизинг') === 1, 'admin mail integration: leasing once');
-mtuc10_assert(strpos($adminOut, MtUniCreditFinancingLeasingPresenter::LABEL_EGN) !== false, 'admin mail integration: ADMIN_EMAIL may include EGN');
+mtuc10_assert(strpos($adminOut, MtUniCreditFinancingLeasingPresenter::LABEL_EGN) === false, 'admin mail integration: ADMIN_EMAIL omits EGN');
 
 mtuc10_assert(
     is_file($lib . DIRECTORY_SEPARATOR . 'catalog_event_health.php'),

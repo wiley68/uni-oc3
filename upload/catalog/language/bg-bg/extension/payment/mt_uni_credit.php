@@ -43,8 +43,6 @@ $_['error_unavailable'] = 'Плащането с UniCredit не е наличн�
 $_['error_duplicate_request'] = 'Заявката вече се обработва. Моля, изчакайте.';
 $_['error_submit_token'] = 'Заявката не може да бъде потвърдена. Моля, презаредете страницата и опитайте отново.';
 $_['error_consent'] = 'Моля, приемете условията.';
-$_['text_egn'] = 'ЕГН';
-$_['text_phone2'] = 'Втори телефон';
 $_['text_required'] = '*';
 
 // UNI-CONSENT-001: local refusal never represents a banking rejection.

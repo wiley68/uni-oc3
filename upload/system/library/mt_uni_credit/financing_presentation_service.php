@@ -38,17 +38,7 @@ final class MtUniCreditFinancingPresentationService
             return array();
         }
         $status = $this->repository->findBankStatusLabel((int) $storeId, $orderId);
-        $sensitive = null;
-        // OC4: decrypt only when audience may include EGN/phone2 (ADMIN_EMAIL / ADMIN_PANEL).
-        // Customer paths never decrypt process2_sensitive_enc.
-        if (
-            $audience === MtUniCreditFinancingPresentationAudience::ADMIN_EMAIL
-            || $audience === MtUniCreditFinancingPresentationAudience::ADMIN_PANEL
-        ) {
-            $sensitive = $this->decryptSensitive((int) $storeId, $orderId);
-        }
-
-        return $this->presenter->rows($snapshot, $status, (string) $audience, $sensitive);
+        return $this->presenter->rows($snapshot, $status, (string) $audience);
     }
 
     /**
@@ -213,29 +203,5 @@ final class MtUniCreditFinancingPresentationService
         return $this->repository->findByOrderId((int) $storeId, $orderId) !== null
             || $this->repository->findAttemptRowByOrderId((int) $storeId, $orderId) !== null
             || $this->repository->findBankStatusLabel((int) $storeId, $orderId) !== '';
-    }
-
-    /**
-     * @param int $storeId
-     * @param int|string $orderId
-     * @return MtUniCreditProcessTwoSensitiveData|null
-     */
-    private function decryptSensitive($storeId, $orderId)
-    {
-        $row = $this->repository->findAttemptRowByOrderId((int) $storeId, $orderId);
-        if ($row === null) {
-            return null;
-        }
-        $enc = (string) (isset($row['process2_sensitive_enc']) ? $row['process2_sensitive_enc'] : '');
-        if ($enc === '') {
-            return null;
-        }
-        try {
-            return (new MtUniCreditProcessTwoSensitiveCipher())->decrypt($enc);
-        } catch (Throwable $ignored) {
-            error_log('mt_uni_credit: leasing presentation sensitive decrypt failed order_id=' . (string) $orderId);
-
-            return null;
-        }
     }
 }

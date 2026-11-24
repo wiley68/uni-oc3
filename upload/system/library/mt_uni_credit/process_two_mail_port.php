@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Process 2 leasing notifications (admin may receive EGN; customer never does).
+ * Process 2 leasing notifications.
  */
 interface MtUniCreditProcessTwoMailPort
 {
@@ -15,11 +15,11 @@ interface MtUniCreditProcessTwoMailPort
     public function resolveProcess2Recipients(array $shop, array $orderContext);
 
     /**
-     * Send one recipient notification. Audience controls EGN/phone2 policy.
+     * Send one recipient notification. Audience selects the presentation.
      *
      * @param array<string, mixed> $shop
      * @param array<string, mixed> $orderContext
-     * @param MtUniCreditProcessTwoSensitiveData|null $sensitive
+     * @param MtUniCreditProcessTwoSensitiveData|null $sensitive Legacy positional argument, production passes null.
      * @param string $audience admin|customer
      * @param string $email
      * @return bool
@@ -31,7 +31,7 @@ interface MtUniCreditProcessTwoMailPort
      *
      * @param array<string, mixed> $shop
      * @param array<string, mixed> $orderContext
-     * @param MtUniCreditProcessTwoSensitiveData|null $sensitive
+     * @param MtUniCreditProcessTwoSensitiveData|null $sensitive Legacy positional argument, production passes null.
      * @return bool true when required audience sends succeeded (or none configured)
      */
     public function sendProcess2Notifications(array $shop, array $orderContext, $sensitive);

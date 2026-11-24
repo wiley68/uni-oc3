@@ -26,8 +26,6 @@ $_['text_lastname'] = 'Фамилия';
 $_['text_address'] = 'Адрес';
 $_['text_email'] = 'E-Mail';
 $_['text_telephone'] = 'Мобилен телефон';
-$_['text_egn'] = 'ЕГН';
-$_['text_phone2'] = 'Втори телефон';
 $_['text_required'] = '*';
 $_['text_processing_title'] = 'Обработване на заявката';
 $_['text_processing'] = 'Моля, изчакайте...';
@@ -50,8 +48,6 @@ $_['error_phone_invalid'] = 'Въведете валиден телефонен 
 $_['error_email_invalid'] = 'Въведете валиден e-mail адрес.';
 $_['error_email_length'] = 'Полето трябва да бъде максимум 96 символа.';
 $_['error_invalid_characters'] = 'Полето съдържа невалидни символи.';
-$_['error_egn_invalid'] = 'ЕГН трябва да съдържа 10 цифри. Първите 8 трябва да са валидна дата във формат ГГГГММДД.';
-$_['error_phone2_invalid'] = 'Вторият телефон може да съдържа цифри, интервали, +, -, ( и ).';
 $_['error_privacy_process1'] = 'Невалидни полета за Process 1.';
 
 // UNI-CONSENT-001: local refusal never represents a banking rejection.

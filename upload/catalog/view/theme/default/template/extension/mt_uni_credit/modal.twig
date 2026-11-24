@@ -117,18 +117,6 @@
                 <input class="mt-uni-credit-storefront__customer-input" id="mtuc-email-{{ field_suffix }}" name="email" type="email" value="{{ customer.email }}" required aria-required="true" autocomplete="email" data-mtuc-required="1">
                 <span class="mt-uni-credit-storefront__field-error" data-mtuc-field-error="email" role="alert"></span>
               </div>
-              {% if process2 %}
-              <div class="mt-uni-credit-storefront__customer-field">
-                <label class="mt-uni-credit-storefront__customer-label" for="mtuc-phone2-{{ field_suffix }}">{{ text_phone2 }} <span class="mt-uni-credit-storefront__required" aria-hidden="true">{{ text_required }}</span></label>
-                <input class="mt-uni-credit-storefront__customer-input" id="mtuc-phone2-{{ field_suffix }}" name="phone2" type="tel" value="" required aria-required="true" autocomplete="tel" inputmode="tel" data-mtuc-required="1">
-                <span class="mt-uni-credit-storefront__field-error" data-mtuc-field-error="phone2" role="alert"></span>
-              </div>
-              <div class="mt-uni-credit-storefront__customer-field">
-                <label class="mt-uni-credit-storefront__customer-label" for="mtuc-egn-{{ field_suffix }}">{{ text_egn }} <span class="mt-uni-credit-storefront__required" aria-hidden="true">{{ text_required }}</span></label>
-                <input class="mt-uni-credit-storefront__customer-input" id="mtuc-egn-{{ field_suffix }}" name="egn" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="10" value="" required aria-required="true" autocomplete="off" data-mtuc-required="1">
-                <span class="mt-uni-credit-storefront__field-error" data-mtuc-field-error="egn" role="alert"></span>
-              </div>
-              {% endif %}
               <span class="mt-uni-credit-storefront__field-error" data-mtuc-submit-error role="alert"></span>
             </div>
             {% if consents %}

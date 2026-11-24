@@ -71,20 +71,6 @@
     </div>
 
     <form id="mt-uni-credit-checkout-form" novalidate>
-      {% if process2 %}
-        <div class="mt-uni-credit-storefront__customer-form" data-mtuc-customer-form>
-          <div class="mt-uni-credit-storefront__customer-field">
-            <label class="mt-uni-credit-storefront__customer-label" for="mtuc-checkout-egn">{{ text_egn }} <span class="mt-uni-credit-storefront__required" aria-hidden="true">{{ text_required }}</span></label>
-            <input class="mt-uni-credit-storefront__customer-input" id="mtuc-checkout-egn" name="egn" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="10" value="" required aria-required="true" autocomplete="off">
-            <span class="mt-uni-credit-storefront__field-error" data-mtuc-field-error="egn" role="alert"></span>
-          </div>
-          <div class="mt-uni-credit-storefront__customer-field">
-            <label class="mt-uni-credit-storefront__customer-label" for="mtuc-checkout-phone2">{{ text_phone2 }} <span class="mt-uni-credit-storefront__required" aria-hidden="true">{{ text_required }}</span></label>
-            <input class="mt-uni-credit-storefront__customer-input" id="mtuc-checkout-phone2" name="phone2" type="tel" value="" required aria-required="true" autocomplete="tel" inputmode="tel">
-            <span class="mt-uni-credit-storefront__field-error" data-mtuc-field-error="phone2" role="alert"></span>
-          </div>
-        </div>
-      {% endif %}
       {% if consents %}
         <div class="mt-uni-credit-storefront__consents" data-mtuc-consents data-mtuc-consent-config="{{ consent_config_hash }}" aria-label="{{ text_consents }}">
           {% for consent in consents %}

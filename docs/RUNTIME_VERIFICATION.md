@@ -38,7 +38,7 @@ php tests/phase_rem_oc3_cache_lifecycle_check.php
 php tests/phase_rem_oc3_cache_mysql_concurrency_probe.php   # opt-in real DB probe (see below)
 ```
 
-Covers inbound bound body / operation binding / envelopes, FinancingOrderResolver ownership, bank-status P1↔P2 CONFLICT, SmartUCF debug opacity, CP client no-create-replay, durable status sync CAS, P1/P2 target-first lifecycle, and free-text / order_id max-13 preservation. Version remains **2.0.2**.
+Covers inbound bound body / operation binding / envelopes, FinancingOrderResolver ownership, bank-status P1↔P2 CONFLICT, SmartUCF debug opacity, CP client no-create-replay, durable status sync CAS, P1/P2 target-first lifecycle, and free-text / order_id max-13 preservation.
 
 `phase_rem_oc3_cache_lifecycle_check.php` covers the frozen shop-cache lifecycle: 24h TTL, 6h
 presentation-only LKG, submission never LKG, Class A/B/C failure taxonomy, exact
@@ -72,7 +72,7 @@ These are source characterizations, not live shop measurements.
 
 ### UniCredit contracts (from `reference-uni-oc4`)
 
-- Module code `mt_uni_credit`, version **`2.0.2`** (D2 closed).
+- Module code `mt_uni_credit`. The current installer candidate is **`2.0.5`**.
 - Module PHP floor **7.3.0+** (D1 closed) — deliberate module support across the practical OC3 matrix; not a universal OC 3.0.3.6 core requirement.
 - CP API prefix `/api/v1`; SmartUCF hosts `online.ucfin.bg` / `onlinetest.ucfin.bg` (D4 closed for Phase 0).
 - HMAC replay protocol as in `tests/fixtures/hmac_callback_vector.json`.
@@ -777,7 +777,7 @@ Automated gate: `php tests/phase8_check.php` (no live network).
 ### Popup Step 2 (Process 1 / Process 2)
 
 1. [ ] Process 1 (`uni_proces !== 1`): exactly Име/Фамилия/Адрес/Мобилен телефон/E-Mail — no Втори телефон/ЕГН.
-2. [ ] Process 2 (`uni_proces === 1`): same five + Втори телефон + ЕГН; all required.
+2. [ ] Historical Phase 8 baseline: Process 2 once collected two additional fields. Apply the current Process 2 acceptance checks below.
 3. [ ] Labels black + `*` required marker; larger Roboto Condensed inputs; focus without blue Bootstrap frame.
 4. [ ] Consent checkbox/link matches OC4; Submit `Изпрати` disabled until all required + consent.
 5. [ ] Logged customer prefills available fields; missing telephone stays empty.
@@ -975,7 +975,7 @@ After Product Step 2 `Изпрати` with Process 1:
 
 ---
 
-## Phase 10 — Process 2 / EGN / leasing mail / privacy (local PASS)
+## Phase 10 — Historical Process 2 collection and privacy checks (local PASS at the time)
 
 Automated gate: `php tests/phase10_check.php` (no live network).
 
@@ -1085,7 +1085,7 @@ Automated gate: `php tests/phase11_check.php`.
 1. [ ] Events registered (install/save/self-heal): `admin/view/sale/order_list/before|after`, `admin/view/sale/order_info/after`
 2. [ ] List shows UniCredit bank-status column from `status_label` (empty for non-UniCredit rows)
 3. [ ] Labels resolve per row `store_id` (no cross-store leakage)
-4. [ ] Order info panel uses `htmlForOrder(..., ADMIN_PANEL)` — Process 2 may show EGN/phone2 when sensitive decrypt succeeds
+4. [ ] Order info panel uses `htmlForOrder(..., ADMIN_PANEL)` and excludes both retired fields. The earlier Phase 11 admin audience could display decrypted values.
 5. [ ] Customer Thank You / customer audience never shows EGN
 
 ### Homepage advertising
@@ -1311,3 +1311,18 @@ remote definitive Checkout broken-CP reject (ACCEPTED EXCEPTION — testability/
 ### UNI-CONSENT-001 runtime acceptance (pending)
 
 The isolated tests in `UNI_CONSENT_001.md` do not establish live theme compatibility. Verify Product/Cart/Checkout and prepared continuation under default and Journal: scope visibility, empty/informational lists, first-installment debounce/Apply, stale responses, cart/delivery/payment refresh, replaced forms, duplicate clicks, and order-aware refusal. Confirm PHP 7.3 deployment compatibility and existing database concurrency behavior in an authorized isolated environment. Do not run live requests or install test dependencies automatically.
+
+
+## UNI-OC3-PROCESS2-FIELDS-001 — Manual acceptance for 2.0.5
+
+Installer candidate: `dist/oc3_uni_2.0.5.ocmod.zip`. Manual shop and bank acceptance are pending.
+
+Use synthetic orders in an authorized test shop. Run each path with the default storefront and the supported Journal configuration.
+
+1. Product and Cart. Open the financing modal as guest and logged-in customer. Confirm the five applicant fields, primary-phone validation, mandatory consent, unchanged installment selection and completion. Repeat submit and verify one native order and the existing Cart clearing behavior.
+2. Standard Checkout. Select UniCredit, calculate and confirm a Process 2 offer without EGN or secondary phone. Verify Thank You, the native OpenCart status/history and local `bank_sent_process2`.
+3. Prepared/retry Checkout. Confirm the form has neither field. Submit with the existing selection token and consent evidence. Verify the same order is used and a pending retry does not duplicate CP create or notifications.
+4. Repeat the Process 2 submissions with synthetic retired scalar, array, nested and prefixed keys. Check that they are ignored and absent from outbound bodies and immutable application snapshots.
+5. For a fresh attempt verify SQL `NULL` in `process2_sensitive_enc` and `process2_sensitive_created_at` alongside a successful handoff. Retry a historical attempt with pending merchant email. Verify the stored ciphertext remains under the existing retention policy and the values are absent from merchant and customer emails, Admin, native order mail and Thank You.
+6. Verify sanitized diagnostic write/read/export for `egn`, `phone2`, `clientegn`, `unipayment_egn`, `unipayment_phone2`, `second_phone`, `secondary_phone`, `personal_id` and `phone_2`.
+7. Repeat Process 1 with the existing SmartUCF session and native history behavior. Compare financial terms, interest/KOP, CP create/status bodies and consent handling against equivalent baseline orders.

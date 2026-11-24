@@ -13,7 +13,7 @@ final class MtUniCreditConstants
 
     const EXTENSION_TYPE_MODULE = 'module';
 
-    const VERSION = '2.0.4';
+    const VERSION = '2.0.5';
 
     const AUTHOR = 'Авалон ООД';
 

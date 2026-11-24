@@ -1,6 +1,6 @@
 # UniCredit OpenCart 3.x — frozen contracts (Phase 0)
 
-> **Operational authority (current release 2.0.2):** this document plus `docs/RUNTIME_VERIFICATION.md`.
+> **Operational authority (2.0.5 installer candidate):** this document plus `docs/RUNTIME_VERIFICATION.md`.
 > Historical planning narrative lives in `docs/MASTER_IMPLEMENTATION_PLAN.md` and must not override
 > the current contracts below when they have been updated for AUD-032.
 >
@@ -144,7 +144,7 @@ Do **not** copy OC4 namespaces (`Opencart\Admin\Controller\Extension\MtUniCredit
 Expected distributable (current packaging script):
 
 ```text
-CC_OpenCartv.3.x_UNI_v.2.0.2.ocmod.zip
+oc3_uni_2.0.5.ocmod.zip
 ├── install.xml
 └── upload/
     ├── admin/
@@ -161,10 +161,10 @@ No Composer runtime install on the shop. Do not bundle a second mail stack when 
 
 - **Module code:** `mt_uni_credit` (frozen).
 - **Extension type:** `payment` (frozen).
-- **Module / CP version:** **`2.0.2`** (frozen for initial OC3 UniCredit release and CP payload identity).
+- **Module / CP version:** **`2.0.5`** for this installer candidate.
 - CP `version` field format: `^\d{1,3}\.\d{1,3}\.\d{1,3}$`.
 
-Use `2.0.2` unless a later coordinated release explicitly changes it.
+The OCMOD and CP payload version values track the module version.
 
 Fixture: `tests/fixtures/extension_identity.json`.
 
@@ -511,7 +511,7 @@ Throttle (CP-side): 60 / shop / minute.
 | `products_q`    | optional; implode qty `_`, qty ≥ 1                                                                                                     |
 | `type_client`   | 0–255, default 0; completed modules: `0` if mobile else `1`                                                                            |
 | `currency`      | max 3, **`in:BGN,EUR`** upstream; OC3 emits explicit `EUR` only                                                                                               |
-| `version`       | max 11, `x.x.x`; frozen **`2.0.2`** (D2)                                                                                               |
+| `version`       | max 11, `x.x.x`; current module version                                                                                               |
 
 **Create-time:** omit `status` / `status_id`. CP defaults to `Създаден в КП Банка` / `cp_sent`.
 
@@ -690,7 +690,7 @@ If a UI field is labelled as bank status, it must show **one of the four initial
 
 Standardized leasing information is used on predetermined places (admin UniCredit/leasing panel, checkout success / confirmation when intended, standard emails, agreed reports, other agreed surfaces).
 
-Adapt the block only in predetermined business cases (e.g. Process 2 may add second phone and/or EGN **only** where existing privacy/business rules already allow). Do **not** automatically extend the block with service lifecycle/debug data.
+Render the approved financing rows and audience-specific messages. Exclude retired Process 2 fields and service lifecycle/debug data.
 
 **Authoritative base field set** (values are examples; structure is authoritative):
 
@@ -876,7 +876,7 @@ No live SmartUCF request in Phase 0.
 
 ### P1-000 — Process 1 privacy boundary
 
-**Process 1 transports neither EGN nor phone2.** Those fields exist only on the Process 2 path (encrypted locally; never on the CP create payload). Process 1 SmartUCF / CP generic payloads must not carry EGN or phone2.
+**Process 1 transports neither EGN nor phone2.** Historical Process 2 ciphertext is governed by P2-002 and RETENTION-001. Process 1 SmartUCF / CP generic payloads must not carry EGN or phone2.
 
 ### P1-001 — Prerequisites and certificate mode
 
@@ -926,31 +926,24 @@ Fixture: `tests/fixtures/process2_contract.json`.
 
 ### P2-001 — Inputs and validation
 
-Required after CP create when `uni_proces === 1`:
+The five-field Process 2 contract applies to module version `2.0.5`.
 
-- **EGN:** 10 digits; first 8 a valid calendar `YYYYMMDD`; **no** Bulgarian checksum.
-- **phone2:** charset `[-0-9+() ]` and at least one digit; no min/max length.
+Product and Cart collect five applicant fields: first name, last name, address, primary phone and email. Both retain the existing validation and mandatory consent checks. Checkout confirm and prepared/retry use the native OpenCart order's applicant data and the existing Checkout primary-phone contract.
 
-Validate **before** claiming a validating state so field errors leave the attempt `issued` and the token retryable.
+Process 2 has retired EGN (`egn`) and secondary phone (`phone2`). All four submission routes ignore these obsolete keys, including scalar, array and prefixed inputs. Process 1 forms, privacy guards and SmartUCF behavior remain unchanged.
 
-Product/Cart primary phone remains required. Checkout primary phone remains optional; phone2 is separate.
+### P2-002 — Storage, CP exclusion and status timing
 
-### P2-002 — Storage, CP exclusion, encryption, status timing
-
-- Store EGN/phone2 only as encrypted `process2_sensitive_enc`.
-- **Never** send EGN/phone2 to CP.
-- Authenticated encryption (`enc:v1:` AES-256-GCM preferred). Fail closed if the key cannot be resolved. No plaintext fallback.
-- After encrypt: **admit durable CP sync target** → write local `bank_sent_process2` → PATCH from persisted target (shop order id = local OC order id). Local bank fact is not written before target admission.
-- Public label for that outcome is **`Изпратен Банка - Процес 2`**. Process 2 does **not** require proof of SmartUCF create/send (STATUS-PUBLIC-002).
-- Never write `bank_sent_process1` or `bank_send_failed_smartucf` for Process 2.
-- Once `bank_sent_process2` is recorded, retry must not repeat the bank handoff.
+- New attempts leave `process2_sensitive_enc` and `process2_sensitive_created_at` SQL `NULL`. The immutable application snapshot excludes both obsolete fields.
+- Historical ciphertext stays under the existing 180-day retention policy. Recovery uses order identity, frozen snapshots, claims and status evidence regardless of ciphertext presence or expiry.
+- CP create and status bodies remain unchanged and exclude both fields. After verified CP create, admit the durable sync target, write local `bank_sent_process2`, then PATCH from the persisted target using the local OC order ID.
+- The public label remains **`Изпратен Банка - Процес 2`**. Process 2 uses its existing idempotent status sync and retry behavior. Process 1 status and SmartUCF outcomes stay on their own path.
 
 ### P2-003 — Mail audiences and degraded mail
 
-- Customer Process 2 mail: confirmation / leasing snapshot, **no EGN**.
-- Admin / `uni_email` mail: EGN + phone2 allowed.
-- Independent idempotent mail marker (`process2_mail_sent`). Mail failure is recoverable and must not undo bank state.
-- Continue to native Thank You (no SmartUCF).
+- Customer and merchant/`uni_email` mail, native order mail and Admin presentation exclude both retired fields from new and historical orders, including notification retries.
+- The existing recipient claims and `process2_mail_sent` marker govern deduplication. Mail failure is recoverable and does not undo bank state.
+- Process 2 continues to native Thank You.
 
 ---
 
@@ -1071,9 +1064,7 @@ Do not weaken privacy because OC3 is older. Customer/business-facing leasing and
 ### PII-001 — Audiences and exclusions
 
 - CP frozen payload is the only durable customer snapshot needed for CP retry.
-- EGN/phone2 exist only as Process 2 ciphertext.
-- Customer email, customer Thank You: never EGN/phone2.
-- Admin order detail (`ADMIN_PANEL`) and admin native mail (`ADMIN_EMAIL`): EGN/phone2 only for Process 2 when decrypt succeeds (OC4 parity).
+- Historical Process 2 ciphertext remains subject to retention. Customer and merchant email, Thank You and Admin order detail exclude both values.
 - Thank You identity is session-only; GET `order_id` is never trusted.
 - Admin Orders list: local DB only; no CP HTTP on page render.
 - Homepage advertising: CP `uni_container_status` controls visibility subject to homepage eligibility and CP `uni_status`. Existing merchant advertising values are ignored. The surface uses local DB + shared lazy shop-configuration resolution. A home-page render
@@ -1176,8 +1167,8 @@ Unknown CP or SmartUCF outcome **≠** safe resend. Inspect durable local state 
 ### REC-005 — Process privacy (operator-facing)
 
 - Process 1 transports neither EGN nor phone2.
-- Process 2 may hold EGN/phone2 only under the approved bank/admin flow (encrypted locally).
-- Customer-facing content excludes EGN.
+- Process 2 ignores retired EGN/phone2 request keys. Historical ciphertext remains subject to retention and is excluded from all presentations.
+- Structured diagnostic writes, reads and exports redact `egn`, `phone2`, `clientegn`, `unipayment_egn`, `unipayment_phone2`, `second_phone`, `secondary_phone`, `personal_id` and `phone_2` by normalized key.
 
 ---
 
@@ -1592,12 +1583,12 @@ Bank-status callbacks **do not** arbitrarily mutate native OpenCart `order_statu
 
 ---
 
-## Current release operator brief (2.0.2)
+## Installer candidate operator brief (2.0.5)
 
 | Item                | Value                                                                                                                                                  |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Module / CP version | `2.0.2`                                                                                                                                                |
-| Package filename    | `dist/CC_OpenCartv.3.x_UNI_v.2.0.2.ocmod.zip`                                                                                                          |
+| Module / CP version | `2.0.5`                                                                                                                                                |
+| Package filename    | `dist/oc3_uni_2.0.5.ocmod.zip`                                                                                                          |
 | Install sequence    | Extension Installer → install Module + Payment surfaces → deploy protected secrets/certs → refresh OCMOD → configure UNICID/secret → refresh bank data |
 | Protected material  | Empty `smartucf-key.php` placeholder in ZIP; real passphrase/PEMs deployed outside package into protected root (`DIR_STORAGE/mt_uni_credit` preferred) |
 | Do-not-resend       | While CP/SmartUCF outcome is unknown — never fresh resubmit (see Operator recovery)                                                                    |

@@ -31,8 +31,8 @@ $step2P2 = MtUniCreditStorefrontModalPresenter::present(
 );
 mtuc8_assert($step2P2['process2'] === true, 'Process 2: uni_proces=1 => process2 true');
 mtuc8_assert(
-    $step2P2['fields'] === array('firstname', 'lastname', 'address', 'phone', 'email', 'phone2', 'egn'),
-    'Process 2 fields exactly seven keys'
+    $step2P2['fields'] === array('firstname', 'lastname', 'address', 'phone', 'email'),
+    'Process 2 fields exactly five keys'
 );
 
 // Twig contract
@@ -41,10 +41,9 @@ mtuc8_assert(strpos($modalTwig, 'name="lastname"') !== false, 'Step 2 has lastna
 mtuc8_assert(strpos($modalTwig, 'name="address"') !== false, 'Step 2 has address');
 mtuc8_assert(strpos($modalTwig, 'name="phone"') !== false, 'Step 2 has phone');
 mtuc8_assert(strpos($modalTwig, 'name="email"') !== false, 'Step 2 has email');
-mtuc8_assert(strpos($modalTwig, '{% if process2 %}') !== false, 'Step 2 Process 2 gate');
 mtuc8_assert(
-    preg_match('/\{\%\s*if\s+process2\s*\%\}[\s\S]*name="phone2"[\s\S]*name="egn"/', $modalTwig) === 1,
-    'Process 2 renders phone2 then egn'
+    strpos($modalTwig, 'name="phone2"') === false && strpos($modalTwig, 'name="egn"') === false,
+    'Process 2 modal omits retired fields'
 );
 mtuc8_assert(strpos($modalTwig, 'name="city"') === false, 'legacy city field removed');
 mtuc8_assert(strpos($modalTwig, 'name="postcode"') === false, 'legacy postcode field removed');
@@ -85,7 +84,7 @@ mtuc8_assert($logged['lastname'] === 'Иванов', 'prefill lastname');
 mtuc8_assert($logged['email'] === 'ivan@example.test', 'prefill email');
 mtuc8_assert($logged['telephone'] === '0888123456', 'prefill phone from customer telephone');
 mtuc8_assert(strpos($logged['address'], 'ул. Тест 1') !== false, 'prefill address joins default address');
-mtuc8_assert($logged['phone2'] === '' && $logged['egn'] === '', 'Process 2 extras empty without source');
+mtuc8_assert(!array_key_exists('phone2', $logged) && !array_key_exists('egn', $logged), 'Process 2 extras empty without source');
 
 // A. Valid default address_id
 $caseA = $prefill->present(
@@ -276,13 +275,8 @@ mtuc8_assert(
     'normalizer does not invent city from store defaults'
 );
 
-// Process 2 validator
-$p2v = new MtUniCreditStorefrontProcessTwoFieldValidator();
-$bad = $p2v->validate(array('egn' => '', 'phone2' => ''));
-mtuc8_assert($bad['ok'] === false && isset($bad['errors']['egn'], $bad['errors']['phone2']), 'Process 2 requires egn+phone2');
-$good = $p2v->validate(array('egn' => '1990010112', 'phone2' => '0888111222'));
-mtuc8_assert($good['ok'] === true, 'Process 2 valid egn+phone2 accepted');
-mtuc8_assert($p2v->isValidEgn('1990023012') === false, 'invalid EGN calendar date rejected');
+$phoneValidator = new MtUniCreditStorefrontProcessTwoFieldValidator();
+mtuc8_assert($phoneValidator->isValidPhone('+359 (88) 123-456') && !$phoneValidator->isValidPhone('+ -'), 'primary-phone format unchanged');
 
 // Consent resolver
 $consents = (new MtUniCreditStorefrontConsentResolver())->normalize(array(
@@ -298,8 +292,8 @@ mtuc8_assert($cr->isSatisfied(array('consents' => array()), array()) === true, '
 
 // Language labels
 mtuc8_assert(strpos($productLangBg, 'Мобилен телефон') !== false, 'BG product telephone label');
-mtuc8_assert(strpos($productLangBg, 'Втори телефон') !== false, 'BG product phone2 label');
-mtuc8_assert(strpos($productLangBg, "'ЕГН'") !== false || strpos($productLangBg, '= \'ЕГН\'') !== false, 'BG product EGN label');
+mtuc8_assert(strpos($productLangBg, 'Втори телефон') === false, 'BG product retired phone2 label absent');
+mtuc8_assert(strpos($productLangBg, "text_egn") === false, 'BG product retired EGN label absent');
 mtuc8_assert(strpos($cartLangBg, 'Мобилен телефон') !== false, 'BG cart telephone label');
 
 // CSS visual parity asserts
@@ -329,23 +323,20 @@ mtuc8_assert(strpos($cssPopup, '--mtuc-btn-disabled-bg') !== false, 'CSS disable
 mtuc8_assert(strpos($jsPopup, 'function updateSubmitState') !== false, 'JS updateSubmitState');
 mtuc8_assert(strpos($jsPopup, 'function getStep2FieldErrors') !== false, 'JS getStep2FieldErrors');
 mtuc8_assert(strpos($jsPopup, 'function isValidEmail') !== false, 'JS email validation');
-mtuc8_assert(strpos($jsPopup, 'function isValidEgn') !== false, 'JS EGN validation');
+mtuc8_assert(strpos($jsPopup, 'function isValidEgn') === false, 'JS omits retired EGN validation');
 mtuc8_assert(strpos($jsPopup, 'areMandatoryConsentsChecked') !== false, 'JS consent gating');
 mtuc8_assert(strpos($jsPopup, 'bindStep2ReadinessListeners') !== false, 'JS Step 2 input/change listeners');
 mtuc8_assert(strpos($jsPopup, 'input.mtucStep2') !== false || strpos($jsPopup, '"input.mtucStep2') !== false, 'JS listens to input events');
 mtuc8_assert(
-    strpos($jsPopup, 'process === "1"') !== false && strpos($jsPopup, 'egn') !== false,
-    'JS Process 1 strips egn/phone2 from payload'
+    strpos($jsPopup, '["firstname", "lastname", "address", "phone", "email"]') !== false
+        && strpos($jsPopup, 'name === "address_id"') !== false,
+    'JS allowlists applicant fields and address_id'
 );
 
 // Logical gating matrix (PHP-side mirror of client rules)
 function mtuc8_step2_ready(array $fields, bool $consent, bool $process2): bool
 {
     $required = array('firstname', 'lastname', 'address', 'phone', 'email');
-    if ($process2) {
-        $required[] = 'phone2';
-        $required[] = 'egn';
-    }
     foreach ($required as $key) {
         $value = isset($fields[$key]) ? trim((string) $fields[$key]) : '';
         if ($value === '') {
@@ -354,14 +345,8 @@ function mtuc8_step2_ready(array $fields, bool $consent, bool $process2): bool
         if ($key === 'email' && !filter_var($value, FILTER_VALIDATE_EMAIL)) {
             return false;
         }
-        if (($key === 'phone' || $key === 'phone2') && !(new MtUniCreditStorefrontProcessTwoFieldValidator())->isValidPhone($value)) {
+        if ($key === 'phone' && !(new MtUniCreditStorefrontProcessTwoFieldValidator())->isValidPhone($value)) {
             return false;
-        }
-        if ($key === 'egn') {
-            $digits = preg_replace('/\D+/', '', $value);
-            if (!(new MtUniCreditStorefrontProcessTwoFieldValidator())->isValidEgn((string) $digits)) {
-                return false;
-            }
         }
     }
 
@@ -408,8 +393,8 @@ mtuc8_assert(
         ),
         true,
         true
-    ) === false,
-    'P2 missing phone2/egn → disabled'
+    ) === true,
+    'P2 five required fields and consent enable submission'
 );
 mtuc8_assert(
     mtuc8_step2_ready(
@@ -425,7 +410,7 @@ mtuc8_assert(
         true,
         true
     ) === true,
-    'P2 all seven + consent → enabled'
+    'P2 ignores obsolete inputs'
 );
 mtuc8_assert(
     mtuc8_step2_ready(

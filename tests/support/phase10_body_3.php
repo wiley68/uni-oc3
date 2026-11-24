@@ -73,7 +73,7 @@ mtuc10_assert($missingHtml === '', 'thank you: missing snapshot returns empty (g
 $customerMailOut = '<html><body>Native customer order mail</body></html>';
 $adminMailOut = "Native admin order alert\nOrder ID: 10130";
 $mailData = array('order_id' => 10130);
-// Persist sensitive for ADMIN_EMAIL audience parity with OC4
+// Seed historical ciphertext for native mail and Admin privacy coverage
 $cipher = new MtUniCreditProcessTwoSensitiveCipher(Phase4TestHarness::testSecretInput());
 $enc = $cipher->encrypt(new MtUniCreditProcessTwoSensitiveData('1990010112', '+35988111111'));
 (new MtUniCreditProcessTwoLifecycleRepository(new MtUniCreditDbAdapter($stackValid['memoryDb'], 'oc_')))
@@ -102,9 +102,21 @@ foreach ($adminRows as $row) {
     $adminMap[$row['label']] = $row['value'];
 }
 mtuc10_assert(
-    isset($adminMap[MtUniCreditFinancingLeasingPresenter::LABEL_EGN])
-        && $adminMap[MtUniCreditFinancingLeasingPresenter::LABEL_EGN] === '1990010112',
-    'native admin mail audience ADMIN_EMAIL includes EGN per OC4'
+    !array_key_exists(MtUniCreditFinancingLeasingPresenter::LABEL_EGN, $adminMap)
+        && !array_key_exists(MtUniCreditFinancingLeasingPresenter::LABEL_PHONE2, $adminMap),
+    'native admin mail omits both historical values'
+);
+$adminPanelRows = $svc->rowsForOrder(
+    $stackValid['storeId'],
+    10130,
+    MtUniCreditFinancingPresentationAudience::ADMIN_PANEL
+);
+$adminPanelHtml = $presenter->renderHtml($adminPanelRows);
+mtuc10_assert(
+    $adminPanelHtml !== ''
+        && strpos($adminPanelHtml, '1990010112') === false
+        && strpos($adminPanelHtml, '+35988111111') === false,
+    'historical Admin panel omits both values while retaining the presentation'
 );
 $adminChunk = $presenter->renderText($adminRows);
 $adminMailOut .= "\n\n" . $adminChunk;

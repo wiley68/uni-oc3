@@ -327,6 +327,25 @@ mtucAud010F01R1_assert(
 );
 
 // -------------------------------------------------------------------------
+// Retired fields must not affect Process 2 controller validation.
+foreach (array('Product', 'Cart') as $entryPoint) {
+    $class = 'ControllerExtensionMtUniCredit' . $entryPoint;
+    $clean = mtucAud010F01R1_validPost();
+    $obsolete = array('egn' => 'legacy', 'phone2' => array('nested' => array('legacy')), 'unipayment_egn' => array('legacy'));
+    $original = mtucAud010F01R1_controllerApplicantGate($class, $clean, array('uni_proces' => 1));
+    $legacy = mtucAud010F01R1_controllerApplicantGate($class, $clean + $obsolete, array('uni_proces' => 1));
+    mtucAud010F01R1_assert($original['ok'] && $legacy === $original, $entryPoint . ' Process 2 ignores legacy POST fields');
+    $guard = mtucAud010F01R1_controllerApplicantGate($class, $clean + array('phone2' => array('nested' => array('legacy'))), array('uni_proces' => 0));
+    mtucAud010F01R1_assert(!$guard['ok'] && isset($guard['errors']['privacy']), $entryPoint . ' Process 1 retains the privacy guard');
+    $invalid = mtucAud010F01R1_controllerApplicantGate(
+        $class,
+        mtucAud010F01R1_validPost(array('phone' => '++')) + $obsolete,
+        array('uni_proces' => 1)
+    );
+    mtucAud010F01R1_assert(!$invalid['ok'] && isset($invalid['errors']['phone']), $entryPoint . ' Process 2 still validates primary phone');
+}
+
+// -------------------------------------------------------------------------
 // Product controller: malformed UTF-8 → no side effects
 // -------------------------------------------------------------------------
 $transportP = new Phase4FakeCpHttpTransport();
