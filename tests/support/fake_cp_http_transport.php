@@ -16,6 +16,9 @@ final class Phase4FakeCpHttpTransport implements MtUniCreditCpHttpTransport
     /** When true, auto PATCH /orders/status returns HTTP 500. */
     public $failStatusPatch = false;
 
+    /** Optional in-memory order-create contract returning [status, envelope]. */
+    public $orderCreateResponse;
+
     /**
      * @param int $status
      * @param string $body
@@ -77,6 +80,16 @@ final class Phase4FakeCpHttpTransport implements MtUniCreditCpHttpTransport
             'headers' => $headers,
             'payload' => $payload,
         );
+
+        if (is_callable($this->orderCreateResponse) && $method === 'POST' && substr($url, -7) === '/orders') {
+            list($status, $envelope) = ($this->orderCreateResponse)($payload);
+            $body = json_encode($envelope, JSON_THROW_ON_ERROR);
+            if ($status >= 200 && $status < 300) {
+                $body = $this->completeOrderCreateSuccessIdentity($body, $payload);
+            }
+
+            return new MtUniCreditCpHttpResponse($status, $body);
+        }
 
         if ($this->responses !== array()) {
             $next = array_shift($this->responses);

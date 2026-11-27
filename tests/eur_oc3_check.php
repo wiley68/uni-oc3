@@ -195,7 +195,7 @@ $cp = (new MtUniCreditControlPanelOrderPayloadBuilder())->build(
     99001, $order, Phase7TestHarness::orderProducts(), $eurCalc, mtuc4_valid_shop_snapshot()
 );
 eur_oc3_assert($cp['currency'] === 'EUR' && abs($cp['price'] - 250.0) < 0.001,
-    'CP currency and financed price are EUR');
+    'CP currency and purchase amount are EUR');
 eur_oc3_assert(abs($cp['parva'] - 0.0) < 0.001 && abs($cp['vnoska'] - 262.50) < 0.001,
     'CP initial EUR 0 and monthly EUR 262.50');
 $smart = (new MtUniCreditSmartUcfPayloadBuilder())->build(

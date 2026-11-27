@@ -8,6 +8,10 @@
  */
 final class MtUniCreditControlPanelOrderPayloadBuilder
 {
+    // The canonical EUR producer is present at 841d905 (2.0.3),
+    // 9144637 (2.0.4) and de0cd59 (2.0.5).
+    private const RECONSTRUCTION_VERSIONS = array('2.0.3', '2.0.4', '2.0.5');
+
     /**
      * @param int|string $localOrderId
      * @param array<string, mixed> $order OpenCart order row
@@ -27,20 +31,6 @@ final class MtUniCreditControlPanelOrderPayloadBuilder
             throw new InvalidArgumentException('CP order requires proven EUR amounts.');
         }
 
-        $ids = array();
-        $names = array();
-        $quantities = array();
-        foreach ($orderProducts as $product) {
-            if (!is_array($product)) {
-                continue;
-            }
-            $ids[] = (int) (isset($product['product_id']) ? $product['product_id'] : 0);
-            // Preserve free-text exactly (UTF-8, apostrophes, underscores). Delimiter between
-            // multi-line names remains "_" at implode time only — never mutate the name itself.
-            $names[] = (string) (isset($product['name']) ? $product['name'] : '');
-            $quantities[] = max(1, (int) (isset($product['quantity']) ? $product['quantity'] : 1));
-        }
-
         $firstname = isset($order['firstname']) ? (string) $order['firstname'] : '';
         $lastname = isset($order['lastname']) ? (string) $order['lastname'] : '';
         $name = trim($firstname . ' ' . $lastname);
@@ -56,16 +46,39 @@ final class MtUniCreditControlPanelOrderPayloadBuilder
             $shipping = '-';
         }
 
-        $currency = 'EUR';
+        return $this->buildCanonical($orderIdString, array(
+            'name' => $name,
+            'phone' => $phone,
+            'email' => $email,
+            'address' => $billing,
+            'address2' => $shipping,
+        ), $orderProducts, $calculation, !empty($shop['_is_mobile']) ? 0 : 1);
+    }
+
+    private function buildCanonical($orderId, array $customer, array $orderProducts, MtUniCreditCalculationResult $calculation, $clientType)
+    {
+        $ids = array();
+        $names = array();
+        $quantities = array();
+        foreach ($orderProducts as $product) {
+            if (!is_array($product)) {
+                continue;
+            }
+            $ids[] = (int) (isset($product['product_id']) ? $product['product_id'] : 0);
+            // Preserve free-text exactly (UTF-8, apostrophes, underscores). Delimiter between
+            // multi-line names remains "_" at implode time only — never mutate the name itself.
+            $names[] = (string) (isset($product['name']) ? $product['name'] : '');
+            $quantities[] = max(1, (int) (isset($product['quantity']) ? $product['quantity'] : 1));
+        }
 
         return array(
-            'order_id' => $orderIdString,
-            'name' => substr($name, 0, 65),
-            'phone' => substr($phone, 0, 45),
-            'email' => substr($email, 0, 128),
-            'address' => substr($billing, 0, 256),
-            'address2' => substr($shipping, 0, 256),
-            'price' => round((float) $calculation->financedAmount, 2),
+            'order_id' => $orderId,
+            'name' => substr((string) $customer['name'], 0, 65),
+            'phone' => substr((string) $customer['phone'], 0, 45),
+            'email' => substr((string) $customer['email'], 0, 128),
+            'address' => substr((string) $customer['address'], 0, 256),
+            'address2' => substr((string) $customer['address2'], 0, 256),
+            'price' => round((float) $calculation->price, 2),
             'vnoska' => round((float) $calculation->monthlyInstallment, 2),
             'gpr' => round((float) $calculation->gpr, 2),
             'vnoski' => (int) $calculation->scheme->months,
@@ -74,10 +87,105 @@ final class MtUniCreditControlPanelOrderPayloadBuilder
             // CP contract: products_name has no max (cp_max null). Never truncate or mutate.
             'products_name' => implode('_', $names),
             'products_q' => implode('_', $quantities),
-            'type_client' => !empty($shop['_is_mobile']) ? 0 : 1,
-            'currency' => $currency,
+            'type_client' => $clientType,
+            'currency' => 'EUR',
             'version' => MtUniCreditConstants::VERSION,
         );
+    }
+
+    /**
+     * Prove a live preview against the original request when the attempt still
+     * requires live intent comparison. The caller must still compare snapshots.
+     */
+    public function proveLivePreview(array $preview, MtUniCreditCalculationResult $calculation, array $attempt)
+    {
+        if (!MtUniCreditApplicationSnapshot::mustMatchLiveIntent($attempt)) {
+            return $preview;
+        }
+
+        $snapshot = MtUniCreditConsentGate::snapshot($attempt);
+        return $this->matchOriginal($preview, $calculation, $snapshot['request_fingerprint'], self::RECONSTRUCTION_VERSIONS);
+    }
+
+    public function proveFrozenPayload($orderId, array $snapshot, MtUniCreditCalculationResult $calculation, $saved = null)
+    {
+        $customer = isset($snapshot['customer']) ? $snapshot['customer'] : null;
+        if (!is_array($customer) || !isset($snapshot['products'], $snapshot['cp_type_client'], $snapshot['request_fingerprint'])
+            || !is_array($snapshot['products']) || !in_array($snapshot['cp_type_client'], array(0, 1), true)) {
+            return null;
+        }
+        foreach (array('name', 'phone', 'email', 'address', 'address2') as $field) {
+            if (!isset($customer[$field]) || !is_string($customer[$field])) {
+                return null;
+            }
+        }
+
+        // Both snapshot customer shapes store the full, untruncated CP name
+        // and the already resolved billing/shipping address strings.
+        $preview = $this->buildCanonical($orderId, $customer, $snapshot['products'], $calculation, $snapshot['cp_type_client']);
+        $original = $snapshot['request_fingerprint'];
+        if ($saved === null) {
+            return $this->matchOriginal($preview, $calculation, $original, self::RECONSTRUCTION_VERSIONS);
+        }
+
+        if (array_diff_key($preview, $saved) || array_diff_key($saved, $preview)
+            || !is_string($saved['version']) || !preg_match('/\A[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\z/', $saved['version'])) {
+            return null;
+        }
+        foreach ($preview as $field => $value) {
+            if (is_float($value)) {
+                if (!MtUniCreditEurAmount::validMoney($saved[$field])) {
+                    return null;
+                }
+            } elseif (gettype($saved[$field]) !== gettype($value)) {
+                return null;
+            }
+        }
+        if (!is_string($original) || $original === '' || !hash_equals($original, self::fingerprint($saved))) {
+            return null;
+        }
+
+        $candidate = $this->matchOriginal($preview, $calculation, $original, array($saved['version']));
+        if ($candidate === null) {
+            return null;
+        }
+
+        // CP compares numeric values as floats. The local fingerprint only proves cents.
+        foreach (array('price', 'parva', 'vnoska', 'gpr') as $field) {
+            if ((float) $saved[$field] !== (float) $candidate[$field]) {
+                return null;
+            }
+        }
+
+        return $saved;
+    }
+
+    private function matchOriginal(array $preview, MtUniCreditCalculationResult $calculation, $original, array $versions)
+    {
+        if (!is_string($original) || $original === '') {
+            return null;
+        }
+        $gross = $preview['price'];
+        $principal = round((float) $calculation->financedAmount, 2);
+        $prices = $gross === $principal ? array($gross) : array($gross, $principal);
+        $match = null;
+        foreach ($versions as $version) {
+            $preview['version'] = $version;
+            foreach ($prices as $price) {
+                if (!MtUniCreditEurAmount::validMoney($price)) {
+                    continue;
+                }
+                $preview['price'] = $price;
+                if (hash_equals($original, self::fingerprint($preview))) {
+                    if ($match !== null) {
+                        return null;
+                    }
+                    $match = $preview;
+                }
+            }
+        }
+
+        return $match;
     }
 
     /**

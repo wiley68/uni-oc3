@@ -102,21 +102,36 @@ final class MtUniCreditCheckoutFinancingSubmissionService
         $calculation = $validation['calculation'];
         $unicid = (string) $validation['unicid'];
 
-        $payloadPreview = $this->payloadBuilder->build($orderId, $order, $orderProducts, $calculation, $shop);
-        $fingerprint = MtUniCreditControlPanelOrderPayloadBuilder::fingerprint($payloadPreview);
-        $selectionHash = hash('sha256', $calculation->scheme->kopCode . '|' . $calculation->scheme->months . '|' . $fingerprint);
+        $grossPreview = $this->payloadBuilder->build($orderId, $order, $orderProducts, $calculation, $shop);
         $operationKeyHash = hash('sha256', 'checkout|' . $storeId . '|' . $orderId);
+        $projectIntent = function ($originalAttempt) use (
+            $grossPreview, $calculation, $order, $orderProducts, $shop, $operationKeyHash
+        ) {
+            $proved = $originalAttempt === null ? $grossPreview
+                : $this->payloadBuilder->proveLivePreview($grossPreview, $calculation, $originalAttempt);
+            if ($proved === null) {
+                return null;
+            }
+            $fingerprint = MtUniCreditControlPanelOrderPayloadBuilder::fingerprint($proved);
+            $selectionHash = hash('sha256', $calculation->scheme->kopCode . '|' . $calculation->scheme->months . '|' . $fingerprint);
 
-        $liveSnapshot = MtUniCreditApplicationSnapshot::fromLive(
-            $calculation,
-            $order,
-            $orderProducts,
-            $shop,
-            MtUniCreditOperationEntryPoint::CHECKOUT,
-            $operationKeyHash,
-            $selectionHash,
-            $fingerprint
-        );
+            return array($fingerprint, $selectionHash, MtUniCreditApplicationSnapshot::fromLive(
+                $calculation,
+                $order,
+                $orderProducts,
+                $shop,
+                MtUniCreditOperationEntryPoint::CHECKOUT,
+                $operationKeyHash,
+                $selectionHash,
+                $fingerprint
+            ));
+        };
+        $intent = $projectIntent($existingAttempt);
+        if ($intent === null) {
+            return array('success' => false, 'error' => 'fingerprint_drift',
+                'message' => MtUniCreditControlPanelOrderLifecycleService::CUSTOMER_FAILURE_MESSAGE);
+        }
+        list($fingerprint, $selectionHash, $liveSnapshot) = $intent;
         try {
             if ($existingAttempt === null) {
                 $liveSnapshot = MtUniCreditApplicationSnapshot::withConsent($liveSnapshot, $shop, $calculation, $input, $storeId, $orderId);
@@ -148,6 +163,19 @@ final class MtUniCreditCheckoutFinancingSubmissionService
             );
         }
 
+        if ($existingAttempt === null && $attempt['application_snapshot_hash'] !== MtUniCreditApplicationSnapshot::hash($liveSnapshot)) {
+            try {
+                MtUniCreditConsentGate::authorizeLegacy($attempt, $shop, $input);
+            } catch (Throwable $exception) {
+                return MtUniCreditConsentGate::failure($exception->getMessage(), $orderId);
+            }
+            $intent = $projectIntent($attempt);
+            if ($intent === null) {
+                return array('success' => false, 'error' => 'fingerprint_drift',
+                    'message' => MtUniCreditControlPanelOrderLifecycleService::CUSTOMER_FAILURE_MESSAGE);
+            }
+            list($fingerprint, $selectionHash, $liveSnapshot) = $intent;
+        }
         $bound = MtUniCreditApplicationSnapshot::bindToAttempt($this->attempts, $attempt, $liveSnapshot);
         if (empty($bound['ok'])) {
             return array(

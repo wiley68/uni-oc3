@@ -75,6 +75,18 @@ final class MtUniCreditStorefrontFinancingSubmissionService
             : new MtUniCreditOperationOrderClaimRepository($attempts->database());
     }
 
+    public static function normalizeRequestedFirstInstallment($value): float
+    {
+        if (!is_string($value) && !is_int($value) && !is_float($value)) {
+            return 0.0;
+        }
+
+        $decimal = str_replace(',', '.', trim((string) $value, " \t\n\r\v\f"));
+        $amount = is_numeric($decimal) ? (float) $decimal : 0.0;
+
+        return is_finite($amount) ? $amount : 0.0;
+    }
+
     /**
      * @param array<string, mixed> $input
      * @return array<string, mixed>
@@ -121,6 +133,7 @@ final class MtUniCreditStorefrontFinancingSubmissionService
         $orderProducts = array();
         $orderTotal = 0.0;
         $calculation = null;
+        $requestedFirstInstallment = isset($input['first_installment']) ? $input['first_installment'] : 0.0;
         $operationKeyHash = '';
         $draftInput = isset($input['draft']) && is_array($input['draft']) ? $input['draft'] : array();
 
@@ -135,7 +148,7 @@ final class MtUniCreditStorefrontFinancingSubmissionService
             $scheme = $this->findScheme($shop, $product, $parsed);
             if ($scheme !== null) {
                 try {
-                    $calculation = $this->calculator->calculateScheme($shop, $orderTotal, $scheme, 0.0);
+                    $calculation = $this->calculator->calculateScheme($shop, $orderTotal, $scheme, $requestedFirstInstallment);
                 } catch (Exception $exception) {
                     $calculation = null;
                 }
@@ -184,7 +197,7 @@ final class MtUniCreditStorefrontFinancingSubmissionService
             $orderTotal = $eurCart->total;
             if ($scheme !== null) {
                 try {
-                    $calculation = $this->calculator->calculateScheme($shop, $orderTotal, $scheme, 0.0);
+                    $calculation = $this->calculator->calculateScheme($shop, $orderTotal, $scheme, $requestedFirstInstallment);
                 } catch (Exception $exception) {
                     $calculation = null;
                 }
@@ -529,7 +542,9 @@ final class MtUniCreditStorefrontFinancingSubmissionService
                     return $this->fail('unavailable', true);
                 }
                 try {
-                    $calculation = $this->calculator->calculateScheme($shop, $eurOrderTotal, $scheme, 0.0);
+                    // Legacy attempts keep the original zero-request comparison for intent checks.
+                    $requested = $existingAttempt === null ? $requestedFirstInstallment : 0.0;
+                    $calculation = $this->calculator->calculateScheme($shop, $eurOrderTotal, $scheme, $requested);
                 } catch (Exception $exception) {
                     return $this->fail('unavailable', true);
                 }
@@ -557,23 +572,37 @@ final class MtUniCreditStorefrontFinancingSubmissionService
                 );
             }
 
-            $payloadPreview = $this->payloadBuilder->build($orderId, $order, $orderProducts, $calculation, $shop);
-            $fingerprint = MtUniCreditControlPanelOrderPayloadBuilder::fingerprint($payloadPreview);
-            $selectionHash = hash(
-                'sha256',
-                $calculation->scheme->kopCode . '|' . $calculation->scheme->months . '|' . $fingerprint
-            );
+            $grossPreview = $this->payloadBuilder->build($orderId, $order, $orderProducts, $calculation, $shop);
+            $projectIntent = function ($originalAttempt) use (
+                $grossPreview, $calculation, $order, $orderProducts, $shop, $operationKeyHash, $entryPoint
+            ) {
+                $proved = $originalAttempt === null ? $grossPreview
+                    : $this->payloadBuilder->proveLivePreview($grossPreview, $calculation, $originalAttempt);
+                if ($proved === null) {
+                    return null;
+                }
+                $fingerprint = MtUniCreditControlPanelOrderPayloadBuilder::fingerprint($proved);
+                $selectionHash = hash(
+                    'sha256',
+                    $calculation->scheme->kopCode . '|' . $calculation->scheme->months . '|' . $fingerprint
+                );
 
-            $liveSnapshot = MtUniCreditApplicationSnapshot::fromLive(
-                $calculation,
-                $order,
-                $orderProducts,
-                $shop,
-                $entryPoint,
-                $operationKeyHash,
-                $selectionHash,
-                $fingerprint
-            );
+                return array($fingerprint, $selectionHash, MtUniCreditApplicationSnapshot::fromLive(
+                    $calculation,
+                    $order,
+                    $orderProducts,
+                    $shop,
+                    $entryPoint,
+                    $operationKeyHash,
+                    $selectionHash,
+                    $fingerprint
+                ));
+            };
+            $intent = $projectIntent($existingAttempt);
+            if ($intent === null) {
+                return $this->fail('application_drift', true);
+            }
+            list($fingerprint, $selectionHash, $liveSnapshot) = $intent;
             try {
                 if ($existingAttempt === null) {
                     $liveSnapshot = MtUniCreditApplicationSnapshot::withConsent($liveSnapshot, $shop, $calculation, $input, $storeId, $orderId);
@@ -622,6 +651,18 @@ final class MtUniCreditStorefrontFinancingSubmissionService
                 return $this->fail('conflict', true);
             }
 
+            if ($existingAttempt === null && $attempt['application_snapshot_hash'] !== MtUniCreditApplicationSnapshot::hash($liveSnapshot)) {
+                try {
+                    MtUniCreditConsentGate::authorizeLegacy($attempt, $shop, $input);
+                } catch (Throwable $exception) {
+                    return MtUniCreditConsentGate::failure($exception->getMessage(), $orderId) + array('session' => $sessionData);
+                }
+                $intent = $projectIntent($attempt);
+                if ($intent === null) {
+                    return $this->fail('application_drift', true);
+                }
+                list($fingerprint, $selectionHash, $liveSnapshot) = $intent;
+            }
             $bound = MtUniCreditApplicationSnapshot::bindToAttempt($this->attempts, $attempt, $liveSnapshot);
             if (empty($bound['ok'])) {
                 $driftError = isset($bound['error']) ? (string) $bound['error'] : 'application_drift';

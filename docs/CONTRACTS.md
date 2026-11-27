@@ -33,7 +33,8 @@ Later phases cite contract IDs (`CALC-001`, `CP-AUTH-001`, …). Do not rename f
 - The authoritative selected transaction currency and every new financing application must use the exact canonical code `EUR`. Case variants, whitespace, missing and non-EUR codes fail closed without repair. `uni_eur`, including temporary CP value 3 and older values, is ignored.
 - Native OC3 cart/product/order numeric fields stay in store base units. `currency_code`, positive `currency_id`, and finite positive `currency_value` identify the EUR transaction. Financing amounts are converted before scheme bounds and calculation. Product `order_product` price, total and tax stay in base units.
 - Once an order exists, its saved `currency_value` is the only conversion factor for financing, CP and SmartUCF. Current store rates never reprice durable history. The order ID, store ID, currency metadata and native total must be proved before submission or replay.
-- CP `currency` is explicit EUR. Its `price`, `parva` and `vnoska` are calculated EUR amounts. Saved payload currency, amount, order identity and fingerprint must agree with the frozen EUR application; unverifiable CP-created replay does not repost.
+- New OC3 financing intents send the authoritative gross EUR purchase amount as CP `price`. CP `parva` is the effective down payment, and `vnoska` is the calculated monthly installment. The snapshot and local presentation retain the separate financed principal. The saved native order and currency factor supply the gross amount.
+- Existing intents preserve their original CP business fields, fingerprint and wire version. Recovery proves the complete canonical payload against the original request fingerprint bound to the immutable snapshot and financing attempt. Missing or insufficient proof blocks reconstruction. Confirmed or ambiguous creates retain their existing replay restrictions.
 - Process 1 SmartUCF aggregate amounts and `items[].singlePrice` are EUR. The item source remains OC3 `order_product.total` (native ex-tax line total), divided by quantity after conversion with the order factor. Process 2 performs no SmartUCF request and also proves the durable EUR order/application before status or mail continuation.
 - EUR storefront labels are single-currency. Existing calculator formulas, CP field names, status semantics and lock/cache ownership are unchanged.
 
@@ -482,6 +483,31 @@ Class B. `InvalidPayload` no longer purges automatically.
 ## E. CP order contract
 
 Fixture: `tests/fixtures/cp_order_payload.json`.
+
+The archived CP fixture retains its original BGN example and zero down payment. For new OC3 intents the unified integration convention is gross `price`. This convention follows current CP intake and reporting behavior.
+
+| Current EUR example | Value |
+| --- | ---: |
+| CP `price` and Process 1 SmartUCF `totalPrice` | 1000.00 |
+| CP `parva` and SmartUCF `initialPayment` | 200.00 |
+| Internal financed principal | 800.00 |
+| CP `vnoska` and SmartUCF `monthlyPayment` | 76.00 |
+| CP `vnoski` | 12 |
+| Calculator total payable | 912.00 |
+
+When the saved native total converts to EUR 1100.00, the same down payment and coefficient produce EUR 1100.00 CP `price`, EUR 900.00 principal, EUR 85.50 monthly and EUR 1026.00 total payable.
+
+The supported reconstruction format uses unchanged canonical customer and product rules from `415492e`, with explicit EUR as of `841d905`. The builder blob `de22f1a803524c8f22521e3b319ca363d935020b` is shared by the following producer revisions:
+
+| Wire version | Repository evidence |
+| --- | --- |
+| `2.0.3` | EUR producer and version constant at `841d905`. The earlier BGN path is outside EUR recovery. |
+| `2.0.4` | Release `9144637` uses the same EUR builder. |
+| `2.0.5` | Baseline `de0cd59` uses the same EUR builder with principal pricing. New intents use gross pricing with this wire version. |
+
+`tests/fixtures/oc3_cp_principal_price.json` pins nonzero-down-payment principal payloads and v1/v2 snapshots. They were derived with the approved PV-001 producer before PRICE-001, using its unchanged builder with the historical version constants. The v1 sample uses that producer's original v1 projection and the archived name-only customer shape.
+
+Saved JSON retains its original wire version when its full canonical content is proven. The four monetary values must also equal the proven candidate under CP float comparison. This rejects differences below one cent even when the local fingerprint is identical. Missing JSON can be reconstructed only in an eligible pre-send state and only when a complete candidate reproduces the original fingerprint. A zero down payment produces one equivalent candidate. Historical attempts, snapshots and CP records receive no automatic data correction.
 
 ### CP-ORDER-001 — Endpoint
 

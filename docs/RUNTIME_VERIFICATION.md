@@ -1129,6 +1129,44 @@ home_controller_before / home_footer_after
 
 Do **not** broaden `isDefinitiveCheckoutCpFailureTerminal()` for `cp_outcome_unknown`.
 
+### OC3 gross CP price acceptance
+
+Run each row in both Process 1 and Process 2 using an approved acceptance environment. Use a new application for each policy and entry point.
+
+| Entry point | P1 editable | P1 locked | P1 zero | P2 editable | P2 locked | P2 zero |
+| --- | --- | --- | --- | --- | --- | --- |
+| Product | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] |
+| Cart | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] |
+| Checkout | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] |
+
+For each successful case:
+
+1. Record native order total and saved EUR factor. Confirm CP `price` equals the authoritative gross EUR amount, CP `parva` equals the effective down payment, and the financed principal remains distinct in the local snapshot and financing presentation.
+2. Compare `vnoska`, `vnoski`, `gpr` and `currency` with the accepted calculation. Check CP Price, export and dashboard aggregates against the accepted gross value. Check administration, customer email and merchant email financially labeled rows.
+3. In Process 1, verify unchanged SmartUCF `totalPrice`, `initialPayment`, `monthlyPayment`, redirect and status. In Process 2, verify completion, status and notification, with zero SmartUCF sessions.
+4. Repeat the same application. Verify the original request fingerprint and wire version, one native order, one CP application, at most one SmartUCF session and no duplicate finalization or notification.
+5. Separately exercise a historical principal-price application. Preserve the original `price`, `version` and fingerprint. For missing or unprovable original payloads, verify the existing recovery restrictions and absence of a replacement create.
+
+#### COMMIT-01 owner acceptance
+
+The owner reported ACC-01 (Process 1) **9/9 PASS**, ACC-02 (Process 2) **9/9 PASS**, and combined manual acceptance **18/18 PASS** for Product, Cart and Checkout across editable nonzero, mandatory locked and permitted zero down payments. This accepts PV-001 manual down-payment propagation and PRICE-001 gross purchase amount in CP `price`.
+
+The accepted artifact is `oc3_uni_2.0.5.ocmod.zip` (520048 bytes), SHA-256 `9c2d9dc4d9315f153757962dc75335673282a71be9f7ecfa335a6b6cdb3ba5da`. Module version remains `2.0.5`. REV-01-F01 (exact monetary equivalence) and F03 (regression coverage) are closed.
+
+The offline baseline retains 21 inherited failures. The jsdom check was skipped, the opt-in MySQL probe was excluded, and real database concurrency remains unverified.
+
+#### REV-01-F02 operational disposition
+
+The owner explicitly accepts F02 as an exceptional operational limitation. Ambiguous historical missing-attempt recovery remains technically unresolved (R03 FAIL/BLOCKED). Normal pre-attempt recovery remains supported. Historical attempts with valid persisted authority retain their original payloads. The owner accepts the residual risk of downstream repetition if historical data loss remains undetected.
+
+A legacy native order binding with no surviving attempt establishes native order identity. If earlier external submission cannot be ruled out from the order's operational history, reconcile the existing identity with the owner before treating it as a first financing intent. An opaque pre-existing CP application remains protected by CP semantic conflict. A matching CP response establishes business-payload equivalence only.
+
+For a suspected missing-attempt incident, place the affected order on hold before any resubmission. The owner or an explicitly authorized technical administrator must identify the original store, native order and CP shop. Preserve evidence from the native order, claim, backups, status records, original CP request and diagnostics. Verify the CP record, including the original financial fields and wire version. Verify SmartUCF session history, bank status, native finalization and customer or merchant notification evidence separately. Keep resubmissions and duplicate notifications on hold while any outcome is unknown.
+
+Guessed snapshots, alternate-price retries, replacement identities and routine direct production database modifications are prohibited. If evidence is insufficient or contradictory, escalate manually under the original identity. See the existing read-only reconciliation procedure in [CONTRACTS.md](CONTRACTS.md).
+
+For an editable fixture at 12 months and coefficient 0.095, EUR 1000.00 gross and EUR 200.00 down produce EUR 800.00 principal and EUR 76.00 monthly. When a fresh intent reloads a saved native total of EUR 1100.00 after a draft of EUR 1000.00, verify EUR 1100.00 CP gross, EUR 900.00 principal and EUR 85.50 monthly. See the canonical EUR example and historical wire version evidence in [CONTRACTS.md](CONTRACTS.md).
+
 ### CP order-create boundary (from frozen CP contract fixtures)
 
 Sources in `tests/fixtures/cp_order_payload.json`:

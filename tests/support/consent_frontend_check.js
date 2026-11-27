@@ -203,4 +203,18 @@ popupScope.submitPopup();check(popupRequests.length===0,'direct popup submit ref
 popupScope.ready=true;popupScope.submitPopup();popupScope.submitPopup();
 check(popupRequests.length===1,'popup duplicate click emits only one submission');
 check(popupRequests[0].data.consent_config_hash==='config' && popupRequests[0].data.consent[0]==='1','popup form acceptance transport is independent of checkout');
+for (const entryPoint of ['product', 'cart']) {
+  let amount = '0.00';
+  popupScope.entryPoint = entryPoint;
+  popupScope.productFormData = () => ({quantity: 1, option: {}});
+  popupScope.$modal.find = (selector) => selector === '[data-mtuc-form]'
+    ? formPort : {text() {}, val() { return amount; }};
+  for (const requested of ['127.50', '200.00', '0.00']) {
+    popupScope.terminalSubmitInFlight = false;
+    amount = requested;
+    popupScope.submitPopup();
+    check(popupRequests[popupRequests.length - 1].data.first_installment === requested,
+      entryPoint + ' submits the current down-payment field ' + requested);
+  }
+}
 console.log('CONSENT FRONTEND: ' + passes + ' PASS (production functions; isolated DOM/timer ports)');

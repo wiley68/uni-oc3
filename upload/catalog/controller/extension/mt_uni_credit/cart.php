@@ -226,6 +226,9 @@ class ControllerExtensionMtUniCreditCart extends Controller
             'store_id' => (int) $this->config->get('config_store_id'),
             'currency_code' => $currency,
             'scheme_key' => (string) $this->posted('scheme_key', ''),
+            'first_installment' => MtUniCreditStorefrontFinancingSubmissionService::normalizeRequestedFirstInstallment(
+                $this->posted('first_installment')
+            ),
             'consent' => isset($this->request->post['consent']) ? $this->request->post['consent'] : array(),
             'consent_config_hash' => $this->posted('consent_config_hash', ''),
             'cart_context' => $cart,
