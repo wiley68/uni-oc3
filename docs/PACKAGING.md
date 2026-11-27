@@ -18,7 +18,13 @@ php scripts/package.php --output-dir=/absolute/path/inside/uni-oc3/disposable-di
 
 Use repository-owned disposable directories for tests. Source paths must not be mutated concurrently. The builder uses an exclusively created temporary file in the output directory, validates it, then publishes with an atomic no-clobber hard link on that filesystem. Existing ZIPs, including frozen releases, are always refused; there is no overwrite switch. Cleanup removes only the current invocation's temporary file, never a directory tree. Failed preflight creates no output. No staging tree is used.
 
-Entries are sorted bytewise, timestamps fixed at 1980-01-01, permissions fixed at regular-file 0644 and compression set explicitly. Repeated builds on the same runtime are tested for identical hashes. Identical ZIP bytes across different PHP/libzip/zlib versions are not promised. Record the final printed SHA-256 and source commit for a release; a disposable working-tree build is not a frozen release.
+Entries are sorted bytewise, permissions are fixed at regular-file 0644, and compression is set explicitly. The builder captures the current time once per package and writes that time to every ZIP entry. It temporarily sets the process `TZ` to UTC for libzip and restores the caller's setting afterward.
+
+ZIP DOS timestamps have two-second precision and carry no timezone. Builds in the same two-second interval can have identical entry timestamps. For successive packages with changed source targeting the same shop, wait until a different two-second UTC interval before building. Use a trusted build clock and verify that the PHP entries in the new archive have a different timestamp from those in the package being replaced. For example, inspect the entry times with `TZ=UTC unzip -l path/to/package.ocmod.zip`. Separate builds may have different ZIP hashes while their entry bytes match.
+
+After update, verify the installed PHP file hashes and compare their filesystem modification times before and after installation. Extraction can interpret DOS timestamps using the destination timezone. The deployment check is that successive changed files have distinguishable installed modification times. Full source-to-archive byte parity remains required. Verify and record an individual SHA-256 for each delivered archive and retain the exact tested ZIP with its checksum after acceptance.
+
+With `opcache.validate_timestamps=1`, allow for the configured `opcache.revalidate_freq` interval before testing. With `opcache.validate_timestamps=0`, use the hosting provider’s supported cache invalidation or PHP worker reload procedure. Apply it to the actual web PHP SAPI and its serving workers. PHP CLI has a separate execution context. Current entry timestamps reduce the observed stale opcode risk, and hosting cache controls remain applicable.
 
 Run offline packaging regressions:
 

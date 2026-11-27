@@ -54,10 +54,55 @@ function pkg_mutated_zip($good, $dest, $mutation)
     $mutation($zip);
     $zip->close();
 }
+function pkg_build_mtime($path, $start, $end)
+{
+    $zip = new ZipArchive();
+    pkg_assert($zip->open($path, ZipArchive::CHECKCONS) === true, 'ZIP opens with consistency checks');
+    $timestamps = array();
+    for ($i = 0; $i < $zip->numFiles; $i++) {
+        $entry = $zip->statIndex($i);
+        $bytes = $zip->getFromIndex($i);
+        if ($entry === false || $bytes === false || hash('crc32b', $bytes) !== sprintf('%08x', $entry['crc'])) {
+            throw new RuntimeException('ZIP entry is unreadable or failed CRC');
+        }
+        $timestamps[$entry['mtime']] = true;
+    }
+    $zip->close();
+    pkg_assert(count($timestamps) === 1, 'all readable entries share one timestamp and pass CRC');
+    $mtime = array_key_first($timestamps);
+    pkg_assert($mtime >= $start - $start % 2 && $mtime <= $end
+        && $mtime % 2 === 0 && gmdate('Y', $mtime) !== '1980',
+        'current UTC DOS timestamp ' . gmdate('c', $mtime));
+
+    return $mtime;
+}
+
+function pkg_extract_move($path, $staging, $entry, $destination)
+{
+    $zip = new ZipArchive();
+    if ($zip->open($path) !== true || !$zip->extractTo($staging, $entry) || !$zip->close()) {
+        throw new RuntimeException('Cannot extract timestamp fixture');
+    }
+    $staged = $staging . '/' . $entry;
+    $stagedMtime = filemtime($staged);
+    if ($stagedMtime === false || !rename($staged, $destination)) {
+        throw new RuntimeException('Cannot move timestamp fixture');
+    }
+    clearstatcache(true, $destination);
+
+    return array($stagedMtime, filemtime($destination));
+}
+
+$originalTimezone = getenv('TZ');
 try {
     mkdir($temp . '/output');
     $sources = package_sources($repo);
+    // Read the resulting DOS values in UTC after building with a non-UTC caller.
+    putenv('TZ=Europe/Sofia');
+    $start = time();
     $result = package_build($repo, $temp . '/output');
+    $end = time();
+    pkg_assert(getenv('TZ') === 'Europe/Sofia', 'builder restores caller timezone');
     pkg_assert(is_file($result['path']), 'full production source build into disposable output');
     package_validate_zip($result['path'], $sources);
     pkg_assert(hash_file('sha256', $result['path']) === $result['sha256'], 'full manifest and every entry SHA256 verified');
@@ -74,13 +119,23 @@ try {
     mkdir($temp . '/cli');
     $command = escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($repo . '/scripts/package.php')
         . ' ' . escapeshellarg('--output-dir=' . $temp . '/cli');
+    $cliStart = time();
     exec($command . ' 2>&1', $cliOutput, $cliCode);
-    pkg_assert($cliCode === 0 && strpos(implode("\n", $cliOutput), 'SHA256: ' . $result['sha256']) !== false, 'PHP CLI prints final validated path/hash and exits zero');
+    $cliEnd = time();
+    $filename = 'oc3_uni_2.0.5.ocmod.zip';
+    $cliPath = $temp . '/cli/' . $filename;
+    pkg_assert(basename($result['path']) === $filename, 'production filename and version preserved');
+    pkg_assert($cliCode === 0 && is_file($cliPath)
+        && in_array('Package: ' . $cliPath, $cliOutput, true)
+        && in_array('SHA256: ' . hash_file('sha256', $cliPath), $cliOutput, true),
+        'PHP CLI reports the path and SHA256 of its own archive');
+    package_validate_zip($cliPath, $sources);
+    putenv('TZ=UTC');
+    pkg_build_mtime($result['path'], $start, $end);
+    pkg_build_mtime($cliPath, $cliStart, $cliEnd);
     exec($command . ' 2>&1', $refusedOutput, $refusedCode);
     pkg_assert($refusedCode !== 0, 'PHP CLI frozen-target refusal exits nonzero');
     mkdir($temp . '/second');
-    $second = package_build($repo, $temp . '/second');
-    pkg_assert($second['sha256'] === $result['sha256'], 'repeat build identical on current runtime');
     pkg_reject(function () use ($repo, $temp) { package_build($repo, $temp . '/output'); }, 'existing frozen target refused');
     pkg_assert(hash_file('sha256', $result['path']) === $result['sha256'], 'existing artifact bytes unchanged');
 
@@ -109,6 +164,40 @@ try {
     }
     package_sources($fixture);
     pkg_assert(true, 'complete independent fixture accepted');
+
+    $entry = 'upload/build-timestamp-probe.php';
+    $firstBytes = "<?php return 'first';\n";
+    $secondBytes = "<?php return 'second';\n";
+    file_put_contents($fixture . '/' . $entry, $firstBytes);
+    mkdir($temp . '/first-fixture');
+    $firstStart = time();
+    $first = package_build($fixture, $temp . '/first-fixture');
+    $firstMtime = pkg_build_mtime($first['path'], $firstStart, time());
+    package_validate_zip($first['path'], package_sources($fixture));
+    mkdir($temp . '/installed');
+    $destination = $temp . '/installed/probe.php';
+    list($firstExtracted, $firstInstalled) = pkg_extract_move($first['path'], $temp . '/extract-first', $entry, $destination);
+    pkg_assert(file_get_contents($destination) === $firstBytes, 'first extracted PHP contains first source bytes');
+
+    file_put_contents($fixture . '/' . $entry, $secondBytes);
+    $deadline = hrtime(true) + 5000000000;
+    while (time() < $firstMtime + 2 && hrtime(true) < $deadline) {
+        usleep(20000);
+    }
+    $secondStart = time();
+    pkg_assert($secondStart >= $firstMtime + 2, 'second build starts in a later DOS interval');
+    $second = package_build($fixture, $temp . '/second');
+    $secondMtime = pkg_build_mtime($second['path'], $secondStart, time());
+    package_validate_zip($second['path'], package_sources($fixture));
+    list($secondExtracted, $secondInstalled) = pkg_extract_move($second['path'], $temp . '/extract-second', $entry, $destination);
+    pkg_assert($secondMtime > $firstMtime && file_get_contents($destination) === $secondBytes,
+        'later ZIP has a different timestamp and installs the changed PHP bytes');
+    pkg_assert($firstExtracted === $firstMtime && $firstInstalled === $firstMtime
+        && $secondExtracted === $secondMtime && $secondInstalled === $secondMtime,
+        'extract and rename preserve distinct mtimes: staged ' . gmdate('c', $firstExtracted)
+        . ' -> installed ' . gmdate('c', $firstInstalled) . '; staged ' . gmdate('c', $secondExtracted)
+        . ' -> installed ' . gmdate('c', $secondInstalled));
+
     mkdir($temp . '/negative-output');
     foreach (array('.env' => 'safe', 'private.txt' => '-----BEGIN PRIVATE KEY-----', 'debug' => 'ShopApiTestFailure') as $leaf => $bytes) {
         file_put_contents($fixture . '/upload/' . $leaf, $bytes);
@@ -192,5 +281,6 @@ try {
     pkg_assert(file_get_contents($temp . '/output/unrelated') === 'preserve' && glob($temp . '/output/.package-*') === array(), 'unrelated files preserved and no temporary ZIP leaked');
     echo 'Packaging regressions: ' . $passes . ' PASS' . PHP_EOL;
 } finally {
+    putenv($originalTimezone === false ? 'TZ' : 'TZ=' . $originalTimezone);
     pkg_remove($temp);
 }

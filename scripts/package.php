@@ -48,7 +48,13 @@ function package_publish($target, array $sources)
         throw new RuntimeException('Cannot reserve temporary output');
     }
     fclose($handle);
+    $previousTimezone = getenv('TZ');
     try {
+        // libzip encodes DOS timestamps using the process timezone.
+        if (!putenv('TZ=UTC')) {
+            throw new RuntimeException('Cannot set ZIP build timezone');
+        }
+        $buildTimestamp = time();
         $zip = new ZipArchive();
         if ($zip->open($temp, ZipArchive::OVERWRITE) !== true) {
             throw new RuntimeException('Cannot create ZIP');
@@ -65,7 +71,7 @@ function package_publish($target, array $sources)
                 }
                 if (!$zip->addFromString($name, $bytes)
                     || !$zip->setCompressionName($name, ZipArchive::CM_DEFLATE, 9)
-                    || !$zip->setMtimeName($name, 315532800)
+                    || !$zip->setMtimeName($name, $buildTimestamp)
                     || !$zip->setExternalAttributesName($name, ZipArchive::OPSYS_UNIX, 0100644 << 16)) {
                     throw new RuntimeException('Cannot write ZIP entry: ' . $name);
                 }
@@ -87,6 +93,7 @@ function package_publish($target, array $sources)
         }
         return array('path' => $target, 'sha256' => $hash, 'files' => count($sources));
     } finally {
+        putenv($previousTimezone === false ? 'TZ' : 'TZ=' . $previousTimezone);
         if (is_file($temp) && !is_link($temp)) {
             unlink($temp);
         }
